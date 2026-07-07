@@ -16,11 +16,6 @@ on:
         required: false
         type: boolean
         default: false
-      skip_vs_marketplace:
-        description: "跳过 VS Marketplace，仅发布 Open VSX 和 GitHub Release"
-        required: false
-        type: boolean
-        default: true
 
 concurrency: publish-zlfcode-${{ github.ref_name }}-${{ inputs.version || '' }}
 
@@ -150,6 +145,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ -z "${VSCE_PAT:-}" ]]; then
+            echo "Missing GitHub secret: VSCE_TOKEN" >&2
+            exit 1
+          fi
           if [[ -z "${OVSX_TOKEN:-}${OPENVSX_TOKEN:-}" ]]; then
             echo "Missing GitHub secret: OVSX_TOKEN or OPENVSX_TOKEN" >&2
             exit 1
@@ -187,7 +186,6 @@ jobs:
           path: packages/kilo-vscode/out/zlfcode-${{ needs.build-cli.outputs.label }}-*.vsix
 
       - name: 发布到 VS Marketplace
-        if: ${{ env.VSCE_PAT != '' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.skip_vs_marketplace != true)) }}
         working-directory: packages/kilo-vscode
         shell: bash
         run: |
@@ -222,10 +220,6 @@ jobs:
           done
         env:
           VERSION: ${{ needs.build-cli.outputs.version }}
-
-      - name: 跳过 VS Marketplace
-        if: ${{ env.VSCE_PAT == '' || (github.event_name == 'workflow_dispatch' && inputs.skip_vs_marketplace == true) }}
-        run: echo "已跳过 VS Marketplace，仅发布 Open VSX 和 GitHub Release。"
 
       - name: 发布到 Open VSX
         working-directory: packages/kilo-vscode
