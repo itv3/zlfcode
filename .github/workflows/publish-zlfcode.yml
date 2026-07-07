@@ -1,0 +1,300 @@
+# kilocode_change - new file
+name: publish-zlfcode
+
+on:
+  push:
+    tags:
+      - "zlfcode-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "发布批次，例如 7.4.1-v0.01；留空则使用市场版本。"
+        required: false
+        type: string
+      pre_release:
+        description: "是否发布为预发布版本"
+        required: false
+        type: boolean
+        default: false
+      skip_vs_marketplace:
+        description: "跳过 VS Marketplace，仅发布 Open VSX 和 GitHub Release"
+        required: false
+        type: boolean
+        default: true
+
+concurrency: publish-zlfcode-${{ github.ref_name }}-${{ inputs.version || '' }}
+
+permissions:
+  contents: write
+
+env:
+  ZLF_TARGETS: "darwin-arm64 darwin-x64 win32-x64 win32-arm64 linux-x64 linux-arm64"
+
+jobs:
+  build-cli:
+    if: github.repository == 'itv3/zlfcode'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Setup Zig for Linux sandbox helpers
+        run: |
+          curl --fail --location --retry 3 \
+            https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz \
+            --output "$RUNNER_TEMP/zig.tar.xz"
+          echo "473ec26806133cf4d1918caf1a410f8403a13d979726a9045b421b685031a982  $RUNNER_TEMP/zig.tar.xz" | sha256sum --check --status
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-linux-x86_64-0.14.0" >> "$GITHUB_PATH"
+
+      - name: 解析版本号
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          input="${{ inputs.version || '' }}"
+          if [[ -n "$input" ]]; then
+            label="${input#v}"
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == zlfcode-v* ]]; then
+            label="${GITHUB_REF_NAME#zlfcode-v}"
+          else
+            label="$(bun -e 'console.log(require("./packages/kilo-vscode/package.json").version)')"
+          fi
+
+          version="$(bun -e 'console.log(require("./packages/kilo-vscode/package.json").version)')"
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid version: $version" >&2
+            exit 1
+          fi
+          if [[ -z "$label" ]]; then
+            label="$version"
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "label=$label" >> "$GITHUB_OUTPUT"
+          echo "tag=zlfcode-v$label" >> "$GITHUB_OUTPUT"
+          if [[ "${{ inputs.pre_release || false }}" == "true" ]]; then
+            echo "pre=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "pre=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 构建全平台 CLI binary
+        run: bun packages/opencode/script/build.ts
+        env:
+          KILO_VERSION: ${{ steps.meta.outputs.version }}
+          KILO_RELEASE: true
+          KILO_SKIP_CLI_RELEASE_UPLOAD: "1"
+          KILO_PRE_RELEASE: ${{ steps.meta.outputs.pre }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
+      - name: 打包 CLI dist
+        run: |
+          find packages/opencode/dist -name '*.map' -delete
+          tar --zstd -cf /tmp/kilo-cli.tar.zst -C packages/opencode/dist .
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: /tmp/kilo-cli.tar.zst
+          archive: false
+
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      label: ${{ steps.meta.outputs.label }}
+      tag: ${{ steps.meta.outputs.tag }}
+      pre: ${{ steps.meta.outputs.pre }}
+
+  publish:
+    needs: build-cli
+    if: github.repository == 'itv3/zlfcode'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_TOKEN }}
+      OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
+      OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-bun
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Install @vscode/vsce
+        run: bun install -g @vscode/vsce
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: kilo-cli.tar.zst
+          path: /tmp
+          skip-decompress: true
+
+      - name: 解包 CLI dist
+        run: |
+          mkdir -p packages/opencode/dist
+          tar --zstd -xf /tmp/kilo-cli.tar.zst -C packages/opencode/dist
+
+      - name: 检查发布密钥
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${OVSX_TOKEN:-}${OPENVSX_TOKEN:-}" ]]; then
+            echo "Missing GitHub secret: OVSX_TOKEN or OPENVSX_TOKEN" >&2
+            exit 1
+          fi
+
+      - name: 同步包版本
+        run: bun run script/sync-versions.ts "${{ needs.build-cli.outputs.version }}"
+
+      - name: 构建全部 VSIX
+        working-directory: packages/kilo-vscode
+        run: bun script/build.ts
+        env:
+          CLI_DIST_DIR: ../../packages/opencode/dist
+          KILO_VERSION: ${{ needs.build-cli.outputs.version }}
+          KILO_PRE_RELEASE: ${{ needs.build-cli.outputs.pre }}
+          GH_REPO: ${{ github.repository }}
+
+      - name: 整理 ZLF 发布包
+        working-directory: packages/kilo-vscode
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in $ZLF_TARGETS; do
+            src="out/kilo-vscode-$target.vsix"
+            dst="out/zlfcode-${{ needs.build-cli.outputs.label }}-$target.vsix"
+            test -f "$src"
+            cp "$src" "$dst"
+          done
+          ls -lh out/zlfcode-${{ needs.build-cli.outputs.label }}-*.vsix
+
+      - name: 上传 VSIX 构建产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: zlfcode-${{ needs.build-cli.outputs.label }}-vsix
+          path: packages/kilo-vscode/out/zlfcode-${{ needs.build-cli.outputs.label }}-*.vsix
+
+      - name: 发布到 VS Marketplace
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_vs_marketplace != true && env.VSCE_PAT != '' }}
+        working-directory: packages/kilo-vscode
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/vsce verify-pat itv3
+          for target in $ZLF_TARGETS; do
+            if ./node_modules/.bin/vsce show --json itv3.zlfcode >/tmp/vsce-extension.json 2>/dev/null; then
+              if TARGET="$target" node -e '
+                const fs = require("fs")
+                const data = JSON.parse(fs.readFileSync("/tmp/vsce-extension.json", "utf8"))
+                const ok = data.versions?.some((v) => v.version === process.env.VERSION && v.targetPlatform === process.env.TARGET)
+                process.exit(ok ? 0 : 1)
+              '; then
+                echo "VS Marketplace 已存在 $VERSION ($target)，跳过发布。"
+                continue
+              fi
+            fi
+
+            args=(--packagePath "out/zlfcode-${{ needs.build-cli.outputs.label }}-$target.vsix")
+            if [[ "${{ needs.build-cli.outputs.pre }}" == "true" ]]; then
+              args=(--pre-release "${args[@]}")
+            fi
+            for i in 1 2 3; do
+              if ./node_modules/.bin/vsce publish "${args[@]}"; then
+                break
+              fi
+              if [[ "$i" == "3" ]]; then
+                exit 1
+              fi
+              sleep 20
+            done
+          done
+        env:
+          VERSION: ${{ needs.build-cli.outputs.version }}
+
+      - name: 跳过 VS Marketplace
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_vs_marketplace == true || env.VSCE_PAT == '' }}
+        run: echo "已跳过 VS Marketplace，仅发布 Open VSX 和 GitHub Release。"
+
+      - name: 发布到 Open VSX
+        working-directory: packages/kilo-vscode
+        shell: bash
+        run: |
+          set -euo pipefail
+          pat="${OVSX_TOKEN:-${OPENVSX_TOKEN:-}}"
+          for target in $ZLF_TARGETS; do
+            if curl --fail --silent --show-error \
+              "https://open-vsx.org/api/itv3/zlfcode/$target/${{ needs.build-cli.outputs.version }}" \
+              >/dev/null; then
+              echo "Open VSX 已存在 ${{ needs.build-cli.outputs.version }} ($target)，跳过发布。"
+              continue
+            fi
+
+            args=(--pat "$pat" --packagePath "out/zlfcode-${{ needs.build-cli.outputs.label }}-$target.vsix")
+            if [[ "${{ needs.build-cli.outputs.pre }}" == "true" ]]; then
+              args=(--pre-release "${args[@]}")
+            fi
+            for i in 1 2 3; do
+              if npx --yes ovsx publish "${args[@]}"; then
+                break
+              fi
+              if [[ "$i" == "3" ]]; then
+                exit 1
+              fi
+              sleep 20
+            done
+          done
+
+      - name: 发布 GitHub Release 产物
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ needs.build-cli.outputs.tag }}"
+          label="${{ needs.build-cli.outputs.label }}"
+          version="${{ needs.build-cli.outputs.version }}"
+          src=".github/release-notes/$tag.md"
+          notes="/tmp/zlfcode-release-notes.md"
+          if [[ -f "$src" ]]; then
+            cp "$src" "$notes"
+          else
+            prev="$(git tag --merged "$tag" --list 'zlfcode-v*' --sort=-creatordate | grep -vx "$tag" | head -n 1 || true)"
+            {
+              echo "# ZLF Code $label"
+              echo
+              echo "市场内部版本: \`$version\`"
+              echo
+              echo "## 主要变更"
+              echo
+              if [[ -n "$prev" ]]; then
+                git log --pretty=format:'- %s (`%h`)' "$prev..$tag"
+              else
+                git log --pretty=format:'- %s (`%h`)' -20 "$tag"
+              fi
+              echo
+              echo
+              echo "## 安装包说明"
+              echo
+              echo "本次发布目标平台: \`$ZLF_TARGETS\`。"
+            } > "$notes"
+          fi
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --title "$tag" \
+              --notes-file "$notes"
+          fi
+          for target in $ZLF_TARGETS; do
+            gh release upload "$tag" "packages/kilo-vscode/out/zlfcode-${{ needs.build-cli.outputs.label }}-$target.vsix" --clobber
+          done
