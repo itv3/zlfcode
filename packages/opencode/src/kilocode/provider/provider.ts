@@ -12,10 +12,31 @@ import { ProviderID, ModelID } from "@/provider/schema"
 import { optionalOmitUndefined } from "@opencode-ai/core/schema"
 import { Effect, Schema } from "effect"
 import type { LanguageModelV3 } from "@ai-sdk/provider"
-import { mapValues, omit, pickBy } from "remeda"
+import { mapValues, mergeDeep, omit, pickBy } from "remeda"
 
 /** Default timeout (ms) for provider HTTP requests (connection phase). */
 export const REQUEST_TIMEOUT_MS = 300_000 // 5 minutes
+
+type VariantMap = Record<string, Record<string, unknown> | null | undefined>
+
+function record(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+export function orderedVariants(base: VariantMap | undefined, cfg: VariantMap | undefined) {
+  const merged = mergeDeep(base ?? {}, cfg ?? {}) as VariantMap
+  const out: VariantMap = {}
+  for (const key of Object.keys(cfg ?? {})) {
+    if (key in merged) out[key] = merged[key]
+  }
+  for (const [key, value] of Object.entries(merged)) {
+    if (!(key in out)) out[key] = value
+  }
+  return mapValues(
+    pickBy(out, (item): item is Record<string, unknown> => record(item) && !item.disabled),
+    (item) => omit(item, ["disabled"]),
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Bundled providers

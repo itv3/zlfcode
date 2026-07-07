@@ -1502,6 +1502,42 @@ it.instance(
   },
 )
 
+// kilocode_change start
+it.instance(
+  "custom model preserves configured variant order",
+  Effect.gen(function* () {
+    const providers = yield* list
+    const model = providers[ProviderID.make("custom-reasoning")].models["reasoning-model"]
+    expect(Object.keys(model.variants!)).toEqual(["medium", "low", "custom"])
+  }),
+  {
+    config: {
+      provider: {
+        "custom-reasoning": {
+          name: "Custom Reasoning Provider",
+          npm: "@ai-sdk/openai-compatible",
+          env: [],
+          models: {
+            "reasoning-model": {
+              name: "Reasoning Model",
+              reasoning: true,
+              limit: { context: 128000, output: 16000 },
+              variants: {
+                medium: { reasoningEffort: "medium" },
+                low: { reasoningEffort: "low" },
+                high: { reasoningEffort: "high", disabled: true },
+                custom: { reasoningEffort: "custom", budgetTokens: 5000 },
+              },
+            },
+          },
+          options: { apiKey: "test-key" },
+        },
+      },
+    },
+  },
+)
+// kilocode_change end
+
 it.instance(
   "Google Vertex: retains baseURL for custom proxy",
   Effect.gen(function* () {

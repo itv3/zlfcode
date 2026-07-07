@@ -1,13 +1,13 @@
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Select } from "@kilocode/kilo-ui/select"
 import { TextField } from "@kilocode/kilo-ui/text-field"
-import { createMemo, For, Show } from "solid-js"
+import { createMemo, createSignal, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { useLanguage } from "../../context/language"
 
 export type Translator = ReturnType<typeof useLanguage>["t"]
 
-// undefined = not set; true/false = enable_thinking value
+// undefined 表示未设置；true/false 表示 enable_thinking 的值。
 export type EnableThinkingValue = undefined | boolean
 export type ThinkingTypeValue = undefined | "enabled" | "disabled" | "adaptive"
 export type SplitReasoningValue = undefined | boolean
@@ -290,6 +290,7 @@ function VariantRow(props: VariantRowProps) {
 }
 
 export function ModelCard(props: ModelCardProps) {
+  const [open, setOpen] = createSignal(false)
   const opts = createMemo(() =>
     (props.variantNames ?? props.m.variants.map((item) => item.name))
       .map((item) => item.trim())
@@ -298,6 +299,12 @@ export function ModelCard(props: ModelCardProps) {
   )
 
   const current = createMemo(() => opts()[0])
+  const bad = createMemo(() => props.errors.variants?.some((item) => !!item?.name) ?? false)
+  const expanded = () => open() || bad()
+  const label = () => {
+    if (props.m.variants.length === 0) return props.t("provider.custom.models.variants.add")
+    return `${props.t("provider.custom.models.variants.label")} (${props.m.variants.length})`
+  }
 
   return (
     <div
@@ -310,7 +317,7 @@ export function ModelCard(props: ModelCardProps) {
         "border-radius": "6px",
       }}
     >
-      {/* Model id + name + remove */}
+      {/* 模型 ID、名称和移除按钮 */}
       <div style={{ display: "flex", gap: "8px", "align-items": "flex-end" }}>
         <div style={{ flex: 1 }}>
           <TextField
@@ -443,27 +450,17 @@ export function ModelCard(props: ModelCardProps) {
         </div>
         <Show when={props.m.reasoning}>
           <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
-            <For each={props.m.variants}>
-              {(v, vi) => (
-                <VariantRow
-                  v={v}
-                  vi={vi}
-                  error={props.errors.variants?.[vi()]}
-                  t={props.t}
-                  onChangeName={(val) => props.onChangeVariantName(vi(), val)}
-                  onChangeEnableThinking={(val) => props.onChangeEnableThinking(vi(), val)}
-                  onChangeThinking={(val) => props.onChangeThinking(vi(), val)}
-                  onChangeSplitReasoning={(val) => props.onChangeSplitReasoning(vi(), val)}
-                  onChangeReasoningEffort={(val) => props.onChangeReasoningEffort(vi(), val)}
-                  onChangeOutputEffort={(val) => props.onChangeOutputEffort(vi(), val)}
-                  onChangeChatTemplateArgs={(val) => props.onChangeChatTemplateArgs(vi(), val)}
-                  onRemove={() => props.onRemoveVariant(vi())}
-                />
-              )}
-            </For>
             <button
               type="button"
-              onClick={props.onAddVariant}
+              onClick={() => {
+                if (props.m.variants.length === 0) {
+                  props.onAddVariant()
+                  setOpen(true)
+                  return
+                }
+                setOpen((value) => !value)
+              }}
+              aria-expanded={expanded()}
               style={{
                 "align-self": "flex-start",
                 border: "none",
@@ -474,8 +471,43 @@ export function ModelCard(props: ModelCardProps) {
                 "font-size": "var(--kilo-font-size-13)",
               }}
             >
-              {props.t("provider.custom.models.variants.add")}
+              {label()}
             </button>
+            <Show when={expanded()}>
+              <For each={props.m.variants}>
+                {(v, vi) => (
+                  <VariantRow
+                    v={v}
+                    vi={vi}
+                    error={props.errors.variants?.[vi()]}
+                    t={props.t}
+                    onChangeName={(val) => props.onChangeVariantName(vi(), val)}
+                    onChangeEnableThinking={(val) => props.onChangeEnableThinking(vi(), val)}
+                    onChangeThinking={(val) => props.onChangeThinking(vi(), val)}
+                    onChangeSplitReasoning={(val) => props.onChangeSplitReasoning(vi(), val)}
+                    onChangeReasoningEffort={(val) => props.onChangeReasoningEffort(vi(), val)}
+                    onChangeOutputEffort={(val) => props.onChangeOutputEffort(vi(), val)}
+                    onChangeChatTemplateArgs={(val) => props.onChangeChatTemplateArgs(vi(), val)}
+                    onRemove={() => props.onRemoveVariant(vi())}
+                  />
+                )}
+              </For>
+              <button
+                type="button"
+                onClick={props.onAddVariant}
+                style={{
+                  "align-self": "flex-start",
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--vscode-textLink-foreground)",
+                  cursor: "pointer",
+                  padding: "0",
+                  "font-size": "var(--kilo-font-size-13)",
+                }}
+              >
+                {props.t("provider.custom.models.variants.add")}
+              </button>
+            </Show>
           </div>
         </Show>
         <label

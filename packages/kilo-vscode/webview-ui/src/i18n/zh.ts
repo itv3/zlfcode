@@ -1258,7 +1258,7 @@ export const dict = {
   "settings.aboutKiloCode.title": "关于 Kilo Code",
 
   "session.messages.empty": "在下方输入消息以开始对话。",
-  "session.messages.welcome": "Kilo Code 是一个 AI 编程助手。让它帮你构建功能、修复 bug 或解释代码库。",
+  "session.messages.welcome": "ZLF Code 是一个 AI 编程助手。让它帮你构建功能、修复 bug 或解释代码库。",
   "session.messages.scrollToBottom": "滚动到底部",
   "session.messages.initializing": "初始化中...",
   "session.messages.taskStarting": "启动中...",

@@ -1,7 +1,7 @@
 import os from "os"
 import fuzzysort from "fuzzysort"
 import { Config } from "@/config/config"
-import { mapValues, mergeDeep, omit, pickBy, sortBy } from "remeda"
+import { mapValues, mergeDeep, sortBy } from "remeda"
 import { NoSuchModelError, type Provider as SDK } from "ai"
 import * as Log from "@opencode-ai/core/util/log"
 import { Npm } from "@opencode-ai/core/npm"
@@ -39,6 +39,7 @@ import {
   patchKiloProviderPrivacy,
   kiloSmallModelPriority,
   buildTimeoutSignal,
+  orderedVariants,
 } from "@/kilocode/provider/provider"
 import * as ModelsRefresh from "@/kilocode/provider/models-refresh"
 // kilocode_change end
@@ -46,6 +47,7 @@ import { ProviderError } from "./error"
 
 const log = Log.create({ service: "provider" })
 const OPENAI_HEADER_TIMEOUT_DEFAULT = 10_000
+
 function shouldUseCopilotResponsesApi(modelID: string): boolean {
   const match = /^gpt-(\d+)/.exec(modelID)
   if (!match) return false
@@ -1422,11 +1424,10 @@ export const layer = Layer.effect(
               // variants: {}, // kilocode_change, moved into patchKiloConfigModel
               ...patchKiloConfigModel(model, existingModel), // kilocode_change
             }
-            const merged = mergeDeep(ProviderTransform.variants(parsedModel), model.variants ?? {})
-            parsedModel.variants = mapValues(
-              pickBy(merged, (v): v is NonNullable<typeof v> => !!v && !v.disabled), // kilocode_change - drop null delete sentinels
-              (v) => omit(v, ["disabled"]),
-            )
+            parsedModel.variants = orderedVariants(
+              ProviderTransform.variants(parsedModel),
+              model.variants ?? {},
+            ) // kilocode_change - 保留配置中的 variants 顺序，供自定义默认值使用
             parsed.models[modelID] = parsedModel
           }
           database[providerID] = parsed
@@ -1579,11 +1580,10 @@ export const layer = Layer.effect(
 
             const configVariants = configProvider?.models?.[modelID]?.variants
             if (configVariants && model.variants) {
-              const merged = mergeDeep(model.variants, configVariants)
-              model.variants = mapValues(
-                pickBy(merged, (v): v is NonNullable<typeof v> => !!v && !v.disabled), // kilocode_change - drop null delete sentinels
-                (v) => omit(v, ["disabled"]),
-              )
+              model.variants = orderedVariants(
+                model.variants,
+                configVariants,
+              ) // kilocode_change - 保留配置中的 variants 顺序，供自定义默认值使用
             }
           }
 

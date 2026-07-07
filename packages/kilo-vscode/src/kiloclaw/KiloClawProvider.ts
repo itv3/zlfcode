@@ -131,8 +131,8 @@ export class KiloClawProvider implements vscode.Disposable {
     this.panel = panel
 
     panel.iconPath = {
-      light: vscode.Uri.joinPath(this.uri, "assets", "icons", "kilo-light.svg"),
-      dark: vscode.Uri.joinPath(this.uri, "assets", "icons", "kilo-dark.svg"),
+      light: vscode.Uri.joinPath(this.uri, "assets", "icons", "zlfcode-logo.svg"),
+      dark: vscode.Uri.joinPath(this.uri, "assets", "icons", "zlfcode-logo.svg"),
     }
 
     panel.webview.options = {

@@ -1,8 +1,8 @@
 {
   "name": "zlfcode",
   "displayName": "ZLF Code",
-  "description": "ZLF Code 是基于 Kilo Code 的非官方自定义版本，重点增强自定义提供商：支持 OpenAI / Anthropic / Gemini API 类型、模型自动发现、图像与推理能力、高级 token 参数和成本配置。",
-  "version": "7.4.103",
+  "description": "ZLF Code 是面向内部使用的 AI coding agent，重点增强自定义提供商：支持 OpenAI / Anthropic / Gemini API 类型、模型自动发现、图像与推理能力、高级 token 参数和成本配置。",
+  "version": "7.4.104",
   "icon": "assets/icons/zlfcode.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -82,8 +82,8 @@
         {
           "id": "kilo-code-ActivityBar",
           "title": "ZLF Code",
-          "icon": "assets/icons/zlfcode.png",
-          "darkIcon": "assets/icons/zlfcode.png"
+          "icon": "assets/icons/zlfcode-activity.svg",
+          "darkIcon": "assets/icons/zlfcode-activity.svg"
         }
       ]
     },
@@ -179,8 +179,8 @@
         "title": "Open in Tab",
         "category": "ZLF Code",
         "icon": {
-          "light": "assets/icons/kilo-light.svg",
-          "dark": "assets/icons/kilo-dark.svg"
+          "light": "assets/icons/zlfcode-logo.svg",
+          "dark": "assets/icons/zlfcode-logo.svg"
         }
       },
       {
@@ -352,8 +352,8 @@
         "title": "Generate Commit Message",
         "category": "ZLF Code",
         "icon": {
-          "light": "assets/icons/kilo-light.svg",
-          "dark": "assets/icons/kilo-dark.svg"
+          "light": "assets/icons/zlfcode-logo.svg",
+          "dark": "assets/icons/zlfcode-logo.svg"
         }
       },
       {
