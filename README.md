@@ -7,9 +7,9 @@ ZLF Code 是面向内部使用的 AI coding agent。本轮升级采用干净底�
 | 项 | 值 |
 |---|---|
 | 上游底座 | Kilo Code `v7.4.1` |
-| ZLF 自定义版本 | `v0.04` |
-| 发布批次 | `7.4.1-v0.04` |
-| 市场版本 | `7.4.104` |
+| ZLF 自定义版本 | `v0.05` |
+| 发布批次 | `7.4.1-v0.05` |
+| 市场版本 | `7.4.105` |
 | 扩展 ID | `itv3.zlfcode` |
 | `publisher` | `itv3` |
 | `name` | `zlfcode` |
@@ -18,7 +18,7 @@ ZLF Code 是面向内部使用的 AI coding agent。本轮升级采用干净底�
 | Open VSX | `https://open-vsx.org/extension/itv3/zlfcode` |
 | GitHub 仓库 | `https://github.com/itv3/zlfcode` |
 
-VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，所以市场页面显示 `7.4.104`。GitHub tag、GitHub Release 和 VSIX 文件名使用发布批次 `7.4.1-v0.04`。
+VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，所以市场页面显示 `7.4.105`。GitHub tag、GitHub Release 和 VSIX 文件名使用发布批次 `7.4.1-v0.05`。
 
 ## 维护原则
 
@@ -202,11 +202,11 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 标准发布目标平台：`darwin-arm64`、`darwin-x64`、`win32-x64`、`win32-arm64`、`linux-x64`、`linux-arm64`。
 
 ```bash
-git tag zlfcode-v7.4.1-v0.04
-git push origin zlfcode-v7.4.1-v0.04
+git tag zlfcode-v7.4.1-v0.05
+git push origin zlfcode-v7.4.1-v0.05
 ```
 
-发布前必须准备 `.github/release-notes/zlfcode-v7.4.1-v0.04.md`，并确认根 `package.json.version` 与 `packages/kilo-vscode/package.json.version` 都是 `7.4.104`。
+发布前必须准备 `.github/release-notes/zlfcode-v7.4.1-v0.05.md`，并确认根 `package.json.version` 与 `packages/kilo-vscode/package.json.version` 都是 `7.4.105`。
 
 发布前检查：
 
@@ -233,7 +233,7 @@ bun run prepare:cli-binary -- --force
 bun run rebuild-sdk
 bun run typecheck
 node esbuild.js --production
-./node_modules/.bin/vsce package --no-dependencies --skip-license --target darwin-arm64 -o out/zlfcode-7.4.1-v0.04-darwin-arm64.vsix
+./node_modules/.bin/vsce package --no-dependencies --skip-license --target darwin-arm64 -o out/zlfcode-7.4.1-v0.05-darwin-arm64.vsix
 ```
 
 安装到 Cursor 后验收：
@@ -241,7 +241,7 @@ node esbuild.js --production
 | 项 | 期望 |
 |---|---|
 | 扩展详情页 | 显示 `ZLF Code` 和中文 ZLF 说明。 |
-| 扩展版本 | 显示市场版本 `7.4.104`。 |
+| 扩展版本 | 显示市场版本 `7.4.105`。 |
 | 关于页面 | 版本信息不显示 `unknown`。 |
 | 自定义 provider | OpenAI / Anthropic / Gemini 模型发现、保存、请求头、图片能力、推理能力、默认推理强度、token limit、成本选项、默认参数匹配和候选模型预览正常。 |
 | 模型列表 | 只显示 Kilo Gateway 免费模型以及用户已添加或已连接 provider 的模型。 |

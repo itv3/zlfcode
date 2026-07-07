@@ -47,7 +47,7 @@ export interface FileMention {
   setMentionIndex: (index: number) => void
   closeMention: () => void
   parseFileAttachments: (text: string) => FileAttachment[]
-  /** Register paths as active mentions (used by drag-and-drop). Pass cwd to ensure buildFileAttachments resolves correctly. */
+  /** Register paths as active mentions (used by drag-and-drop). Pass cwd to preserve the active mention directory. */
   addPaths: (paths: string[], cwd: string) => void
   /**
    * Handle backspace for atomic mention removal. Returns true if the
@@ -99,8 +99,9 @@ export function useFileMention(
   const unsubscribe = vscode.onMessage((message) => {
     if (message.type !== "fileSearchResult") return
     if (message.requestId === `file-search-${fileSearchCounter}`) {
+      if (!message.dir && workspaceDir) return
       const items = message.items ?? message.paths.map((path) => ({ path, type: "file" as const }))
-      workspaceDir = message.dir
+      if (message.dir) workspaceDir = message.dir
       setMentionResults(buildMentionResults(mentionQuery() ?? "", items, git?.() ?? true))
       setMentionIndex(0)
     }
@@ -114,6 +115,7 @@ export function useFileMention(
   const requestFileSearch = (query: string) => {
     if (fileSearchTimer) clearTimeout(fileSearchTimer)
     fileSearchTimer = setTimeout(() => {
+      fileSearchTimer = undefined
       fileSearchCounter++
       const id = sessionID?.()
       vscode.postMessage({
@@ -125,7 +127,16 @@ export function useFileMention(
     }, FILE_SEARCH_DEBOUNCE_MS)
   }
 
+  const cancelFileSearch = () => {
+    if (fileSearchTimer) {
+      clearTimeout(fileSearchTimer)
+      fileSearchTimer = undefined
+    }
+    fileSearchCounter++
+  }
+
   const closeMention = () => {
+    if (mentionQuery() !== null || fileSearchTimer) cancelFileSearch()
     setMentionQuery(null)
     setMentionResults([])
   }
@@ -242,8 +253,7 @@ export function useFileMention(
     })
   }
 
-  const parseFileAttachments = (text: string): FileAttachment[] =>
-    buildFileAttachments(text, mentionedPaths(), workspaceDir)
+  const parseFileAttachments = (text: string): FileAttachment[] => buildFileAttachments(text, mentionedPaths())
 
   const handleBackspace = (
     e: KeyboardEvent,

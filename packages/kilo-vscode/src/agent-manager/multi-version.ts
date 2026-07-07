@@ -68,7 +68,7 @@ export interface InitialMessage {
   modelID?: string
   agent?: string
   variant?: string
-  files?: Array<{ mime: string; url: string }>
+  files?: Array<{ mime: string; url?: string; path?: string }>
 }
 
 /**
@@ -83,7 +83,7 @@ export function buildInitialMessages(
   prompt?: string,
   agent?: string,
   variant?: string,
-  files?: Array<{ mime: string; url: string }>,
+  files?: Array<{ mime: string; url?: string; path?: string }>,
 ): InitialMessage[] {
   return created.map((entry) => {
     const model = models[entry.versionIndex]

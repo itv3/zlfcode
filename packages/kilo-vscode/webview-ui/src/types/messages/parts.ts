@@ -109,7 +109,8 @@ export interface ContextUsage {
 
 export interface FileAttachment {
   mime: string
-  url: string
+  url?: string
+  path?: string
   filename?: string
   source?: FilePartSource
 }

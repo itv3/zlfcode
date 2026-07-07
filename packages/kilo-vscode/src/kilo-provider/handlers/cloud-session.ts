@@ -8,7 +8,7 @@
 import type { KiloClient, Session, TextPartInput, FilePartInput } from "@kilocode/sdk/v2/client"
 import type { CloudSessionData, EditorContext } from "../../services/cli-backend/types"
 import { getErrorMessage, sessionToWebview, mapCloudSessionMessageToWebviewMessage } from "../../kilo-provider-utils"
-import type { MessageFile } from "../message-files"
+import { resolveMessageFile, type MessageFile } from "../message-files"
 import { reviewMetadata, type ReviewMessageData } from "../../shared/review-comments"
 
 const TIMEOUT = 30_000
@@ -185,13 +185,7 @@ export async function handleImportAndSend(
       }
 
       if (command) {
-        const parts = files?.map((f) => ({
-          type: "file" as const,
-          mime: f.mime,
-          url: f.url,
-          filename: f.filename,
-          source: f.source,
-        }))
+        const parts = files?.map((f) => resolveMessageFile(f, dir))
         await client.session.command(
           {
             sessionID: session.id,
@@ -212,7 +206,7 @@ export async function handleImportAndSend(
       const parts: Array<TextPartInput | FilePartInput> = []
       if (files) {
         for (const f of files) {
-          parts.push({ type: "file", mime: f.mime, url: f.url, filename: f.filename, source: f.source })
+          parts.push(resolveMessageFile(f, dir))
         }
       }
       parts.push({ type: "text", text, metadata: review ? reviewMetadata(review) : undefined })

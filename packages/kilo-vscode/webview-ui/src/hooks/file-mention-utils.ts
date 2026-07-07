@@ -169,18 +169,18 @@ export function findMentionRange(
 /**
  * Build FileAttachment objects from currently mentioned paths in the text.
  */
-export function buildFileAttachments(
-  text: string,
-  mentionedPaths: Set<string>,
-  workspaceDir: string,
-): FileAttachment[] {
+export function buildFileAttachments(text: string, mentionedPaths: Set<string>): FileAttachment[] {
   const result: FileAttachment[] = []
-  const dir = workspaceDir.replaceAll("\\", "/")
   for (const path of mentionedPaths) {
     if (text.includes(`@${path}`)) {
-      const abs = path.startsWith("/") ? path : `${dir}/${path}`
+      const abs = path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path)
+      if (!abs) {
+        result.push({ mime: "text/plain", path })
+        continue
+      }
+      const target = path.replaceAll("\\", "/")
       const url = new URL("file://")
-      url.pathname = abs.startsWith("/") ? abs : `/${abs}`
+      url.pathname = target.startsWith("/") ? target : `/${target}`
       result.push({ mime: "text/plain", url: url.href })
     }
   }

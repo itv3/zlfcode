@@ -114,6 +114,85 @@ describe("useFileMention", () => {
     dispose.fn?.()
   })
 
+  it("ignores empty-dir search results after a valid directory is known", async () => {
+    const handlers = new Set<(message: ExtensionMessage) => void>()
+    const ctx = {
+      postMessage: () => {},
+      onMessage: (handler: (message: ExtensionMessage) => void) => {
+        handlers.add(handler)
+        return () => handlers.delete(handler)
+      },
+    }
+
+    const dispose: { fn?: () => void } = {}
+    const mention = createRoot((root) => {
+      dispose.fn = root
+      return useFileMention(ctx, undefined, () => false)
+    })
+
+    mention.onInput("@read", 5)
+    await wait(170)
+
+    for (const handler of handlers) {
+      handler({
+        type: "fileSearchResult",
+        requestId: "file-search-1",
+        dir: "/repo",
+        paths: ["README.md"],
+        items: [{ path: "README.md", type: "file" }],
+      })
+    }
+
+    for (const handler of handlers) {
+      handler({
+        type: "fileSearchResult",
+        requestId: "file-search-1",
+        dir: "",
+        paths: [],
+        items: [],
+      })
+    }
+
+    expect(mention.mentionResults()).toEqual([{ type: "file", value: "README.md" }])
+
+    dispose.fn?.()
+  })
+
+  it("ignores search results that arrive after the mention closes", async () => {
+    const handlers = new Set<(message: ExtensionMessage) => void>()
+    const ctx = {
+      postMessage: () => {},
+      onMessage: (handler: (message: ExtensionMessage) => void) => {
+        handlers.add(handler)
+        return () => handlers.delete(handler)
+      },
+    }
+
+    const dispose: { fn?: () => void } = {}
+    const mention = createRoot((root) => {
+      dispose.fn = root
+      return useFileMention(ctx, undefined, () => false)
+    })
+
+    mention.onInput("@read", 5)
+    await wait(170)
+    mention.closeMention()
+
+    for (const handler of handlers) {
+      handler({
+        type: "fileSearchResult",
+        requestId: "file-search-1",
+        dir: "/repo",
+        paths: ["README.md"],
+        items: [{ path: "README.md", type: "file" }],
+      })
+    }
+
+    expect(mention.mentionResults()).toEqual([])
+
+    dispose.fn?.()
+  })
+
   it("seedFromText populates knownPaths so mentions are recognized in pre-filled text", () => {
     const ctx = {
       postMessage: () => {},

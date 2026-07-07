@@ -858,7 +858,7 @@ export interface AgentManagerSendInitialMessage {
   modelID?: string
   agent?: string
   variant?: string
-  files?: Array<{ mime: string; url: string }>
+  files?: FileAttachment[]
 }
 
 // Enhance prompt result (extension → webview)

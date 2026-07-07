@@ -24,6 +24,7 @@ export type { TerminalFont }
 // ---------------------------------------------------------------------------
 
 type SessionMode = "worktree" | "local"
+type MessageFileIn = { mime: string; url?: string; path?: string; filename?: string; source?: FileSourceIn }
 
 export type ApplyDiffStatus = "checking" | "applying" | "success" | "conflict" | "error"
 
@@ -214,7 +215,7 @@ interface SendInitialMessage {
   modelID?: string
   agent?: string
   variant?: string
-  files?: Array<{ mime: string; url: string }>
+  files?: MessageFileIn[]
 }
 
 interface BranchesMessage {
@@ -435,7 +436,7 @@ interface CreateMultiVersionIn {
   modelID?: string
   agent?: string
   variant?: string
-  files?: Array<{ mime: string; url: string }>
+  files?: MessageFileIn[]
   baseBranch?: string
   branchName?: string
   modelAllocations?: Array<{ providerID: string; modelID: string; count: number }>
@@ -620,7 +621,7 @@ interface SendMessageIn {
   modelID?: string
   agent?: string
   variant?: string
-  files?: Array<{ mime: string; url: string; filename?: string; source?: FileSourceIn }>
+  files?: MessageFileIn[]
   agentManagerContext?: string
   contextDirectory?: string
 }
@@ -636,7 +637,7 @@ interface SendCommandIn {
   modelID?: string
   agent?: string
   variant?: string
-  files?: Array<{ mime: string; url: string; filename?: string; source?: FileSourceIn }>
+  files?: MessageFileIn[]
   agentManagerContext?: string
   contextDirectory?: string
 }

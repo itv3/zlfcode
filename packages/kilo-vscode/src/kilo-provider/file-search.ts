@@ -21,14 +21,14 @@ type Input = {
 }
 
 export async function handleFileSearch(input: Input): Promise<void> {
+  const id = input.message.sessionID ?? input.current ?? input.context
+  const dir = input.dir(id)
   const client = input.client
   if (!client) {
-    input.post({ type: "fileSearchResult", paths: [], items: [], dir: "", requestId: input.message.requestId })
+    input.post({ type: "fileSearchResult", paths: [], items: [], dir, requestId: input.message.requestId })
     return
   }
 
-  const id = input.message.sessionID ?? input.current ?? input.context
-  const dir = input.dir(id)
   const open = dir ? await input.open(dir) : new Set<string>()
 
   const query = input.message.query

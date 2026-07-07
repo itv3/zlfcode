@@ -2218,7 +2218,7 @@ export const SessionProvider: ParentComponent = (props) => {
         id: Identifier.ascending("part"),
         messageID,
         mime: file.mime,
-        url: file.url,
+        url: file.url ?? "",
         filename: file.filename,
         source: file.source,
       })

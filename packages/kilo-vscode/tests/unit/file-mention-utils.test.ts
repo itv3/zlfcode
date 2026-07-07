@@ -211,36 +211,37 @@ describe("buildTextAfterMentionSelect", () => {
 
 describe("buildFileAttachments", () => {
   it("returns empty array for empty paths set", () => {
-    expect(buildFileAttachments("hello @foo.ts", new Set(), "/workspace")).toEqual([])
+    expect(buildFileAttachments("hello @foo.ts", new Set())).toEqual([])
   })
 
-  it("returns attachment for mentioned path", () => {
+  it("returns a relative attachment path for mentioned workspace paths", () => {
     const paths = new Set(["src/foo.ts"])
-    const result = buildFileAttachments("check @src/foo.ts", paths, "/workspace")
+    const result = buildFileAttachments("check @src/foo.ts", paths)
     expect(result).toHaveLength(1)
     expect(result[0]!.mime).toBe("text/plain")
-    expect(result[0]!.url).toContain("file://")
-    expect(result[0]!.url).toContain("src/foo.ts")
+    expect(result[0]!.path).toBe("src/foo.ts")
+    expect(result[0]!.filename).toBeUndefined()
+    expect(result[0]!.url).toBeUndefined()
   })
 
   it("skips paths not in text", () => {
     const paths = new Set(["foo.ts", "bar.ts"])
-    const result = buildFileAttachments("only @foo.ts here", paths, "/workspace")
+    const result = buildFileAttachments("only @foo.ts here", paths)
     expect(result).toHaveLength(1)
-    expect(result[0]!.url).toContain("foo.ts")
+    expect(result[0]!.path).toBe("foo.ts")
   })
 
   it("handles absolute paths directly", () => {
     const paths = new Set(["/abs/path/file.ts"])
-    const result = buildFileAttachments("@/abs/path/file.ts", paths, "/workspace")
+    const result = buildFileAttachments("@/abs/path/file.ts", paths)
     expect(result).toHaveLength(1)
     expect(result[0]!.url).toContain("/abs/path/file.ts")
   })
 
-  it("normalizes Windows backslashes in workspaceDir", () => {
+  it("returns relative paths without requiring a workspace directory", () => {
     const paths = new Set(["foo.ts"])
-    const result = buildFileAttachments("@foo.ts", paths, "C:\\Users\\workspace")
-    expect(result[0]!.url).not.toContain("\\")
+    const result = buildFileAttachments("@foo.ts", paths)
+    expect(result[0]!.path).toBe("foo.ts")
   })
 })
 

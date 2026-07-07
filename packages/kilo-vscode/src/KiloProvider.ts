@@ -62,7 +62,7 @@ import { normalizeEnhancePromptErrorMessage } from "./enhance-prompt-error"
 import { retry } from "./services/cli-backend/retry"
 import { slimInfo, slimPart, slimParts } from "./kilo-provider/slim-metadata"
 import { handleSidebarWorktreeMessage } from "./kilo-provider/sidebar-worktree"
-import { parseMessageFiles, type MessageFile } from "./kilo-provider/message-files"
+import { parseMessageFiles, resolveMessageFile, type MessageFile } from "./kilo-provider/message-files"
 import { renameSession } from "./kilo-provider/rename-session"
 import { handleFileSearch } from "./kilo-provider/file-search"
 import { watchFontSizeConfig } from "./kilo-provider/font-size"
@@ -3195,7 +3195,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       const parts: Array<TextPartInput | FilePartInput> = []
       if (files) {
         for (const f of files) {
-          parts.push({ type: "file", mime: f.mime, url: f.url, filename: f.filename, source: f.source })
+          parts.push(resolveMessageFile(f, dir))
         }
       }
       parts.push({ type: "text", text, metadata: review ? reviewMetadata(review) : undefined })
@@ -3283,13 +3283,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         this.connectionService.recordMessageSessionId(messageID, sid)
       }
 
-      const parts = files?.map((f) => ({
-        type: "file" as const,
-        mime: f.mime,
-        url: f.url,
-        filename: f.filename,
-        source: f.source,
-      }))
+      const parts = files?.map((f) => resolveMessageFile(f, dir))
 
       await this.requirements.assertAgentRequirements(agent, dir)
       await this.checkpoints.get(sid)

@@ -509,12 +509,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }
     }
     const images = (failed.files ?? [])
-      .filter((file) => file.mime.startsWith("image/") && file.url.startsWith("data:"))
+      .filter((file) => file.mime.startsWith("image/") && file.url?.startsWith("data:"))
       .map((file) => ({
         id: crypto.randomUUID(),
         filename: file.filename ?? "image",
         mime: file.mime,
-        dataUrl: file.url,
+        dataUrl: file.url!,
       }))
     if (images.length === 0) return
     imageAttach.replace(images)
