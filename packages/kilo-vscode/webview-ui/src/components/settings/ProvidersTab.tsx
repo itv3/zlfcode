@@ -17,7 +17,7 @@ import type { Provider } from "../../types/messages"
 import CustomProviderDialog from "./CustomProviderDialog"
 import ProviderConnectDialog from "./ProviderConnectDialog"
 import ProviderSelectDialog from "./ProviderSelectDialog"
-import { CUSTOM_PROVIDER_ID, isPopularProvider, providerIcon, providerNoteKey, sortProviders } from "./provider-catalog"
+import { CUSTOM_PROVIDER_ID, providerIcon } from "./provider-catalog"
 import { disabledProviderOptions, providersWithKiloFallback, visibleConnectedIds } from "./provider-visibility"
 import { isCustomProviderPackage, KILO_PROVIDER_ID } from "../../../../src/shared/provider-model"
 import { createProviderAction } from "../../utils/provider-action"
@@ -46,18 +46,6 @@ const ProvidersTab: Component = () => {
       .filter((id) => id !== KILO_PROVIDER_ID)
       .map((id) => all[id])
       .filter((item): item is Provider => !!item)
-  })
-
-  const popularProviders = createMemo(() => {
-    const connected = new Set(provider.connected())
-    const disabled = new Set(config().disabled_providers ?? [])
-    const all = Object.values(provider.providers())
-    return sortProviders(
-      all.filter(
-        (item) =>
-          item.id !== KILO_PROVIDER_ID && isPopularProvider(item) && !connected.has(item.id) && !disabled.has(item.id),
-      ),
-    )
   })
 
   const disabledProviders = createMemo(() => config().disabled_providers ?? [])
@@ -286,62 +274,10 @@ const ProvidersTab: Component = () => {
         </Show>
       </Card>
 
-      {/* Popular providers */}
       <h4 style={{ "margin-top": "24px", "margin-bottom": "8px" }}>
-        {language.t("settings.providers.section.popular")}
+        {language.t("provider.custom.title")}
       </h4>
       <Card>
-        <For each={popularProviders()}>
-          {(item) => {
-            const noteKey = providerNoteKey(item)
-            return (
-              <div
-                style={{
-                  display: "flex",
-                  "flex-wrap": "wrap",
-                  "align-items": "center",
-                  "justify-content": "space-between",
-                  gap: "16px",
-                  "min-height": "56px",
-                  padding: "12px 0",
-                  "border-bottom": "1px solid var(--border-weak-base)",
-                }}
-              >
-                <div style={{ display: "flex", "flex-direction": "column", "min-width": 0 }}>
-                  <div style={{ display: "flex", "align-items": "center", gap: "12px" }}>
-                    <ProviderIcon id={providerIcon(item)} width={20} height={20} />
-                    <span
-                      style={{
-                        "font-size": "var(--kilo-font-size-14)",
-                        "font-weight": "500",
-                        color: "var(--vscode-foreground)",
-                      }}
-                    >
-                      {item.name}
-                    </span>
-                  </div>
-                  <Show when={noteKey}>
-                    {(key) => (
-                      <span
-                        style={{
-                          "font-size": "var(--kilo-font-size-12)",
-                          color: "var(--text-weak-base, var(--vscode-descriptionForeground))",
-                          "padding-left": "32px",
-                        }}
-                      >
-                        {language.t(key())}
-                      </span>
-                    )}
-                  </Show>
-                </div>
-                <Button size="large" variant="secondary" icon="plus-small" onClick={() => connectProvider(item)}>
-                  {language.t("common.connect")}
-                </Button>
-              </div>
-            )
-          }}
-        </For>
-
         {/* Custom provider entry */}
         <div
           style={{

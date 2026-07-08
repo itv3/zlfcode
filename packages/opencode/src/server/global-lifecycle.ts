@@ -1,7 +1,7 @@
 import { GlobalBus } from "@/bus/global"
 import { InstanceStore } from "@/project/instance-store"
 import * as Log from "@opencode-ai/core/util/log"
-import { Effect } from "effect"
+import { Duration, Effect } from "effect" // kilocode_change
 import { Event } from "./event"
 
 const log = Log.create({ service: "server" })
@@ -17,9 +17,10 @@ export const emitGlobalDisposed = Effect.sync(() =>
 )
 
 export const disposeAllInstancesAndEmitGlobalDisposed = Effect.fn("Server.disposeAllInstancesAndEmitGlobalDisposed")(
-  function* (options?: { swallowErrors?: boolean }) {
+  // kilocode_change start
+  function* (options?: { swallowErrors?: boolean; timeout?: Duration.Input }) {
     const store = yield* InstanceStore.Service
-    yield* Effect.gen(function* () {
+    const work = Effect.gen(function* () {
       yield* options?.swallowErrors
         ? store.disposeAll().pipe(
             Effect.catchCause((cause) =>
@@ -30,8 +31,19 @@ export const disposeAllInstancesAndEmitGlobalDisposed = Effect.fn("Server.dispos
           )
         : store.disposeAll()
       yield* emitGlobalDisposed
-    }).pipe(Effect.uninterruptible)
+    })
+    if (options?.timeout) {
+      yield* work.pipe(
+        Effect.timeoutOrElse({
+          duration: options.timeout,
+          orElse: () => Effect.sync(() => log.warn("global disposal timed out", { timeout: String(options.timeout) })),
+        }),
+      )
+      return
+    }
+    yield* work.pipe(Effect.uninterruptible)
   },
+  // kilocode_change end
 )
 
 export * as GlobalLifecycle from "./global-lifecycle"

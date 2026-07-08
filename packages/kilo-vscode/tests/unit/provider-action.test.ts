@@ -25,6 +25,10 @@ function createTransport() {
   }
 }
 
+function sentRequest(sent: WebviewMessage[], type: string) {
+  return sent.find((message) => message.type === type)
+}
+
 describe("createProviderAction", () => {
   it("routes terminal provider messages by request id", () => {
     const transport = createTransport()
@@ -42,7 +46,7 @@ describe("createProviderAction", () => {
       },
     )
 
-    const sent = transport.sent[0]
+    const sent = sentRequest(transport.sent, "connectProvider")
     expect(sent?.type).toBe("connectProvider")
     expect("requestId" in (sent ?? {}) ? sent.requestId : "").toBeString()
 
@@ -87,8 +91,8 @@ describe("createProviderAction", () => {
       },
     )
 
-    const oauth = transport.sent[0]
-    const disconnect = transport.sent[1]
+    const oauth = sentRequest(transport.sent, "authorizeProviderOAuth")
+    const disconnect = sentRequest(transport.sent, "disconnectProvider")
     const oauthId = "requestId" in (oauth ?? {}) ? oauth.requestId : ""
     const disconnectId = "requestId" in (disconnect ?? {}) ? disconnect.requestId : ""
 
@@ -138,6 +142,67 @@ describe("createProviderAction", () => {
     })
 
     expect(seen).toEqual([])
+    action.dispose()
+  })
+
+  it("reports a timeout when the extension never answers", async () => {
+    const transport = createTransport()
+    const action = createProviderAction(transport, { timeoutMs: 5 })
+    const seen: string[] = []
+
+    action.send(
+      {
+        type: "saveCustomProvider",
+        providerID: "myprovider",
+        config: {
+          name: "My Provider",
+          options: { baseURL: "https://example.com/v1" },
+          models: { "model-1": { name: "Model One" } },
+        },
+      },
+      {
+        onError: (message) => seen.push(`${message.action}:${message.providerID}:${message.message}`),
+      },
+    )
+
+    await Bun.sleep(20)
+
+    expect(seen).toEqual(["connect:myprovider:Provider action timed out."])
+    action.dispose()
+  })
+
+  it("reports provider request post failures immediately", () => {
+    const sent: WebviewMessage[] = []
+    const transport = {
+      sent,
+      postMessage(message: WebviewMessage) {
+        if (message.type === "saveCustomProvider") throw new Error("post failed")
+        sent.push(message)
+      },
+      onMessage() {
+        return () => {}
+      },
+    }
+    const action = createProviderAction(transport)
+    const seen: string[] = []
+
+    action.send(
+      {
+        type: "saveCustomProvider",
+        providerID: "myprovider",
+        config: {
+          name: "My Provider",
+          options: { baseURL: "https://example.com/v1" },
+          models: { "model-1": { name: "Model One" } },
+        },
+      },
+      {
+        onError: (message) => seen.push(`${message.action}:${message.providerID}:${message.message}`),
+      },
+    )
+
+    expect(seen).toEqual(["connect:myprovider:post failed"])
+    expect(sent).toEqual([])
     action.dispose()
   })
 })

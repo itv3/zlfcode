@@ -12,7 +12,7 @@ type ExistingGlobal = { disabled_providers?: string[]; provider?: Record<string,
 function createCtx(
   existing: ExistingGlobal = { disabled_providers: [] },
   merged: ExistingGlobal = existing,
-  opts: { failGlobalUpdateAt?: number } = {},
+  opts: { failGlobalUpdateAt?: number; hangDispose?: boolean; hangConfigGet?: boolean } = {},
 ) {
   const calls = {
     set: [] as Array<{ providerID: string; auth: { type: string; key: string; metadata?: Record<string, string> } }>,
@@ -23,6 +23,7 @@ function createCtx(
     cached: [] as unknown[],
     refresh: 0,
     dispose: 0,
+    mergedGet: 0,
   }
 
   const ctx = {
@@ -72,7 +73,11 @@ function createCtx(
         },
       },
       config: {
-        get: async () => ({ data: merged }),
+        get: async () => {
+          calls.mergedGet += 1
+          if (opts.hangConfigGet) await new Promise(() => {})
+          return { data: merged }
+        },
         update: async (input: { config: Record<string, unknown> }) => {
           calls.project.push(input)
           return { data: input }
@@ -84,6 +89,7 @@ function createCtx(
     workspaceDir: "/tmp",
     disposeGlobal: async () => {
       calls.dispose += 1
+      if (opts.hangDispose) await new Promise(() => {})
     },
     fetchAndSendProviders: async () => {
       calls.refresh += 1
@@ -112,6 +118,10 @@ function createSavedProvider() {
     npm: "@ai-sdk/openai-compatible",
     ...createProvider(),
   }
+}
+
+async function flush() {
+  await Bun.sleep(0)
 }
 
 describe("disconnectProvider", () => {
@@ -187,6 +197,7 @@ describe("saveCustomProvider", () => {
     const { ctx, calls, setCachedConfig } = createCtx()
 
     await saveCustomProvider(ctx, "req", "myprovider", createProvider(), undefined, false, null, setCachedConfig)
+    await flush()
 
     expect(calls.set).toHaveLength(0)
     expect(calls.remove).toHaveLength(0)
@@ -432,6 +443,41 @@ describe("saveCustomProvider", () => {
 
     expect(calls.config).toHaveLength(1)
     expect(calls.config[0].config.disabled_providers).toEqual(["openai"])
+  })
+
+  it("confirms custom provider saves before refresh completes", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx({ disabled_providers: [] }, { disabled_providers: [] }, { hangDispose: true })
+
+    const result = await Promise.race([
+      saveCustomProvider(ctx, "req", "myprovider", createProvider(), undefined, false, null, setCachedConfig).then(
+        () => "done",
+      ),
+      Bun.sleep(50).then(() => "timeout"),
+    ])
+
+    expect(result).toBe("done")
+    expect(calls.dispose).toBe(1)
+    expect(calls.refresh).toBe(0)
+    expect(calls.posts).toContainEqual({ type: "providerConnected", requestId: "req", providerID: "myprovider" })
+  })
+
+  it("confirms custom provider saves before merged config refresh completes", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx(
+      { disabled_providers: [] },
+      { disabled_providers: [] },
+      { hangConfigGet: true },
+    )
+
+    const result = await Promise.race([
+      saveCustomProvider(ctx, "req", "myprovider", createProvider(), undefined, false, null, setCachedConfig).then(
+        () => "done",
+      ),
+      Bun.sleep(50).then(() => "timeout"),
+    ])
+
+    expect(result).toBe("done")
+    expect(calls.mergedGet).toBe(1)
+    expect(calls.posts).toContainEqual({ type: "providerConnected", requestId: "req", providerID: "myprovider" })
   })
 })
 

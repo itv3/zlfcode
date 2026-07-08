@@ -809,6 +809,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
         />
       }
       transition
+      fit
     >
       <div
         style={{
@@ -817,7 +818,8 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
           gap: "24px",
           padding: "0 10px 12px 10px",
           "overflow-y": "auto",
-          "max-height": "60vh",
+          height: "min(calc(90vh - 72px), calc(100vh - 120px))",
+          "max-height": "min(calc(90vh - 72px), calc(100vh - 120px))",
         }}
       >
         <div style={{ padding: "0 10px", display: "flex", gap: "16px", "align-items": "center" }}>

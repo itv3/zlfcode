@@ -685,6 +685,11 @@ export class KiloConnectionService {
       }
       const healthy = await this.checkHealth(baseUrl, password)
       if (!healthy && this.state === "connected") {
+        if (this.serverManager.forgetSharedServer()) {
+          console.warn("[Kilo New] ConnectionService: shared CLI backend is unavailable; reconnecting")
+          this.reconnectSharedServer()
+          return
+        }
         console.warn("[Kilo New] ConnectionService: ❤️‍🩹 Health check failed — forcing SSE reconnect")
         this.sseClient?.reconnect()
       }
@@ -714,6 +719,18 @@ export class KiloConnectionService {
     } catch {
       return false
     }
+  }
+
+  private reconnectSharedServer(): void {
+    const root = this.currentDirectory ?? this.rootDirectory ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    this.resetConnection()
+    if (!root) {
+      this.setState("error", new Error("Shared CLI backend disconnected and no workspace folder is available."))
+      return
+    }
+    void this.connect(root).catch((error) => {
+      this.setState("error", error instanceof Error ? error : new Error(String(error)))
+    })
   }
 
   private resetConnection(): void {

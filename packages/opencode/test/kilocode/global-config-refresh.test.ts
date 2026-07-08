@@ -30,6 +30,15 @@ async function provider(target: ReturnType<typeof app>, directory: string) {
   return (await response.json()).indexing?.provider as string | undefined
 }
 
+async function waitProvider(target: ReturnType<typeof app>, directory: string, expected: string) {
+  const end = Date.now() + 1_000
+  while (Date.now() < end) {
+    if ((await provider(target, directory)) === expected) return expected
+    await Bun.sleep(20)
+  }
+  return provider(target, directory)
+}
+
 async function config(dir: string, value: object) {
   await Bun.write(path.join(dir, "kilo.json"), JSON.stringify(value))
 }
@@ -51,7 +60,7 @@ afterEach(async () => {
 })
 
 describe("global config refresh", () => {
-  test("update reloads existing instance before responding", async () => {
+  test("update responds before background disposal completes", async () => {
     await using config = await tmpdir()
     await using workspace = await tmpdir({ config: { formatter: false, lsp: false } })
     ;(Global.Path as { config: string }).config = config.path
@@ -70,12 +79,11 @@ describe("global config refresh", () => {
     })
     try {
       const pending = update(target, "kilo")
-      await started.promise
-      const early = await Promise.race([pending.then(() => true), Bun.sleep(10).then(() => false)])
-      expect(early).toBe(false)
-      release.resolve()
       expect((await pending).status).toBe(200)
-      expect(await provider(target, workspace.path)).toBe("kilo")
+      const began = await Promise.race([started.promise.then(() => true), Bun.sleep(1_000).then(() => false)])
+      expect(began).toBe(true)
+      release.resolve()
+      expect(await waitProvider(target, workspace.path, "kilo")).toBe("kilo")
     } finally {
       release.resolve()
       unregister()

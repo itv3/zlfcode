@@ -97,8 +97,12 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       const result = yield* config.updateGlobal(ctx.payload)
       // kilocode_change start
       if (result.changed) {
-        yield* bridge.run(
-          disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }).pipe(Effect.catchCause(() => Effect.void)),
+        yield* Effect.sync(() =>
+          bridge.fork(
+            disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true, timeout: "5 seconds" }).pipe(
+              Effect.catchCause((cause) => Effect.sync(() => log.warn("global config disposal failed", { cause }))),
+            ),
+          ),
         )
       }
       // kilocode_change end

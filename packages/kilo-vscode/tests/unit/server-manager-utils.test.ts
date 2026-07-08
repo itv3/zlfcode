@@ -1,6 +1,8 @@
 import { describe, it, expect } from "bun:test"
 import { parseServerPort } from "../../src/services/cli-backend/server-utils"
 import {
+  ServerManager,
+  type ServerInstance,
   resolveServerCwd,
   resolveIndexingEnv,
   resolveManagedServerEnv,
@@ -18,6 +20,14 @@ import {
 import * as fs from "fs/promises"
 import * as os from "os"
 import * as path from "path"
+import type { ChildProcess } from "child_process"
+
+type TestableServerManager = ServerManager & {
+  getCliPath: () => string
+  startServer: () => Promise<ServerInstance>
+  isProcessAlive: (pid: number) => boolean
+  isSharedHealthy: () => Promise<boolean>
+}
 
 describe("parseServerPort", () => {
   it("parses port from standard CLI startup message", () => {
@@ -277,5 +287,44 @@ describe("server workspace helpers", () => {
       PATH: "/usr/bin",
       KILO_DISABLE_CHANNEL_DB: "true",
     })
+  })
+})
+
+describe("ServerManager shared startup", () => {
+  it("starts one backend when multiple managers cold-start concurrently", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-vscode-shared-server-"))
+    const context = {
+      globalStorageUri: { fsPath: root },
+      extensionPath: root,
+      extension: { packageJSON: { version: "test" } },
+    } as unknown as ConstructorParameters<typeof ServerManager>[0]
+    let starts = 0
+
+    const make = () => {
+      const manager = new ServerManager(context) as unknown as TestableServerManager
+      manager.getCliPath = () => "/tmp/kilo"
+      manager.isProcessAlive = () => true
+      manager.isSharedHealthy = async () => true
+      manager.startServer = async () => {
+        starts += 1
+        await Bun.sleep(25)
+        return {
+          port: 40123,
+          password: "secret",
+          process: { pid: 123 } as unknown as ChildProcess,
+        }
+      }
+      return manager
+    }
+
+    try {
+      const servers = await Promise.all(Array.from({ length: 5 }, () => make().getServer()))
+
+      expect(starts).toBe(1)
+      expect(servers.every((server) => server.port === 40123 && server.password === "secret")).toBe(true)
+      expect(servers.filter((server) => server.shared).length).toBe(4)
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
   })
 })

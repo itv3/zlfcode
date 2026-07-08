@@ -38,47 +38,120 @@ type Handlers = {
   onError?: (message: ProviderActionErrorMessage) => void
 }
 
-export function createProviderAction(vscode: Transport) {
-  const pending = new Map<string, Handlers>()
+type Pending = {
+  handlers: Handlers
+  timer: ReturnType<typeof setTimeout>
+}
+
+type Options = {
+  timeoutMs?: number
+}
+
+const DEFAULT_TIMEOUT_MS = 30_000
+
+function action(message: ProviderRequestInput): ProviderActionErrorMessage["action"] {
+  if (message.type === "disconnectProvider") return "disconnect"
+  if (message.type === "authorizeProviderOAuth") return "authorize"
+  return "connect"
+}
+
+function encode(message: ProviderRequest) {
+  try {
+    const text = JSON.stringify(message)
+    if (!text) return { error: "Provider request could not be serialized." }
+    return {
+      payload: JSON.parse(text) as ProviderRequest,
+      size: text.length,
+    }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+export function createProviderAction(vscode: Transport, opts: Options = {}) {
+  const timeout = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const pending = new Map<string, Pending>()
   const unsubscribe = vscode.onMessage((message) => {
     if (!("requestId" in message)) return
 
     const item = pending.get(message.requestId)
     if (!item) return
+    clearTimeout(item.timer)
     pending.delete(message.requestId)
 
     if (message.type === "providerOAuthReady") {
-      item.onOAuthReady?.(message)
+      item.handlers.onOAuthReady?.(message)
       return
     }
 
     if (message.type === "providerConnected") {
-      item.onConnected?.(message)
+      item.handlers.onConnected?.(message)
       return
     }
 
     if (message.type === "providerDisconnected") {
-      item.onDisconnected?.(message)
+      item.handlers.onDisconnected?.(message)
       return
     }
 
     if (message.type === "providerActionError") {
-      item.onError?.(message)
+      item.handlers.onError?.(message)
     }
   })
 
   function send(message: ProviderRequestInput, handlers: Handlers = {}) {
     const requestId = crypto.randomUUID()
-    pending.set(requestId, handlers)
-    vscode.postMessage({ ...message, requestId } as ProviderRequest)
+    const timer = setTimeout(() => {
+      const item = pending.get(requestId)
+      if (!item) return
+      pending.delete(requestId)
+      item.handlers.onError?.({
+        type: "providerActionError",
+        requestId,
+        providerID: message.providerID,
+        action: action(message),
+        message: "Provider action timed out.",
+      })
+    }, timeout)
+    pending.set(requestId, { handlers, timer })
+    const encoded = encode({ ...message, requestId } as ProviderRequest)
+    if (!encoded.payload) {
+      clearTimeout(timer)
+      pending.delete(requestId)
+      handlers.onError?.({
+        type: "providerActionError",
+        requestId,
+        providerID: message.providerID,
+        action: action(message),
+        message: encoded.error ?? "Provider request could not be serialized.",
+      })
+      return requestId
+    }
+    try {
+      vscode.postMessage(encoded.payload)
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      clearTimeout(timer)
+      pending.delete(requestId)
+      handlers.onError?.({
+        type: "providerActionError",
+        requestId,
+        providerID: message.providerID,
+        action: action(message),
+        message: error,
+      })
+    }
     return requestId
   }
 
   function clear(requestId?: string) {
     if (requestId) {
+      const item = pending.get(requestId)
+      if (item) clearTimeout(item.timer)
       pending.delete(requestId)
       return
     }
+    for (const item of pending.values()) clearTimeout(item.timer)
     pending.clear()
   }
 

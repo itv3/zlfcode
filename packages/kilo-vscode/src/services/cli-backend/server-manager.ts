@@ -11,13 +11,25 @@ import { parseServerPort } from "./server-utils"
 export interface ServerInstance {
   port: number
   password: string
-  process: ChildProcess
+  process?: ChildProcess
+  pid?: number
+  shared?: boolean
 }
 
 const STARTUP_TIMEOUT_SECONDS = 30
+const LOCK_STALE_MS = 90_000
+const LOCK_WAIT_MS = 250
+const HEALTH_TIMEOUT_MS = 1_500
 
 type WorkspaceFolderLike = { uri: { fsPath: string } }
 type ServerExitListener = (code: number | null) => void
+type SharedState = {
+  pid: number
+  port: number
+  password: string
+  cliPath: string
+  version: string
+}
 
 export function resolveServerCwd(folders: readonly WorkspaceFolderLike[] | undefined, storage: string): string {
   return folders?.[0]?.uri.fsPath ?? storage
@@ -57,7 +69,13 @@ export class ServerManager {
     }
 
     console.log("[Kilo New] ServerManager: 🚀 Starting new server instance...")
-    this.startupPromise = this.startServer()
+    this.startupPromise = this.withStartupLock(async () => {
+      const shared = await this.getSharedServer()
+      if (shared) return shared
+      const server = await this.startServer()
+      this.writeSharedState(server)
+      return server
+    })
     try {
       this.instance = await this.startupPromise
       console.log("[Kilo New] ServerManager: ✅ Server started successfully:", { port: this.instance.port })
@@ -184,6 +202,7 @@ export class ServerManager {
         console.log("[Kilo New] ServerManager: 🛑 Process exited with code:", code)
         if (this.instance?.process === serverProcess) {
           this.instance = null
+          this.clearSharedState(serverProcess.pid)
           this.onExit?.(code)
         }
         if (!resolved) {
@@ -209,6 +228,140 @@ export class ServerManager {
         }
       }, STARTUP_TIMEOUT_SECONDS * 1000)
     })
+  }
+
+  private async withStartupLock<T>(fn: () => Promise<T>): Promise<T> {
+    const root = this.context.globalStorageUri.fsPath
+    const lock = this.lockDir()
+    const started = Date.now()
+    fs.mkdirSync(root, { recursive: true })
+
+    while (true) {
+      const acquired = this.tryLock(lock)
+      if (acquired) {
+        try {
+          return await fn()
+        } finally {
+          fs.rmSync(lock, { recursive: true, force: true })
+        }
+      }
+      if (this.isLockStale(lock)) {
+        console.warn("[Kilo New] ServerManager: removing stale startup lock:", lock)
+        fs.rmSync(lock, { recursive: true, force: true })
+        continue
+      }
+      if (Date.now() - started > LOCK_STALE_MS + STARTUP_TIMEOUT_SECONDS * 1000) {
+        throw new Error("Timed out waiting for another Kilo backend startup to finish")
+      }
+      await sleep(LOCK_WAIT_MS)
+    }
+  }
+
+  private tryLock(lock: string): boolean {
+    try {
+      fs.mkdirSync(lock)
+      fs.writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ pid: process.pid, time: Date.now() }))
+      return true
+    } catch (error) {
+      if (isExistsError(error)) {
+        return false
+      }
+      throw error
+    }
+  }
+
+  private async getSharedServer(): Promise<ServerInstance | null> {
+    const state = this.readSharedState()
+    if (!state) return null
+    if (state.cliPath !== this.getCliPath()) return null
+    if (state.version !== this.context.extension.packageJSON.version) return null
+    if (!this.isProcessAlive(state.pid)) {
+      this.clearSharedState(state.pid)
+      return null
+    }
+    if (!(await this.isSharedHealthy(state))) {
+      this.clearSharedState(state.pid)
+      return null
+    }
+    console.log("[Kilo New] ServerManager: Reusing shared CLI backend:", { pid: state.pid, port: state.port })
+    return { port: state.port, password: state.password, pid: state.pid, shared: true }
+  }
+
+  private readSharedState(): SharedState | null {
+    try {
+      const data = JSON.parse(fs.readFileSync(this.statePath(), "utf8")) as Partial<SharedState>
+      if (
+        typeof data.pid !== "number" ||
+        typeof data.port !== "number" ||
+        typeof data.password !== "string" ||
+        typeof data.cliPath !== "string" ||
+        typeof data.version !== "string"
+      ) {
+        return null
+      }
+      return data as SharedState
+    } catch {
+      return null
+    }
+  }
+
+  private writeSharedState(server: ServerInstance): void {
+    if (!server.process?.pid) return
+    const state: SharedState = {
+      pid: server.process.pid,
+      port: server.port,
+      password: server.password,
+      cliPath: this.getCliPath(),
+      version: this.context.extension.packageJSON.version,
+    }
+    fs.writeFileSync(this.statePath(), JSON.stringify(state), { mode: 0o600 })
+  }
+
+  private clearSharedState(pid?: number): void {
+    const state = this.readSharedState()
+    if (pid !== undefined && state?.pid !== pid) return
+    fs.rmSync(this.statePath(), { force: true })
+  }
+
+  private async isSharedHealthy(state: SharedState): Promise<boolean> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS)
+    try {
+      const res = await fetch(`http://127.0.0.1:${state.port}/global/health`, {
+        headers: { Authorization: `Basic ${Buffer.from(`kilo:${state.password}`).toString("base64")}` },
+        signal: controller.signal,
+      })
+      return res.ok
+    } catch {
+      return false
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  private isProcessAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private isLockStale(lock: string): boolean {
+    try {
+      return Date.now() - fs.statSync(lock).mtimeMs > LOCK_STALE_MS
+    } catch {
+      return true
+    }
+  }
+
+  private lockDir(): string {
+    return path.join(this.context.globalStorageUri.fsPath, "server-start.lock")
+  }
+
+  private statePath(): string {
+    return path.join(this.context.globalStorageUri.fsPath, "server-start.json")
   }
 
   private getCliPath(): string {
@@ -246,6 +399,10 @@ export class ServerManager {
     }
     const proc = this.instance.process
     this.instance = null
+    if (!proc) {
+      return
+    }
+    this.clearSharedState(proc.pid)
 
     console.log("[Kilo New] ServerManager: 🔴 Disposing — sending SIGTERM to process group, PID:", proc.pid)
     ServerManager.killProcess(proc, "SIGTERM")
@@ -262,6 +419,14 @@ export class ServerManager {
     timer.unref()
     proc.on("exit", () => clearTimeout(timer))
   }
+
+  forgetSharedServer(): boolean {
+    if (!this.instance?.shared) return false
+    const pid = this.instance.pid
+    this.instance = null
+    this.clearSharedState(pid)
+    return true
+  }
 }
 
 export class ServerStartupError extends Error {
@@ -273,6 +438,15 @@ export class ServerStartupError extends Error {
     this.userMessage = userMessage
     this.userDetails = userDetails
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isExistsError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false
+  return (error as { code?: unknown }).code === "EEXIST"
 }
 
 function stripAnsi(str: string): string {

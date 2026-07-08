@@ -502,6 +502,12 @@ export async function saveCustomProvider(
     await ctx.disposeGlobal(`custom provider save (${id})`)
     await ctx.fetchAndSendProviders()
   }
+  const refreshLater = () => {
+    void refresh().catch(() => undefined)
+  }
+  const refreshConfigLater = () => {
+    void refreshConfig(ctx, setCachedConfig).catch(() => undefined)
+  }
 
   try {
     const globalConfig = (await ctx.client.global.config.get({ throwOnError: true })).data ?? {}
@@ -520,9 +526,9 @@ export async function saveCustomProvider(
       )
     }
     const patch = withCustomProviderDeletions(existing, sanitized.value)
-    const updated = await (async () => {
+    await (async () => {
       try {
-        const result = await ctx.client.global.config.update(
+        await ctx.client.global.config.update(
           {
             config: {
               provider: { [id]: patch },
@@ -531,7 +537,6 @@ export async function saveCustomProvider(
           },
           { throwOnError: true },
         )
-        return result.data
       } catch (error) {
         if (reset && existing) {
           await ctx.client.global.config
@@ -549,12 +554,6 @@ export async function saveCustomProvider(
       }
     })()
 
-    const merged = await ctx.client.config.get({ directory: ctx.workspaceDir }, { throwOnError: true })
-    const config = merged.data ?? updated
-    const msg = { type: "configLoaded", config, globalConfig: updated, features: configFeatures(config) }
-    setCachedConfig(msg)
-    ctx.postMessage({ type: "configUpdated", config, globalConfig: updated, features: configFeatures(config) })
-
     const auth = resolveCustomProviderAuth(apiKey, apiKeyChanged)
 
     try {
@@ -565,13 +564,15 @@ export async function saveCustomProvider(
         await ctx.client.auth.remove({ providerID: id }, { throwOnError: true })
       }
     } catch (error) {
-      await refresh()
+      refreshLater()
+      refreshConfigLater()
       postError(ctx, requestId, providerID, "connect", ctx.getErrorMessage(error) || "Failed to save custom provider")
       return
     }
 
-    await refresh()
     ctx.postMessage({ type: "providerConnected", requestId, providerID: id })
+    refreshConfigLater()
+    refreshLater()
   } catch (error) {
     postError(ctx, requestId, providerID, "connect", ctx.getErrorMessage(error) || "Failed to save custom provider")
   }

@@ -2148,13 +2148,33 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const rid = typeof msg.requestId === "string" ? msg.requestId : ""
     const pid = typeof msg.providerID === "string" ? msg.providerID : ""
     if (!rid || !pid) return
-    if (!this.client) {
-      const action =
-        msg.type === "disconnectProvider"
-          ? "disconnect"
-          : msg.type === "authorizeProviderOAuth"
-            ? "authorize"
-            : "connect"
+    const action =
+      msg.type === "disconnectProvider"
+        ? "disconnect"
+        : msg.type === "authorizeProviderOAuth"
+          ? "authorize"
+          : "connect"
+    let client = this.client
+    if (!client) {
+      try {
+        client = await this.connectionService.getClientAsync(this.getWorkspaceDirectory())
+        this.connectionState = this.connectionService.getConnectionState()
+        this.postConnectionState()
+        void this.initializeConnection().catch((error) =>
+          console.error("[Kilo New] KiloProvider: ❌ Background provider action initialization failed:", error),
+        )
+      } catch (error) {
+        this.postMessage({
+          type: "providerActionError",
+          requestId: rid,
+          providerID: pid,
+          action,
+          message: getErrorMessage(error) || "Not connected to CLI backend",
+        })
+        return
+      }
+    }
+    if (!client) {
       this.postMessage({
         type: "providerActionError",
         requestId: rid,
@@ -2165,7 +2185,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       return
     }
     const ctx = buildActionContext(
-      this.client,
+      client,
       (m) => this.postMessage(m),
       getErrorMessage,
       this.getWorkspaceDirectory(),
@@ -2183,12 +2203,24 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const config = msg.config && typeof msg.config === "object" ? (msg.config as Record<string, unknown>) : undefined
     const metadata =
       msg.metadata && typeof msg.metadata === "object" ? (msg.metadata as Record<string, unknown>) : undefined
-    if (msg.type === "connectProvider" && key) return connectProviderAction(ctx, rid, pid, key, metadata)
-    if (msg.type === "authorizeProviderOAuth") return authorizeOAuthAction(ctx, rid, pid, method)
-    if (msg.type === "completeProviderOAuth") return completeOAuthAction(ctx, rid, pid, method, code)
-    if (msg.type === "disconnectProvider") return disconnectProviderAction(ctx, rid, pid, this.cachedConfigMessage, set)
+    if (msg.type === "connectProvider" && key) {
+      await connectProviderAction(ctx, rid, pid, key, metadata)
+      return
+    }
+    if (msg.type === "authorizeProviderOAuth") {
+      await authorizeOAuthAction(ctx, rid, pid, method)
+      return
+    }
+    if (msg.type === "completeProviderOAuth") {
+      await completeOAuthAction(ctx, rid, pid, method, code)
+      return
+    }
+    if (msg.type === "disconnectProvider") {
+      await disconnectProviderAction(ctx, rid, pid, this.cachedConfigMessage, set)
+      return
+    }
     if (msg.type === "saveCustomProvider" && config)
-      return saveCustomProviderAction(ctx, rid, pid, config, key, keyChanged, this.cachedConfigMessage, set)
+      await saveCustomProviderAction(ctx, rid, pid, config, key, keyChanged, this.cachedConfigMessage, set)
   }
 
   private favoritesSeeded(): boolean {
