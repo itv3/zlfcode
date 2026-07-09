@@ -1489,6 +1489,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
       // Connect the shared service (no-op if already connected)
       await this.connectionService.connect(workspaceDir)
+      this.connectionState = this.connectionService.getConnectionState()
       this.flushPendingKiloModel()
 
       // Subscribe to SSE events for this webview (filtered by tracked sessions)
@@ -1585,8 +1586,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       })
 
       // 其他 webview 保存/断开 provider 后,当前实例需要重新拉取 providersLoaded。
-      this.unsubscribeProvidersChange = this.connectionService.onProvidersChanged((source) => {
+      this.unsubscribeProvidersChange = this.connectionService.onProvidersChanged((source, message) => {
         if (source === this.instanceId) return
+        if (message && typeof message === "object" && "type" in message) this.postMessage(message)
         if (this.connectionState !== "connected") return
         void this.fetchAndSendProviders().catch((error) =>
           console.error("[Kilo New] fetchAndSendProviders after provider broadcast failed:", error),
@@ -2195,8 +2197,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         : msg.type === "authorizeProviderOAuth"
           ? "authorize"
           : "connect"
+    const state = this.connectionService.getConnectionState()
+    if (this.connectionState !== state) {
+      this.connectionState = state
+      this.postConnectionState()
+    }
     let client = this.client
-    if (!client) {
+    if (!client || state !== "connected") {
       try {
         client = await this.connectionService.getClientAsync(this.getWorkspaceDirectory())
         this.connectionState = this.connectionService.getConnectionState()
@@ -2231,7 +2238,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       getErrorMessage,
       this.getWorkspaceDirectory(),
       () => this.fetchAndSendProviders(),
-      () => this.connectionService.notifyProvidersChanged(this.instanceId),
+      (message) => this.connectionService.notifyProvidersChanged(this.instanceId, message),
     )
     const set = (m: unknown) => {
       this.cachedConfigMessage = m

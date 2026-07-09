@@ -1,5 +1,14 @@
 # kilo-code
 
+## 7.4.109
+
+### ZLF 更新
+
+- 发布批次：`7.4.1-v0.09`，继续基于上游 `7.4.1`。
+- 修复 Remote-SSH 下自定义提供商添加、模型发现、保存、删除和聊天模型选择状态可能不同步的问题。
+- 降低 provider catalog 大 payload 对远端 webview / extension host 的影响，保存和删除自定义提供商后改为轻量刷新。
+- 调整 CLI 后端健康检查、共享后端复用和 provider auth 刷新链路，避免保存 provider 时反复销毁后端实例。
+
 ## 7.4.107
 
 ### ZLF 更新

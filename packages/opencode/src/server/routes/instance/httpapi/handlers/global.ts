@@ -1,6 +1,5 @@
 import { Config } from "@/config/config"
 import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
-import { EffectBridge } from "@/effect/bridge"
 import { Bus } from "@/bus"
 import { Installation } from "@/installation"
 import { disconnect } from "@/kilocode/server/sse" // kilocode_change
@@ -78,7 +77,6 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
   Effect.gen(function* () {
     const config = yield* Config.Service
     const installation = yield* Installation.Service
-    const bridge = yield* EffectBridge.make()
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
       return { healthy: true as const, version: InstallationVersion }
@@ -95,24 +93,17 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
 
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
       const result = yield* config.updateGlobal(ctx.payload)
-      // kilocode_change start
-      if (result.changed) {
-        yield* Effect.sync(() =>
-          bridge.fork(
-            disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true, timeout: "5 seconds" }).pipe(
-              Effect.catchCause((cause) => Effect.sync(() => log.warn("global config disposal failed", { cause }))),
-            ),
-          ),
-        )
-      }
-      // kilocode_change end
+      // kilocode_change - Config.updateGlobal already invalidates caches and emits global.config.updated.
+      // Disposing every instance here races provider saves on slower Remote-SSH hosts.
       return result.info
     })
 
+    // kilocode_change start
     const dispose = Effect.fn("GlobalHttpApi.dispose")(function* () {
-      yield* disposeAllInstancesAndEmitGlobalDisposed()
+      yield* disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true, timeout: "5 seconds" })
       return true
     })
+    // kilocode_change end
 
     const upgrade = Effect.fn("GlobalHttpApi.upgrade")(function* (ctx: { payload: typeof GlobalUpgradeInput.Type }) {
       const method = yield* installation.method()

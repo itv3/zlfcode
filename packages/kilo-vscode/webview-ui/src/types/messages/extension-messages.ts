@@ -1003,6 +1003,8 @@ export interface ProviderConnectedMessage {
   type: "providerConnected"
   requestId: string
   providerID: string
+  provider?: Provider
+  authState?: ProviderAuthState
 }
 
 export interface ProviderDisconnectedMessage {

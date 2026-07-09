@@ -1,5 +1,6 @@
 import type { ModelSelection, Provider } from "../types/messages"
 import { resolveModelSelection } from "./model-selection"
+import { isModelValid } from "./provider-utils"
 
 /**
  * Pure-logic helpers for per-session and global model selection.
@@ -43,6 +44,12 @@ function resolveModel(
   })
 }
 
+function valid(env: ResolveEnv, selection: ModelSelection | null | undefined): selection is ModelSelection {
+  if (!selection) return false
+  if (Object.keys(env.providers).length === 0) return true
+  return isModelValid(env.providers, env.connected, selection)
+}
+
 /**
  * Returns the model for a specific session, honoring per-session overrides.
  *
@@ -55,8 +62,8 @@ export function getSessionModel(
   defaultAgent: string,
 ): ModelSelection | null {
   const override = store.sessionOverrides[sessionID]
-  if (override) return override
   const agentName = store.agentSelections[sessionID] ?? defaultAgent
+  if (valid(env, override)) return override
   return resolveModel(env, agentName, store.modelSelections[agentName], store.recentModels)
 }
 
@@ -73,7 +80,7 @@ export function getSelected(
 ): ModelSelection | null {
   if (sessionID) {
     const session = store.sessionOverrides[sessionID]
-    if (session) return session
+    if (valid(env, session)) return session
   }
   return resolveModel(env, agentName, store.modelSelections[agentName], store.recentModels)
 }

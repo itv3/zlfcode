@@ -1,4 +1,3 @@
-import { InstanceStore } from "@/project/instance-store"
 import { ModelCache } from "@/provider/model-cache"
 import * as ModelsRefresh from "@opencode-ai/core/kilocode/models-refresh"
 import * as Log from "@opencode-ai/core/util/log"
@@ -9,7 +8,8 @@ const log = Log.create({ service: "server" })
 export const disposeAllInstancesAfterProviderAuthCallback = Effect.fn(
   "KiloServer.disposeAllInstancesAfterProviderAuthCallback",
 )(function* (options?: { providerID?: string; timeout?: Duration.Input }) {
-  const store = yield* InstanceStore.Service
+  const mod = yield* Effect.promise(() => import("@/project/instance-store"))
+  const store = yield* mod.InstanceStore.Service
   const work = store.disposeAll()
   if (options?.timeout) {
     yield* work.pipe(
@@ -31,10 +31,11 @@ export const disposeAllInstancesAfterProviderAuthCallback = Effect.fn(
 
 export const invalidateAfterProviderAuthChange = Effect.fn("KiloServer.invalidateAfterProviderAuthChange")(function* (
   providerID: string,
-  options?: { timeout?: Duration.Input },
+  _options?: { timeout?: Duration.Input },
 ) {
   const cache = yield* ModelCache.Service
   yield* cache.clear(providerID)
-  yield* disposeAllInstancesAfterProviderAuthCallback({ providerID, timeout: options?.timeout })
+  // API key 变更只需要重建 provider/model 缓存；这里不再销毁实例，避免 Remote-SSH
+  // 在保存自定义 provider 的过程中被主动断开。
   yield* ModelsRefresh.notify()
 })

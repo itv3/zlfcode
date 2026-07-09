@@ -79,10 +79,10 @@ import { deleteDraftsForSession } from "../utils/draft-store"
 import { createAbortState } from "./abort-state"
 import { clearIfOn, createCloudPrune } from "./session-cloud-prune"
 import { isSameSessionTree } from "./model-usage"
+import { createStaleModelPruner } from "./session-model-prune"
 
 const RECENT_LIMIT = 5
 const MESSAGE_PAGE_LIMIT = 80
-
 /** Remove ids from a Set immutably, returning the original when nothing changed. */
 function dropSet(prev: Set<string>, ids: Iterable<string>): Set<string> {
   const next = new Set(prev)
@@ -107,7 +107,6 @@ const emptyPageState: MessagePageState = {
   loadingOlder: false,
   hasMore: false,
 }
-
 // Store structure for messages and parts
 interface SessionStore {
   sessions: Record<string, SessionInfo>
@@ -129,7 +128,6 @@ interface SessionContextValue {
   currentSessionID: Accessor<string | undefined>
   currentSession: Accessor<SessionInfo | undefined>
   setCurrentSessionID: (id: string | undefined) => void
-
   // All sessions (sorted most recent first)
   sessions: Accessor<SessionInfo[]>
 
@@ -944,6 +942,8 @@ export const SessionProvider: ParentComponent = (props) => {
   })
   vscode.postMessage({ type: "requestFavorites" })
   onCleanup(unsubFavorites)
+
+  createStaleModelPruner({ providers: provider.providers, connected: provider.connected, store, setStore, setAgents: setUserSetAgents, post: vscode.postMessage, valid: provider.isModelValid })
 
   // Clear model overrides that match the previous config model (not intentional user overrides).
   // When config.model changes, old overrides that were just default values should be cleared

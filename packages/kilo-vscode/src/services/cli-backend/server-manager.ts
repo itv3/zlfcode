@@ -62,8 +62,11 @@ export class ServerManager {
   async getServer(): Promise<ServerInstance> {
     console.log("[Kilo New] ServerManager: 🔍 getServer called")
     if (this.instance) {
-      console.log("[Kilo New] ServerManager: ♻️ Returning existing instance:", { port: this.instance.port })
-      return this.instance
+      if (await this.isInstanceHealthy(this.instance)) {
+        console.log("[Kilo New] ServerManager: ♻️ Returning existing instance:", { port: this.instance.port })
+        return this.instance
+      }
+      this.dropInstance(this.instance, "existing CLI backend is unavailable")
     }
 
     if (this.startupPromise) {
@@ -367,6 +370,31 @@ export class ServerManager {
     }
   }
 
+  private async isInstanceHealthy(server: ServerInstance): Promise<boolean> {
+    const code = server.process?.exitCode
+    if (code !== undefined && code !== null) return false
+    const pid = server.process?.pid ?? server.pid
+    if (pid !== undefined && !this.isProcessAlive(pid)) return false
+    if (server.process) return true
+    return this.isSharedHealthy({
+      pid: pid ?? 0,
+      port: server.port,
+      password: server.password,
+      cliPath: this.getCliPath(),
+      version: this.context.extension.packageJSON.version,
+    })
+  }
+
+  private dropInstance(server: ServerInstance, reason: string): void {
+    const pid = server.process?.pid ?? server.pid
+    console.warn("[Kilo New] ServerManager: dropping CLI backend:", { reason, port: server.port, pid })
+    this.instance = null
+    this.clearSharedState(pid)
+    if (!server.process) return
+    ServerManager.killProcess(server.process, "SIGTERM")
+    ServerManager.scheduleKillFallback(server.process)
+  }
+
   private isLockStale(lock: string): boolean {
     try {
       return Date.now() - fs.statSync(lock).mtimeMs > LOCK_STALE_MS
@@ -459,9 +487,13 @@ export class ServerManager {
 
   forgetSharedServer(): boolean {
     if (!this.instance?.shared) return false
-    const pid = this.instance.pid
-    this.instance = null
-    this.clearSharedState(pid)
+    this.dropInstance(this.instance, "shared CLI backend was forgotten")
+    return true
+  }
+
+  forgetServer(): boolean {
+    if (!this.instance) return false
+    this.dropInstance(this.instance, "CLI backend was forgotten")
     return true
   }
 

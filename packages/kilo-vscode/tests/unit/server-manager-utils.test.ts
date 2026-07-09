@@ -335,7 +335,7 @@ describe("ServerManager shared startup", () => {
       extensionPath: root,
       extension: { packageJSON: { version: "test" } },
     } as unknown as ConstructorParameters<typeof ServerManager>[0]
-    let starts = 0
+    const starts = { count: 0 }
 
     const make = () => {
       const manager = new ServerManager(context) as unknown as TestableServerManager
@@ -343,7 +343,7 @@ describe("ServerManager shared startup", () => {
       manager.isProcessAlive = () => true
       manager.isSharedHealthy = async () => true
       manager.startServer = async () => {
-        starts += 1
+        starts.count += 1
         await Bun.sleep(25)
         return {
           port: 40123,
@@ -357,9 +357,83 @@ describe("ServerManager shared startup", () => {
     try {
       const servers = await Promise.all(Array.from({ length: 5 }, () => make().getServer()))
 
-      expect(starts).toBe(1)
+      expect(starts.count).toBe(1)
       expect(servers.every((server) => server.port === 40123 && server.password === "secret")).toBe(true)
       expect(servers.filter((server) => server.shared).length).toBe(4)
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("starts a new backend when the cached instance process is dead", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-vscode-stale-cached-server-"))
+    const context = {
+      globalStorageUri: { fsPath: root },
+      extensionPath: root,
+      extension: { packageJSON: { version: "test" } },
+    } as unknown as ConstructorParameters<typeof ServerManager>[0]
+    const manager = new ServerManager(context) as unknown as TestableServerManager & {
+      instance: ServerInstance | null
+    }
+    const starts = { count: 0 }
+
+    try {
+      manager.getCliPath = () => "/tmp/kilo"
+      manager.isProcessAlive = (pid: number) => pid !== 12_345
+      manager.isSharedHealthy = async () => true
+      manager.startServer = async () => {
+        starts.count += 1
+        return {
+          port: 40124,
+          password: "next",
+          process: { pid: 54_321 } as unknown as ChildProcess,
+        }
+      }
+      manager.instance = {
+        port: 40123,
+        password: "old",
+        pid: 12_345,
+        shared: true,
+      }
+
+      const server = await manager.getServer()
+
+      expect(starts.count).toBe(1)
+      expect(server.port).toBe(40124)
+      expect(server.password).toBe("next")
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps a live managed backend when the health endpoint is slow", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-vscode-live-managed-server-"))
+    const context = {
+      globalStorageUri: { fsPath: root },
+      extensionPath: root,
+      extension: { packageJSON: { version: "test" } },
+    } as unknown as ConstructorParameters<typeof ServerManager>[0]
+    const manager = new ServerManager(context) as unknown as TestableServerManager & {
+      instance: ServerInstance | null
+    }
+    const server = {
+      port: 40123,
+      password: "old",
+      process: { pid: 12_345, exitCode: null } as unknown as ChildProcess,
+    }
+
+    try {
+      manager.getCliPath = () => "/tmp/kilo"
+      manager.isProcessAlive = () => true
+      manager.isSharedHealthy = async () => {
+        throw new Error("health timeout")
+      }
+      manager.startServer = async () => {
+        throw new Error("should keep the current backend")
+      }
+      manager.instance = server
+
+      await expect(manager.getServer()).resolves.toBe(server)
     } finally {
       await fs.rm(root, { recursive: true, force: true })
     }

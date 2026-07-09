@@ -90,6 +90,28 @@ describe("per-session model selection", () => {
     expect(getSelected(store, e, "session-a", "code")).toEqual(claude)
   })
 
+  it("getSelected falls back when the session override provider is disconnected", () => {
+    const store: ModelStore = {
+      ...emptyStore(),
+      modelSelections: { code: claude },
+      sessionOverrides: { "session-a": gpt },
+    }
+    const e: ResolveEnv = { ...env(), connected: ["kilo", "anthropic"] }
+
+    expect(getSelected(store, e, "session-a", "code")).toEqual(claude)
+  })
+
+  it("getSessionModel falls back when the session override model was deleted", () => {
+    const store: ModelStore = {
+      ...emptyStore(),
+      modelSelections: { code: claude },
+      sessionOverrides: { "session-a": { providerID: "openai", modelID: "removed-model" } },
+    }
+    const e = env()
+
+    expect(getSessionModel(store, e, "session-a", "code")).toEqual(claude)
+  })
+
   it("getSelected returns global model when no session is active", () => {
     let store = emptyStore()
     const e = env()

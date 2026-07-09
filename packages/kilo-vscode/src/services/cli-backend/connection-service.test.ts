@@ -86,14 +86,15 @@ describe("KiloConnectionService viewed sessions", () => {
 describe("KiloConnectionService provider broadcasts", () => {
   test("broadcasts provider changes to active listeners", () => {
     const service = new KiloConnectionService({} as any)
-    const calls: Array<string | undefined> = []
-    const off = service.onProvidersChanged((source) => calls.push(source))
+    const calls: Array<{ source?: string; message?: unknown }> = []
+    const off = service.onProvidersChanged((source, message) => calls.push({ source, message }))
+    const message = { type: "providerDisconnected", providerID: "custom" }
 
-    service.notifyProvidersChanged("sidebar")
+    service.notifyProvidersChanged("sidebar", message)
     off()
     service.notifyProvidersChanged("settings")
 
-    expect(calls).toEqual(["sidebar"])
+    expect(calls).toEqual([{ source: "sidebar", message }])
   })
 })
 

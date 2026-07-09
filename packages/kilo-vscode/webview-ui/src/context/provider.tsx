@@ -38,6 +38,8 @@ export const ProviderProvider: ParentComponent = (props) => {
   const [defaultSelection, setDefaultSelection] = createSignal<ModelSelection>(KILO_AUTO)
   const [authMethods, setAuthMethods] = createSignal<Record<string, ProviderAuthMethod[]>>({})
   const [authStates, setAuthStates] = createSignal<Record<string, ProviderAuthState>>({})
+  const [optimistic, setOptimistic] = createSignal<Record<string, Provider>>({})
+  const [optimisticAuth, setOptimisticAuth] = createSignal<Record<string, ProviderAuthState>>({})
 
   const models = createMemo<EnrichedModel[]>(() => flattenModels(providers()))
   const visibleModels = createMemo<EnrichedModel[]>(() => filterModels(models(), connected()))
@@ -53,16 +55,58 @@ export const ProviderProvider: ParentComponent = (props) => {
   // Register handler immediately (not in onMount) so we never miss
   // a providersLoaded message that arrives before the DOM mount.
   const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
-    if (message.type !== "providersLoaded") {
+    if (message.type === "providerConnected") {
+      if (message.provider) {
+        setOptimistic((value) => ({ ...value, [message.providerID]: message.provider! }))
+        setProviders((value) => ({ ...value, [message.providerID]: message.provider! }))
+      }
+      setConnected((value) => (value.includes(message.providerID) ? value : [...value, message.providerID]))
+      if (message.authState) {
+        setOptimisticAuth((value) => ({ ...value, [message.providerID]: message.authState! }))
+        setAuthStates((value) => ({ ...value, [message.providerID]: message.authState! }))
+      }
       return
     }
 
-    setProviders(message.providers)
-    setConnected(message.connected)
+    if (message.type === "providerDisconnected") {
+      const saved = optimistic()[message.providerID]
+      if (saved) {
+        setOptimistic((value) => {
+          const next = { ...value }
+          delete next[message.providerID]
+          return next
+        })
+        setProviders((value) => {
+          const next = { ...value }
+          delete next[message.providerID]
+          return next
+        })
+      }
+      setOptimisticAuth((value) => {
+        const next = { ...value }
+        delete next[message.providerID]
+        return next
+      })
+      setAuthStates((value) => {
+        const next = { ...value }
+        delete next[message.providerID]
+        return next
+      })
+      setConnected((value) => value.filter((id) => id !== message.providerID))
+      return
+    }
+
+    if (message.type !== "providersLoaded") return
+
+    const saved = optimistic()
+    const providers = { ...message.providers, ...saved }
+    const connected = [...new Set([...message.connected, ...Object.keys(saved)])]
+    setProviders(providers)
+    setConnected(connected)
     setDefaults(message.defaults)
     setDefaultSelection(message.defaultSelection)
     setAuthMethods(message.authMethods)
-    setAuthStates(message.authStates)
+    setAuthStates({ ...message.authStates, ...optimisticAuth() })
   })
 
   onCleanup(unsubscribe)

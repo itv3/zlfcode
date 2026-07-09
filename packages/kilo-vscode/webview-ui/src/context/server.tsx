@@ -74,6 +74,7 @@ export const ServerProvider: ParentComponent = (props) => {
   function handleConnectionStateMessage(message: Extract<ExtensionMessage, { type: "connectionState" }>) {
     console.log("[Kilo New] Connection state changed:", message.state)
     setConnectionState(message.state)
+    if (message.state !== "connected") setServerInfo(undefined)
     if (message.error) {
       setErrorMessage(message.userMessage ?? message.error)
       setErrorDetails(message.userDetails ?? message.error)

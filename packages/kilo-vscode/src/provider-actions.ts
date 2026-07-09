@@ -11,6 +11,7 @@ import {
   sanitizeCustomProviderConfig,
   withCustomProviderDeletions,
 } from "./shared/custom-provider"
+import type { SanitizedProviderConfig } from "./shared/custom-provider"
 import {
   customProviderProtocol,
   isCustomProviderPackage,
@@ -50,6 +51,21 @@ export interface StoredProviderKey {
   npm: CustomProviderPackage
 }
 
+type PublicProviderModel = {
+  id: string
+  name: string
+  reasoning?: true
+  capabilities?: {
+    reasoning: boolean
+    input?: { text: boolean; image: boolean; audio: boolean; video: boolean; pdf: boolean }
+  }
+  cost?: { input: number; output: number; cache?: { read: number; write: number } }
+  limit?: { context: number; input?: number; output: number }
+  variants?: Record<string, Record<string, unknown>>
+}
+
+type PublicProviderConfigModel = SanitizedProviderConfig["models"][string]
+
 function disabledWithout(list: string[] | undefined, id: string) {
   return (list ?? []).filter((item) => item !== id)
 }
@@ -73,6 +89,75 @@ function customProviderPackage(config: unknown): CustomProviderPackage | undefin
 function customProvider(config: unknown) {
   return customProviderPackage(config) !== undefined
 }
+
+function publicInputCapabilities(model: PublicProviderConfigModel) {
+  const input = model.modalities?.input
+  return {
+    text: input?.includes("text") ?? true,
+    image: input?.includes("image") ?? false,
+    audio: input?.includes("audio") ?? false,
+    video: input?.includes("video") ?? false,
+    pdf: input?.includes("pdf") ?? false,
+  }
+}
+
+function publicCapabilities(model: PublicProviderConfigModel) {
+  return {
+    reasoning: model.reasoning === true,
+    input: publicInputCapabilities(model),
+  }
+}
+
+function publicCost(model: PublicProviderConfigModel) {
+  if (!model.cost) return undefined
+  return {
+    input: model.cost.input,
+    output: model.cost.output,
+    cache: { read: model.cost.cache_read ?? 0, write: model.cost.cache_write ?? 0 },
+  }
+}
+
+function publicCustomProviderModel(id: string, model: PublicProviderConfigModel): PublicProviderModel {
+  const cost = publicCost(model)
+  return {
+    id,
+    name: model.name,
+    ...(model.reasoning ? { reasoning: true as const } : {}),
+    capabilities: publicCapabilities(model),
+    ...(cost ? { cost } : {}),
+    ...(model.limit ? { limit: model.limit } : {}),
+    ...(model.variants ? { variants: model.variants } : {}),
+  }
+}
+
+function publicCustomProvider(id: string, config: SanitizedProviderConfig) {
+  const models = Object.fromEntries(
+    Object.entries(config.models).map(([modelID, model]) => [modelID, publicCustomProviderModel(modelID, model)]),
+  )
+
+  return {
+    id,
+    name: config.name,
+    source: "config" as const,
+    env: config.env ?? [],
+    options: config.options,
+    models,
+  }
+}
+
+type ProviderChangeMessage =
+  | {
+      type: "providerConnected"
+      requestId: string
+      providerID: string
+      provider?: ReturnType<typeof publicCustomProvider>
+      authState?: AuthState
+    }
+  | {
+      type: "providerDisconnected"
+      requestId: string
+      providerID: string
+    }
 
 function savedCustomProvider(
   config: unknown,
@@ -107,6 +192,34 @@ async function fetchProviderList(client: KiloClient, dir: string, mode: Provider
   }
 }
 
+function configuredCustomProviders(config: Config | undefined, connected: Set<string>) {
+  const providers: Array<ReturnType<typeof publicCustomProvider>> = []
+  const disabled = new Set(config?.disabled_providers ?? [])
+  for (const [id, provider] of Object.entries(config?.provider ?? {})) {
+    if (disabled.has(id) || !customProvider(provider)) continue
+    const sanitized = sanitizeCustomProviderConfig(provider)
+    if ("error" in sanitized) continue
+    providers.push(publicCustomProvider(id, sanitized.value))
+    connected.add(id)
+  }
+  return providers
+}
+
+function mergeConfiguredProviders<T extends { id: string }>(
+  response: { all: T[]; connected: string[] },
+  config: Config | undefined,
+) {
+  const connected = new Set(response.connected)
+  const all = [...response.all]
+  const seen = new Set(all.map((item) => item.id))
+  for (const provider of configuredCustomProviders(config, connected)) {
+    if (seen.has(provider.id)) continue
+    all.push(provider as unknown as T)
+    seen.add(provider.id)
+  }
+  return { all, connected: [...connected] }
+}
+
 function keepCatalogModels(id: string, connected: Set<string>, authStates: Record<string, AuthState>) {
   // 设置页只需要少量模型目录用于自定义 provider 默认值补全；
   // 其余 provider 保留基础信息即可，避免 Remote-SSH 下把超大 catalog
@@ -126,6 +239,13 @@ function trimCatalogModels<T extends { id: string; models?: Record<string, unkno
 
 /** 拉取 provider 可用性和认证状态,但不把已保存凭据暴露给 webview。 */
 export async function fetchProviderData(client: KiloClient, dir: string, mode: ProviderFetchMode = "connected") {
+  const configRequest =
+    mode === "connected" && typeof client.config.get === "function"
+      ? client.config
+          .get({ directory: dir }, { throwOnError: true })
+          .then((r) => r.data ?? undefined)
+          .catch(() => undefined)
+      : Promise.resolve(undefined)
   const authRequest =
     typeof client.provider.auth === "function"
       ? client.provider
@@ -138,11 +258,14 @@ export async function fetchProviderData(client: KiloClient, dir: string, mode: P
     .then((r) => (r.data?.authenticated ? (r.data.type ?? null) : null))
     .catch(() => null)
 
-  const [response, authMethods, kiloAuth] = await Promise.all([
+  const [raw, config, authMethods, kiloAuth] = await Promise.all([
     fetchProviderList(client, dir, mode),
+    configRequest,
     authRequest,
     kiloRequest,
   ])
+  const merged = mode === "connected" ? mergeConfiguredProviders(raw, config) : raw
+  const response = { ...raw, all: merged.all, connected: merged.connected }
   const authStates: Record<string, AuthState> = {}
   const storedKeys: Record<string, StoredProviderKey> = {}
   const all = response.all.map((item) => {
@@ -208,7 +331,7 @@ export function buildActionContext(
   errFn: (err: unknown) => string,
   dir: string,
   refresh: () => Promise<void>,
-  notify?: () => void,
+  notify?: (message?: ProviderChangeMessage) => void,
 ): ActionContext {
   return {
     client,
@@ -300,7 +423,7 @@ interface ActionContext {
   workspaceDir: string
   disposeGlobal: (reason: string) => Promise<void>
   fetchAndSendProviders: () => Promise<void>
-  notifyProvidersChanged?: () => void
+  notifyProvidersChanged?: (message?: ProviderChangeMessage) => void
 }
 
 function postError(
@@ -399,13 +522,50 @@ async function enableConfigured(ctx: ActionContext, id: string, config: Config) 
   await saveGlobal(ctx, { disabled_providers: disabled })
 }
 
+const PROVIDER_DISPOSE_TIMEOUT_MS = 7_000
+
+async function disposeForRefresh(ctx: ActionContext, reason: string) {
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      console.warn(`[Kilo New] KiloProvider: provider dispose after ${reason} timed out`)
+      resolve()
+    }, PROVIDER_DISPOSE_TIMEOUT_MS)
+    ctx.disposeGlobal(reason).then(
+      () => {
+        clearTimeout(timer)
+        resolve()
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
+async function refreshProvidersNow(ctx: ActionContext, reason: string) {
+  await disposeForRefresh(ctx, reason)
+  await ctx.fetchAndSendProviders()
+  ctx.notifyProvidersChanged?.()
+}
+
+async function refreshProvidersLightly(ctx: ActionContext, refresh?: () => Promise<void>) {
+  await refresh?.()
+  await ctx.fetchAndSendProviders()
+  ctx.notifyProvidersChanged?.()
+}
+
 function refreshProvidersLater(ctx: ActionContext, reason: string, refresh?: () => Promise<void>) {
   void (async () => {
     await refresh?.()
-    await ctx.disposeGlobal(reason)
-    await ctx.fetchAndSendProviders()
-    ctx.notifyProvidersChanged?.()
+    await refreshProvidersNow(ctx, reason)
   })().catch((error: unknown) => {
+    console.warn(`[Kilo New] KiloProvider: provider refresh after ${reason} failed:`, error)
+  })
+}
+
+function refreshProvidersLightlyLater(ctx: ActionContext, reason: string, refresh?: () => Promise<void>) {
+  void refreshProvidersLightly(ctx, refresh).catch((error: unknown) => {
     console.warn(`[Kilo New] KiloProvider: provider refresh after ${reason} failed:`, error)
   })
 }
@@ -505,9 +665,12 @@ export async function disconnectProvider(
     const effective = config.merged.provider?.[id]
     const configured = !!cfg || !!effective
     const custom = customProvider(cfg) || customProvider(effective)
-    const { response } = await fetchProviderData(ctx.client, ctx.workspaceDir)
-    const active = response.all.find((item) => item.id === id)
-    const oauth = active?.source === "custom" && configured && !custom
+    const oauth = await (async () => {
+      if (!configured || custom) return false
+      const { response } = await fetchProviderData(ctx.client, ctx.workspaceDir)
+      const active = response.all.find((item) => item.id === id)
+      return active?.source === "custom"
+    })()
 
     // Config-sourced providers may not have auth store entries because
     // credentials can come from config or env, so auth removal is non-fatal.
@@ -532,12 +695,15 @@ export async function disconnectProvider(
       await enableConfigured(ctx, id, config.global)
     }
 
-    ctx.postMessage({ type: "providerDisconnected", requestId, providerID: id })
-    refreshProvidersLater(
-      ctx,
-      `provider disconnect (${id})`,
-      configured ? () => refreshConfig(ctx, setCachedConfig) : undefined,
-    )
+    const message = { type: "providerDisconnected" as const, requestId, providerID: id }
+    ctx.postMessage(message)
+    ctx.notifyProvidersChanged?.(message)
+    const refresh = configured ? () => refreshConfig(ctx, setCachedConfig) : undefined
+    if (custom) {
+      refreshProvidersLightlyLater(ctx, `provider disconnect (${id})`, refresh)
+      return
+    }
+    refreshProvidersLater(ctx, `provider disconnect (${id})`, refresh)
   } catch (error) {
     postError(ctx, requestId, providerID, "disconnect", ctx.getErrorMessage(error) || "Failed to disconnect provider")
   }
@@ -563,7 +729,7 @@ export async function saveCustomProvider(
   }
 
   const refreshLater = () => {
-    refreshProvidersLater(ctx, `custom provider save (${id})`)
+    refreshProvidersLightlyLater(ctx, `custom provider save (${id})`)
   }
   const refreshConfigLater = () => {
     void refreshConfig(ctx, setCachedConfig).catch(() => undefined)
@@ -630,9 +796,17 @@ export async function saveCustomProvider(
       return
     }
 
-    ctx.postMessage({ type: "providerConnected", requestId, providerID: id })
     refreshConfigLater()
-    refreshLater()
+    const message = {
+      type: "providerConnected",
+      requestId,
+      providerID: id,
+      provider: publicCustomProvider(id, sanitized.value),
+      authState: auth.mode === "clear" ? undefined : "api",
+    } as const
+    ctx.postMessage(message)
+    ctx.notifyProvidersChanged?.(message)
+    refreshProvidersLightlyLater(ctx, `custom provider save (${id})`)
   } catch (error) {
     postError(ctx, requestId, providerID, "connect", ctx.getErrorMessage(error) || "Failed to save custom provider")
   }

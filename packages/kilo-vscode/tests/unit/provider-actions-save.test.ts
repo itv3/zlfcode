@@ -26,7 +26,13 @@ function listed(config: ExistingGlobal) {
 function createCtx(
   existing: ExistingGlobal = { disabled_providers: [] },
   merged: ExistingGlobal = existing,
-  opts: { failGlobalUpdateAt?: number; hangDispose?: boolean; hangConfigGet?: boolean; hangConfigGetAfter?: number } = {},
+  opts: {
+    failGlobalUpdateAt?: number
+    failProvidersGet?: boolean
+    hangDispose?: boolean
+    hangConfigGet?: boolean
+    hangConfigGetAfter?: number
+  } = {},
 ) {
   const calls = {
     set: [] as Array<{ providerID: string; auth: { type: string; key: string; metadata?: Record<string, string> } }>,
@@ -35,10 +41,13 @@ function createCtx(
     config: [] as Array<{ config: Record<string, unknown> }>,
     project: [] as Array<{ config: Record<string, unknown> }>,
     cached: [] as unknown[],
+    events: [] as string[],
     refresh: 0,
     notify: 0,
+    broadcasts: [] as unknown[],
     dispose: 0,
     mergedGet: 0,
+    providersGet: 0,
   }
 
   const ctx = {
@@ -94,30 +103,45 @@ function createCtx(
             await new Promise(() => {})
           return { data: merged }
         },
-        providers: async () => ({
-          data: {
-            providers: listed(merged),
-            default: {},
-          },
-        }),
+        providers: async () => {
+          calls.providersGet += 1
+          if (opts.failProvidersGet) throw new Error("providers fetch failed")
+          return {
+            data: {
+              providers: listed(merged),
+              default: {},
+            },
+          }
+        },
         update: async (input: { config: Record<string, unknown> }) => {
           calls.project.push(input)
           return { data: input }
         },
       },
     },
-    postMessage: (message: unknown) => calls.posts.push(message),
+    postMessage: (message: unknown) => {
+      calls.posts.push(message)
+      const type =
+        message && typeof message === "object" && typeof (message as Record<string, unknown>).type === "string"
+          ? (message as { type: string }).type
+          : "post"
+      calls.events.push(type)
+    },
     getErrorMessage: (error: unknown) => (error instanceof Error ? error.message : String(error)),
     workspaceDir: "/tmp",
     disposeGlobal: async () => {
       calls.dispose += 1
+      calls.events.push("dispose")
       if (opts.hangDispose) await new Promise(() => {})
     },
     fetchAndSendProviders: async () => {
       calls.refresh += 1
+      calls.events.push("refresh")
     },
-    notifyProvidersChanged: () => {
+    notifyProvidersChanged: (message?: unknown) => {
+      calls.broadcasts.push(message)
       calls.notify += 1
+      calls.events.push("notify")
     },
   } as unknown as Parameters<typeof saveCustomProvider>[0]
 
@@ -230,7 +254,7 @@ describe("saveCustomProvider", () => {
     expect(calls.set).toHaveLength(0)
     expect(calls.remove).toHaveLength(0)
     expect(calls.refresh).toBe(1)
-    expect(calls.notify).toBe(1)
+    expect(calls.notify).toBe(2)
   })
 
   it("clears auth when the api key field was intentionally cleared", async () => {
@@ -474,21 +498,42 @@ describe("saveCustomProvider", () => {
     expect(calls.config[0].config.disabled_providers).toEqual(["openai"])
   })
 
-  it("confirms custom provider saves before refresh completes", async () => {
-    const { ctx, calls, setCachedConfig } = createCtx({ disabled_providers: [] }, { disabled_providers: [] }, { hangDispose: true })
+  it("confirms custom provider saves before refreshing providers", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx({ disabled_providers: [] })
 
-    const result = await Promise.race([
-      saveCustomProvider(ctx, "req", "myprovider", createProvider(), undefined, false, null, setCachedConfig).then(
-        () => "done",
-      ),
-      Bun.sleep(50).then(() => "timeout"),
-    ])
+    await saveCustomProvider(ctx, "req", "myprovider", createProvider(), undefined, false, null, setCachedConfig)
 
-    expect(result).toBe("done")
-    expect(calls.dispose).toBe(1)
-    expect(calls.refresh).toBe(0)
-    expect(calls.notify).toBe(0)
-    expect(calls.posts).toContainEqual({ type: "providerConnected", requestId: "req", providerID: "myprovider" })
+    expect(calls.posts).toContainEqual({
+      type: "providerConnected",
+      requestId: "req",
+      providerID: "myprovider",
+      provider: {
+        id: "myprovider",
+        name: "My Provider",
+        source: "config",
+        env: [],
+        options: { baseURL: "https://example.com/v1" },
+        models: {
+          "model-1": {
+            id: "model-1",
+            name: "Model One",
+            capabilities: {
+              reasoning: false,
+              input: { text: true, image: false, audio: false, video: false, pdf: false },
+            },
+          },
+        },
+      },
+      authState: "api",
+    })
+    expect(calls.broadcasts).toContainEqual(
+      expect.objectContaining({ type: "providerConnected", requestId: "req", providerID: "myprovider" }),
+    )
+    expect(calls.events.indexOf("providerConnected")).toBeLessThan(calls.events.indexOf("refresh"))
+    await flush()
+    expect(calls.dispose).toBe(0)
+    expect(calls.refresh).toBe(1)
+    expect(calls.notify).toBe(2)
   })
 
   it("confirms custom provider saves before merged config refresh completes", async () => {
@@ -507,7 +552,9 @@ describe("saveCustomProvider", () => {
 
     expect(result).toBe("done")
     expect(calls.mergedGet).toBe(1)
-    expect(calls.posts).toContainEqual({ type: "providerConnected", requestId: "req", providerID: "myprovider" })
+    expect(calls.posts).toContainEqual(
+      expect.objectContaining({ type: "providerConnected", requestId: "req", providerID: "myprovider" }),
+    )
   })
 })
 
@@ -597,9 +644,30 @@ describe("disconnectProvider", () => {
     expect(calls.config[0].config).toEqual({ disabled_providers: ["openai", "myprovider"] })
     expect(calls.remove).toEqual([{ providerID: "myprovider" }])
     expect(calls.posts).toContainEqual({ type: "providerDisconnected", requestId: "req", providerID: "myprovider" })
+    expect(calls.broadcasts).toContainEqual({ type: "providerDisconnected", requestId: "req", providerID: "myprovider" })
     await flush()
     expect(calls.refresh).toBe(1)
-    expect(calls.notify).toBe(1)
+    expect(calls.notify).toBe(2)
+  })
+
+  it("deletes custom providers without fetching provider state first", async () => {
+    const existing = {
+      disabled_providers: [],
+      provider: {
+        myprovider: createSavedProvider(),
+      },
+    }
+    const { ctx, calls, setCachedConfig } = createCtx(existing, existing, { failProvidersGet: true })
+
+    await disconnectProvider(ctx, "req", "myprovider", null, setCachedConfig)
+
+    expect(calls.providersGet).toBe(0)
+    expect(calls.config).toHaveLength(1)
+    expect(calls.config[0].config).toEqual({
+      provider: { myprovider: null },
+      disabled_providers: [],
+    })
+    expect(calls.posts).toContainEqual({ type: "providerDisconnected", requestId: "req", providerID: "myprovider" })
   })
 
   it("does not duplicate configured providers already disabled", async () => {
@@ -658,9 +726,10 @@ describe("disconnectProvider", () => {
     expect(result).toBe("done")
     expect(calls.config).toHaveLength(1)
     expect(calls.remove).toEqual([{ providerID: "myprovider" }])
-    expect(calls.dispose).toBe(1)
-    expect(calls.refresh).toBe(0)
-    expect(calls.notify).toBe(0)
+    expect(calls.dispose).toBe(0)
+    await flush()
+    expect(calls.refresh).toBe(1)
+    expect(calls.notify).toBe(2)
     expect(calls.posts).toContainEqual({ type: "providerDisconnected", requestId: "req", providerID: "myprovider" })
   })
 
@@ -680,8 +749,9 @@ describe("disconnectProvider", () => {
 
     expect(result).toBe("done")
     expect(calls.mergedGet).toBe(2)
+    expect(calls.dispose).toBe(0)
     expect(calls.refresh).toBe(0)
-    expect(calls.notify).toBe(0)
+    expect(calls.notify).toBe(1)
     expect(calls.posts).toContainEqual({ type: "providerDisconnected", requestId: "req", providerID: "myprovider" })
   })
 
@@ -951,6 +1021,43 @@ describe("fetchProviderData", () => {
 
     expect(result.response.connected).toEqual(["custom"])
     expect(result.response.all.map((item) => item.id)).toEqual(["custom"])
+  })
+
+  it("fills connected custom providers from config when provider state is temporarily empty", async () => {
+    const client = {
+      config: {
+        get: async () => ({
+          data: {
+            provider: {
+              myprovider: createSavedProvider(),
+            },
+            disabled_providers: [],
+          },
+        }),
+        providers: async () => ({
+          data: {
+            providers: [],
+            default: {},
+          },
+        }),
+      },
+      provider: {
+        list: async () => {
+          throw new Error("catalog should not be fetched")
+        },
+        auth: async () => ({ data: {} }),
+      },
+      kilo: {
+        authStatus: async () => ({ data: { authenticated: false } }),
+      },
+    } as unknown as Parameters<typeof fetchProviderData>[0]
+
+    const result = await fetchProviderData(client, "/tmp")
+    const provider = result.response.all.find((item) => item.id === "myprovider")
+
+    expect(result.response.connected).toContain("myprovider")
+    expect(provider?.name).toBe("My Provider")
+    expect(Object.keys(provider?.models ?? {})).toEqual(["model-1"])
   })
 
   it("strips disconnected catalog models while retaining connected models", async () => {

@@ -15,7 +15,7 @@ type LanguageChangeListener = (locale: string) => void
 type ProfileChangeListener = (data: unknown) => void
 type MigrationCompleteListener = () => void
 type FavoritesChangeListener = (favorites: Array<{ providerID: string; modelID: string }>) => void
-type ProvidersChangeListener = (source?: string) => void
+type ProvidersChangeListener = (source?: string, message?: unknown) => void
 type ModelSelectorExpandedListener = (value: boolean) => void
 type ClearPendingPromptsListener = () => void
 type DirectoryProvider = () => string[]
@@ -36,6 +36,7 @@ function isNotFound(err: unknown) {
 // Poll /global/health every 10 seconds.
 // This provides a second detection channel for server death independent of the SSE heartbeat.
 const HEALTH_POLL_INTERVAL_MS = 10_000
+const HEALTH_FAILURE_LIMIT = 3
 
 /** Reject all pending network-offline waits for a given directory. */
 async function drainNetworkWaits(client: KiloClient, dir: string) {
@@ -63,6 +64,7 @@ export class KiloConnectionService {
   private error: Error | null = null
   private connectPromise: Promise<void> | null = null
   private healthPollTimer: ReturnType<typeof setInterval> | null = null
+  private healthFailures = 0
   private remoteService: import("../RemoteStatusService").RemoteStatusService | null = null
 
   private readonly eventListeners: Set<SSEEventListener> = new Set()
@@ -460,9 +462,9 @@ export class KiloConnectionService {
   /**
    * 广播 provider 变更来源,让其他 KiloProvider 刷新 provider 状态。
    */
-  notifyProvidersChanged(source?: string): void {
+  notifyProvidersChanged(source?: string, message?: unknown): void {
     for (const listener of this.providersChangeListeners) {
-      listener(source)
+      listener(source, message)
     }
   }
 
@@ -706,13 +708,20 @@ export class KiloConnectionService {
         return
       }
       const healthy = await this.checkHealth(baseUrl, password)
+      if (healthy) {
+        this.healthFailures = 0
+        return
+      }
       if (!healthy && this.state === "connected") {
-        if (this.serverManager.forgetSharedServer()) {
+        this.healthFailures += 1
+        console.warn("[Kilo New] ConnectionService: CLI backend health check failed", {
+          failures: this.healthFailures,
+        })
+        if (this.healthFailures >= HEALTH_FAILURE_LIMIT && this.serverManager.forgetSharedServer()) {
           console.warn("[Kilo New] ConnectionService: shared CLI backend is unavailable; reconnecting")
           this.reconnectSharedServer()
           return
         }
-        console.warn("[Kilo New] ConnectionService: ❤️‍🩹 Health check failed — forcing SSE reconnect")
         this.sseClient?.reconnect()
       }
     }, HEALTH_POLL_INTERVAL_MS)
@@ -766,6 +775,7 @@ export class KiloConnectionService {
     this.permissionDirectories.clear()
     this.questionDirectories.clear()
     this.questionRevision += 1
+    this.healthFailures = 0
   }
 
   private handleServerExit(code: number | null): void {
