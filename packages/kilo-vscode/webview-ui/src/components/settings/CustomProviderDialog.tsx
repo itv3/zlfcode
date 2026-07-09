@@ -7,7 +7,7 @@ import { Select } from "@kilocode/kilo-ui/select"
 import { Spinner } from "@kilocode/kilo-ui/spinner"
 import { TextField } from "@kilocode/kilo-ui/text-field"
 import { showToast } from "@kilocode/kilo-ui/toast"
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
@@ -22,6 +22,7 @@ import {
   normalizeCustomProviderBaseURL,
   type CustomProviderPackage,
 } from "../../../../src/shared/provider-model"
+import { FETCH_MODELS_WEBVIEW_TIMEOUT_MS } from "../../../../src/shared/fetch-models-timeout"
 import { ModelCard } from "./CustomProviderModelCard"
 import type { ChatTemplateArgsValue, ModelEntry, VariantEntry } from "./CustomProviderModelCard"
 import { validateCustomProvider } from "./CustomProviderValidation"
@@ -39,6 +40,7 @@ import {
 } from "./CustomProviderDefaults"
 const DEBOUNCE_MS = 500
 const SEARCH_DEBOUNCE_MS = 150
+const FETCH_MODELS_ACK_TIMEOUT_MS = 2_000
 
 const PACKAGE_OPTIONS: Array<{ value: CustomProviderPackage; label: string }> = [
   { value: "@ai-sdk/openai-compatible", label: "OpenAI Compatible" },
@@ -213,6 +215,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   const language = useLanguage()
   const vscode = useVSCode()
   const action = createProviderAction(vscode)
+  onMount(() => vscode.postMessage({ type: "requestProviders", mode: "catalog" }))
   onCleanup(action.dispose)
 
   const editing = () => !!props.existing
@@ -340,23 +343,40 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     const rid = crypto.randomUUID()
 
     let done = false
+    let ack = false
     let unsub = () => {}
     const cleanup = () => {
       if (done) return
       done = true
+      clearTimeout(ackTimeout)
       clearTimeout(timeout)
       unsub()
       cleanups.delete(cleanup)
     }
+    const ackTimeout = setTimeout(() => {
+      if (done || ack) return
+      if (version !== fetchVersion) return
+      setFetching(false)
+      setFetchError(language.t("provider.custom.models.fetch.error", { error: "Extension did not respond" }))
+    }, FETCH_MODELS_ACK_TIMEOUT_MS)
     const timeout = setTimeout(() => {
       cleanup()
       if (version !== fetchVersion) return
       setFetching(false)
-      setFetchError(language.t("provider.custom.models.fetch.error", { error: "Timed out" }))
-    }, 16_000)
+      setFetchError(language.t("provider.custom.models.fetch.error", { error: ack ? "Timed out" : "Extension did not respond" }))
+    }, FETCH_MODELS_WEBVIEW_TIMEOUT_MS)
     cleanups.add(cleanup)
 
     unsub = vscode.onMessage((msg: ExtensionMessage) => {
+      if (msg.type === "customProviderModelsFetchStarted") {
+        if (msg.requestId !== rid) return
+        ack = true
+        clearTimeout(ackTimeout)
+        if (version !== fetchVersion) return
+        setFetching(true)
+        setFetchError(undefined)
+        return
+      }
       if (msg.type !== "customProviderModelsFetched") return
       if (!("requestId" in msg) || msg.requestId !== rid) return
       cleanup()
@@ -371,6 +391,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
         return
       }
 
+      setFetchError(undefined)
       const models = msg.models ?? []
       if (models.length === 0) {
         setFetchError(language.t("provider.custom.models.fetch.empty"))

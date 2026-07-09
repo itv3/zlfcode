@@ -16,7 +16,8 @@ export interface ServerInstance {
   shared?: boolean
 }
 
-const STARTUP_TIMEOUT_SECONDS = 30
+const STARTUP_TIMEOUT_SECONDS = 180
+const KILL_FALLBACK_MS = 5_000
 const LOCK_STALE_MS = 90_000
 const LOCK_WAIT_MS = 250
 const HEALTH_TIMEOUT_MS = 1_500
@@ -51,7 +52,9 @@ export class ServerManager {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly onExit?: ServerExitListener,
-  ) {}
+  ) {
+    this.pruneDeadSharedState()
+  }
 
   /**
    * Get or start the server instance
@@ -200,9 +203,9 @@ export class ServerManager {
 
       serverProcess.on("exit", (code) => {
         console.log("[Kilo New] ServerManager: 🛑 Process exited with code:", code)
+        this.clearSharedState(serverProcess.pid)
         if (this.instance?.process === serverProcess) {
           this.instance = null
-          this.clearSharedState(serverProcess.pid)
           this.onExit?.(code)
         }
         if (!resolved) {
@@ -218,7 +221,8 @@ export class ServerManager {
       setTimeout(() => {
         if (!resolved) {
           console.error(`[Kilo New] ServerManager: ⏰ Server startup timeout (${STARTUP_TIMEOUT_SECONDS}s)`)
-          ServerManager.killProcess(serverProcess)
+          ServerManager.killProcess(serverProcess, "SIGTERM")
+          ServerManager.scheduleKillFallback(serverProcess)
           const { userMessage, userDetails } = toErrorMessage(
             t("server.startupTimeout", { seconds: STARTUP_TIMEOUT_SECONDS }),
             stderrLines,
@@ -244,6 +248,11 @@ export class ServerManager {
         } finally {
           fs.rmSync(lock, { recursive: true, force: true })
         }
+      }
+      if (this.isLockAbandoned(lock)) {
+        console.warn("[Kilo New] ServerManager: removing abandoned startup lock:", lock)
+        fs.rmSync(lock, { recursive: true, force: true })
+        continue
       }
       if (this.isLockStale(lock)) {
         console.warn("[Kilo New] ServerManager: removing stale startup lock:", lock)
@@ -323,6 +332,16 @@ export class ServerManager {
     fs.rmSync(this.statePath(), { force: true })
   }
 
+  private pruneDeadSharedState(): void {
+    const state = this.readSharedState()
+    if (!state) return
+    if (state.cliPath !== this.getCliPath()) return
+    if (state.version !== this.context.extension.packageJSON.version) return
+    if (this.isProcessAlive(state.pid)) return
+    console.warn("[Kilo New] ServerManager: removing shared state for dead CLI backend:", { pid: state.pid })
+    this.clearSharedState(state.pid)
+  }
+
   private async isSharedHealthy(state: SharedState): Promise<boolean> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS)
@@ -354,6 +373,27 @@ export class ServerManager {
     } catch {
       return true
     }
+  }
+
+  private isLockAbandoned(lock: string): boolean {
+    const pid = this.readLockOwner(lock)
+    if (pid === undefined) {
+      return false
+    }
+    return !this.isProcessAlive(pid)
+  }
+
+  private readLockOwner(lock: string): number | undefined {
+    try {
+      const file = path.join(lock, "owner.json")
+      const data = JSON.parse(fs.readFileSync(file, "utf8")) as { pid?: unknown }
+      if (typeof data.pid === "number") {
+        return data.pid
+      }
+    } catch {
+      return undefined
+    }
+    return undefined
   }
 
   private lockDir(): string {
@@ -388,8 +428,11 @@ export class ServerManager {
       } else {
         proc.kill(signal)
       }
-    } catch {
-      // Process already gone — ignore
+    } catch (err) {
+      const code = typeof err === "object" && err !== null ? (err as { code?: unknown }).code : undefined
+      if (code !== "ESRCH") {
+        console.warn("[Kilo New] ServerManager: failed to signal process", { pid: proc.pid, signal, err })
+      }
     }
   }
 
@@ -402,22 +445,16 @@ export class ServerManager {
     if (!proc) {
       return
     }
-    this.clearSharedState(proc.pid)
 
+    // 不要在真正退出前提前删除共享状态文件。
+    // 否则扩展宿主先退出、`kilo serve` 还活着时，新宿主会误以为没有共享后端，
+    // 进而再拉起第二个 server，造成 provider/chat 状态分裂。
     console.log("[Kilo New] ServerManager: 🔴 Disposing — sending SIGTERM to process group, PID:", proc.pid)
     ServerManager.killProcess(proc, "SIGTERM")
 
-    // SIGKILL fallback after 5s. Ensures the process tree dies even if SIGTERM is ignored
-    // or Instance.disposeAll() hangs past the serve.ts shutdown timeout.
-    const timer = setTimeout(() => {
-      if (proc.exitCode === null) {
-        console.warn("[Kilo New] ServerManager: ⚠️ Process did not exit after SIGTERM, sending SIGKILL")
-        ServerManager.killProcess(proc, "SIGKILL")
-      }
-    }, 5000)
-    // unref so this timer doesn't prevent the extension host from exiting
-    timer.unref()
-    proc.on("exit", () => clearTimeout(timer))
+    // SIGTERM 可能被服务端忽略，或者 Instance.disposeAll() 超过 serve.ts 的退出等待。
+    // 这里额外安排 SIGKILL 兜底，确保进程树最终会被清理。
+    ServerManager.scheduleKillFallback(proc)
   }
 
   forgetSharedServer(): boolean {
@@ -426,6 +463,18 @@ export class ServerManager {
     this.instance = null
     this.clearSharedState(pid)
     return true
+  }
+
+  private static scheduleKillFallback(proc: ChildProcess): void {
+    const timer = setTimeout(() => {
+      if (proc.exitCode === null) {
+        console.warn("[Kilo New] ServerManager: ⚠️ Process did not exit after SIGTERM, sending SIGKILL")
+        ServerManager.killProcess(proc, "SIGKILL")
+      }
+    }, KILL_FALLBACK_MS)
+    // 不让这个兜底计时器阻止扩展宿主退出。
+    timer.unref()
+    proc.on("exit", () => clearTimeout(timer))
   }
 }
 

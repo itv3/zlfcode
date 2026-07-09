@@ -1,4 +1,5 @@
 import type { CustomProviderProtocol } from "./provider-model"
+import { FETCH_MODELS_TIMEOUT_MS } from "./fetch-models-timeout"
 
 export type FetchModelsProtocol = CustomProviderProtocol
 
@@ -118,12 +119,21 @@ async function body(response: Response) {
   return new TextDecoder().decode(bytes)
 }
 
+function timeout(err: unknown) {
+  if (!(err instanceof Error)) return false
+  const msg = err.message.toLowerCase()
+  return err.name === "TimeoutError" || (err.name === "AbortError" && msg.includes("timeout"))
+}
+
 async function request(url: string, headers: Record<string, string>) {
   const response = await fetch(url, {
     method: "GET",
     headers,
     redirect: "manual",
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(FETCH_MODELS_TIMEOUT_MS),
+  }).catch((err) => {
+    if (timeout(err)) throw new FetchModelsError("Timed out")
+    throw err
   })
 
   if (!response.ok) {

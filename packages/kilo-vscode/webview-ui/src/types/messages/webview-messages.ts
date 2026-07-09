@@ -175,6 +175,7 @@ export interface SelectSourceRequest {
 
 export interface RequestProvidersMessage {
   type: "requestProviders"
+  mode?: "connected" | "catalog"
 }
 
 export interface CompactRequest {

@@ -1019,6 +1019,11 @@ export interface ProviderActionErrorMessage {
   message: string
 }
 
+export interface CustomProviderModelsFetchStartedMessage {
+  type: "customProviderModelsFetchStarted"
+  requestId: string
+}
+
 export interface CustomProviderModelsFetchedMessage {
   type: "customProviderModelsFetched"
   requestId: string
@@ -1204,6 +1209,7 @@ export type ExtensionMessage =
   | ProviderDisconnectedMessage
   | ProviderActionErrorMessage
   | AnacondaDesktopExtensionMessage
+  | CustomProviderModelsFetchStartedMessage
   | CustomProviderModelsFetchedMessage
   | RecentsLoadedMessage
   | ModelSelectorExpandedLoadedMessage

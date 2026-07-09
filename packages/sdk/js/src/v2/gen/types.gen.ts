@@ -35,6 +35,8 @@ export type Event =
   | EventMessagePartDelta
   | EventPermissionAsked
   | EventPermissionReplied
+  | EventCommandExecuted
+  | EventProjectUpdated
   | EventBackgroundProcessUpdated
   | EventBackgroundProcessDeleted
   | EventInteractiveTerminalUpdated
@@ -52,8 +54,6 @@ export type Event =
   | EventSuggestionShown
   | EventSuggestionAccepted
   | EventSuggestionDismissed
-  | EventCommandExecuted
-  | EventProjectUpdated
   | EventSessionCompacted
   | EventVcsBranchUpdated
   | EventKiloSessionsRemoteStatusChanged
@@ -361,6 +361,30 @@ export type PermissionRequest = {
   }
 }
 
+export type Project = {
+  id: string
+  worktree: string
+  vcs?: "git"
+  name?: string
+  icon?: {
+    url?: string
+    override?: string
+    color?: string
+  }
+  commands?: {
+    /**
+     * Startup script to run when creating a new workspace (worktree)
+     */
+    start?: string
+  }
+  time: {
+    created: number
+    updated: number
+    initialized?: number
+  }
+  sandboxes: Array<string>
+}
+
 export type BackgroundProcessInfo = {
   id: string
   sessionID: string
@@ -558,30 +582,6 @@ export type SuggestionRequest = {
     messageID: string
     callID: string
   }
-}
-
-export type Project = {
-  id: string
-  worktree: string
-  vcs?: "git"
-  name?: string
-  icon?: {
-    url?: string
-    override?: string
-    color?: string
-  }
-  commands?: {
-    /**
-     * Startup script to run when creating a new workspace (worktree)
-     */
-    start?: string
-  }
-  time: {
-    created: number
-    updated: number
-    initialized?: number
-  }
-  sandboxes: Array<string>
 }
 
 export type Pty = {
@@ -1065,6 +1065,8 @@ export type GlobalEvent = {
     | EventMessagePartDelta
     | EventPermissionAsked
     | EventPermissionReplied
+    | EventCommandExecuted
+    | EventProjectUpdated
     | EventBackgroundProcessUpdated
     | EventBackgroundProcessDeleted
     | EventInteractiveTerminalUpdated
@@ -1082,8 +1084,6 @@ export type GlobalEvent = {
     | EventSuggestionShown
     | EventSuggestionAccepted
     | EventSuggestionDismissed
-    | EventCommandExecuted
-    | EventProjectUpdated
     | EventSessionCompacted
     | EventVcsBranchUpdated
     | EventKiloSessionsRemoteStatusChanged
@@ -3568,6 +3568,23 @@ export type EventPermissionReplied = {
   }
 }
 
+export type EventCommandExecuted = {
+  id: string
+  type: "command.executed"
+  properties: {
+    name: string
+    sessionID: string
+    arguments: string
+    messageID: string
+  }
+}
+
+export type EventProjectUpdated = {
+  id: string
+  type: "project.updated"
+  properties: Project
+}
+
 export type EventBackgroundProcessUpdated = {
   id: string
   type: "background_process.updated"
@@ -3735,23 +3752,6 @@ export type EventSuggestionDismissed = {
     sessionID: string
     requestID: string
   }
-}
-
-export type EventCommandExecuted = {
-  id: string
-  type: "command.executed"
-  properties: {
-    name: string
-    sessionID: string
-    arguments: string
-    messageID: string
-  }
-}
-
-export type EventProjectUpdated = {
-  id: string
-  type: "project.updated"
-  properties: Project
 }
 
 export type EventSessionCompacted = {

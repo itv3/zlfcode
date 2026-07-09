@@ -15,6 +15,7 @@ type LanguageChangeListener = (locale: string) => void
 type ProfileChangeListener = (data: unknown) => void
 type MigrationCompleteListener = () => void
 type FavoritesChangeListener = (favorites: Array<{ providerID: string; modelID: string }>) => void
+type ProvidersChangeListener = (source?: string) => void
 type ModelSelectorExpandedListener = (value: boolean) => void
 type ClearPendingPromptsListener = () => void
 type DirectoryProvider = () => string[]
@@ -71,6 +72,7 @@ export class KiloConnectionService {
   private readonly profileChangeListeners: Set<ProfileChangeListener> = new Set()
   private readonly migrationCompleteListeners: Set<MigrationCompleteListener> = new Set()
   private readonly favoritesChangeListeners: Set<FavoritesChangeListener> = new Set()
+  private readonly providersChangeListeners: Set<ProvidersChangeListener> = new Set()
   private readonly modelSelectorExpandedListeners: Set<ModelSelectorExpandedListener> = new Set()
   private readonly clearPendingPromptsListeners: Set<ClearPendingPromptsListener> = new Set()
   private readonly directoryProviders: Set<DirectoryProvider> = new Set()
@@ -441,6 +443,26 @@ export class KiloConnectionService {
   notifyFavoritesChanged(favorites: Array<{ providerID: string; modelID: string }>): void {
     for (const listener of this.favoritesChangeListeners) {
       listener(favorites)
+    }
+  }
+
+  /**
+   * 订阅 provider 变更广播。任一 KiloProvider 保存/断开后,
+   * 其他 webview 通过它重新拉取 providersLoaded。
+   */
+  onProvidersChanged(listener: ProvidersChangeListener): () => void {
+    this.providersChangeListeners.add(listener)
+    return () => {
+      this.providersChangeListeners.delete(listener)
+    }
+  }
+
+  /**
+   * 广播 provider 变更来源,让其他 KiloProvider 刷新 provider 状态。
+   */
+  notifyProvidersChanged(source?: string): void {
+    for (const listener of this.providersChangeListeners) {
+      listener(source)
     }
   }
 

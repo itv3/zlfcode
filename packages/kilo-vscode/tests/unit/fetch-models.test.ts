@@ -158,6 +158,27 @@ describe("fetchModels", () => {
     }
   })
 
+  it("normalizes model fetch timeout failures", async () => {
+    const prev = globalThis.fetch
+    globalThis.fetch = (async () => {
+      const err = new Error("The operation was aborted due to timeout")
+      err.name = "TimeoutError"
+      throw err
+    }) as typeof fetch
+
+    try {
+      await expect(
+        fetchModels({
+          baseURL: "https://example.com/v1",
+          apiKey: "key",
+          protocol: "openai",
+        }),
+      ).rejects.toThrow("Timed out")
+    } finally {
+      globalThis.fetch = prev
+    }
+  })
+
   it("does not follow redirects while sending API keys", async () => {
     const target = Bun.serve({
       port: 0,

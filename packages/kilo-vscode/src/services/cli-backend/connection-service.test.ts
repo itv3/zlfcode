@@ -83,6 +83,20 @@ describe("KiloConnectionService viewed sessions", () => {
   })
 })
 
+describe("KiloConnectionService provider broadcasts", () => {
+  test("broadcasts provider changes to active listeners", () => {
+    const service = new KiloConnectionService({} as any)
+    const calls: Array<string | undefined> = []
+    const off = service.onProvidersChanged((source) => calls.push(source))
+
+    service.notifyProvidersChanged("sidebar")
+    off()
+    service.notifyProvidersChanged("settings")
+
+    expect(calls).toEqual(["sidebar"])
+  })
+})
+
 describe("KiloConnectionService drainPendingPrompts", () => {
   test("ignores stale NotFoundError replies while draining permissions", async () => {
     const service = new KiloConnectionService({} as any)

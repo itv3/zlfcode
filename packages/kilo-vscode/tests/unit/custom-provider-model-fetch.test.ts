@@ -48,7 +48,10 @@ describe("custom provider model fetch", () => {
       })
 
       expect(calls).toEqual([""])
-      expect(sent).toEqual([{ type: "customProviderModelsFetched", requestId: "req", models: [] }])
+      expect(sent).toEqual([
+        { type: "customProviderModelsFetchStarted", requestId: "req" },
+        { type: "customProviderModelsFetched", requestId: "req", models: [] },
+      ])
     } finally {
       globalThis.fetch = prev
     }

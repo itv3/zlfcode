@@ -56,6 +56,28 @@ const esbuildProblemMatcherPlugin = {
 }
 
 /**
+ * VS Code Remote Extension Host 会暴露类似 Electron renderer 的 process.type。
+ * debug 的默认入口会因此误选 browser 实现，并访问全局 navigator，触发 VS Code
+ * 的 Node.js navigator 迁移保护。扩展主进程始终是 Node 环境，这里强制使用
+ * debug 的 Node 入口。
+ *
+ * @type {import('esbuild').Plugin}
+ */
+const debugNodeAliasPlugin = {
+  name: "debug-node-alias",
+  setup(build) {
+    build.onResolve({ filter: /^debug$/ }, async (args) => {
+      const resolved = await build.resolve("debug/src/node.js", {
+        kind: args.kind,
+        resolveDir: args.resolveDir,
+      })
+      if (resolved.errors.length > 0) return { errors: resolved.errors }
+      return { path: resolved.path }
+    })
+  },
+}
+
+/**
  * Route the shared `@opencode-ai/ui/pierre/worker` module (and its relative
  * variants) to the Kilo implementation in `webview-ui/pierre-worker.ts`.
  *
@@ -201,9 +223,14 @@ async function main() {
     sourcesContent: false,
     platform: "node",
     outfile: "dist/extension.js",
+    // VS Code Remote Extension Host 的全局 navigator getter 会抛迁移错误。
+    // 扩展主进程是 Node 环境，browser-only 探测应在打包时直接折叠为不可用。
+    define: {
+      navigator: "undefined",
+    },
     external: ["vscode"],
     logLevel: "silent",
-    plugins: [esbuildProblemMatcherPlugin],
+    plugins: [debugNodeAliasPlugin, esbuildProblemMatcherPlugin],
   })
 
   // Build Agent Manager webview (SolidJS, shares components with sidebar)

@@ -3,7 +3,7 @@ import { Server } from "../../server/server"
 import { effectCmd } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { InstanceRuntime } from "../../project/instance-runtime" // kilocode_change
+import { KiloShutdown } from "@/kilocode/cli/shutdown" // kilocode_change
 
 export const ServeCommand = effectCmd({
   command: "serve",
@@ -29,22 +29,7 @@ export const ServeCommand = effectCmd({
 
     // kilocode_change start - graceful signal shutdown
     // yield* Effect.never
-    yield* Effect.promise(
-      () =>
-        new Promise<void>((resolve) => {
-          const shutdown = async () => {
-            try {
-              await InstanceRuntime.disposeAllInstances()
-              await server.stop(true)
-            } finally {
-              resolve()
-            }
-          }
-          process.once("SIGTERM", shutdown)
-          process.once("SIGINT", shutdown)
-          process.once("SIGHUP", shutdown)
-        }),
-    )
+    yield* Effect.promise(() => KiloShutdown.waitForServer(server))
     // kilocode_change end
   }),
 })

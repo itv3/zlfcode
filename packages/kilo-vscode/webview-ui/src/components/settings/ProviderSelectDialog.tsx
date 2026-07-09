@@ -3,11 +3,12 @@ import { Dialog } from "@kilocode/kilo-ui/dialog"
 import { List } from "@kilocode/kilo-ui/list"
 import { ProviderIcon } from "@kilocode/kilo-ui/provider-icon"
 import { Tag } from "@kilocode/kilo-ui/tag"
-import { Show, createMemo } from "solid-js"
+import { Show, createMemo, onMount } from "solid-js"
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
 import { useProvider } from "../../context/provider"
 import { useServer } from "../../context/server"
+import { useVSCode } from "../../context/vscode"
 import type { Provider } from "../../types/messages"
 import ProviderConnectDialog from "./ProviderConnectDialog"
 import {
@@ -32,6 +33,9 @@ const ProviderSelectDialog = () => {
   const provider = useProvider()
   const server = useServer()
   const language = useLanguage()
+  const vscode = useVSCode()
+
+  onMount(() => vscode.postMessage({ type: "requestProviders", mode: "catalog" }))
 
   const items = createMemo<ProviderItem[]>(() => {
     language.locale()

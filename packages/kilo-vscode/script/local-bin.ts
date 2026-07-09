@@ -15,6 +15,7 @@ import { currentBwrapTarget, ensureBwrapForTarget } from "./bwrap-helper"
 import { currentFfmpegTarget, ensureFfmpegForTarget } from "./ffmpeg-helper"
 
 const forceRebuild = process.argv.includes("--force")
+const strict = process.argv.includes("--strict") || process.env.KILO_STRICT_CLI_BINARY === "1"
 
 /**
  * Ensures the VS Code extension has a CLI binary at `packages/kilo-vscode/bin/kilo`.
@@ -43,6 +44,15 @@ const versionFile = join(targetBinDir, ".cli-version")
 
 function log(msg: string) {
   console.log(`[local-bin] ${msg}`)
+}
+
+async function isWrapper(file: string): Promise<boolean> {
+  try {
+    const text = await Bun.file(file).text()
+    return text.includes("src/index.ts") && text.includes("packages/opencode")
+  } catch {
+    return false
+  }
 }
 
 async function cliSourceHash(): Promise<string | null> {
@@ -224,9 +234,10 @@ async function main() {
   const targetFile = Bun.file(targetBinPath)
   const exists = await targetFile.exists()
   const ready = exists && hasTreeSitterResources(targetBinPath) && hasKiloSandboxWorker(targetBinPath)
+  const wrapper = ready ? await isWrapper(targetBinPath) : false
 
   const stale = ready && !forceRebuild && (await isStale())
-  const rebuild = forceRebuild || stale || !ready
+  const rebuild = forceRebuild || stale || !ready || (strict && wrapper)
 
   if (ready && !rebuild) {
     const st = statSync(targetBinPath)
@@ -255,6 +266,7 @@ async function main() {
   }
 
   const sourceBinPath = await ensureBuiltBinary().catch(async (err) => {
+    if (strict) throw err
     await writeSourceWrapper()
     log(`Wrapper fallback reason: ${err instanceof Error ? err.message : String(err)}`)
     return null

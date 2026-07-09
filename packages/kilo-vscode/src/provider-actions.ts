@@ -27,9 +27,20 @@ import { configFeatures } from "./features"
  * Pure function — takes cachedConfig and vscode settings as parameters.
  */
 type AuthState = "api" | "oauth" | "wellknown"
+export type ProviderFetchMode = "connected" | "catalog"
 export const DEFAULT_FAVORITES = [{ providerID: KILO_PROVIDER_ID, modelID: "stepfun/step-3.7-flash:free" }]
 export const FAVORITES_SEEDED_KEY = "kilo.defaultFavoritesSeededV1"
 const BUILTIN_CUSTOM_PROVIDER_IDS = new Set(["openai", "anthropic", "google", KILO_PROVIDER_ID])
+const CATALOG_MODEL_PROVIDER_IDS = new Set([
+  "openai",
+  "anthropic",
+  "google",
+  "openrouter",
+  "opencode",
+  "llmgateway",
+  "zhipuai",
+  "zai",
+])
 
 /** API key 只保留在扩展端,用于带认证的模型发现 (#10139)。 */
 export interface StoredProviderKey {
@@ -80,8 +91,41 @@ function envName(value: unknown) {
   return parsed?.success ? parsed.data : undefined
 }
 
+async function fetchProviderList(client: KiloClient, dir: string, mode: ProviderFetchMode) {
+  if (mode === "catalog") {
+    const { data } = await client.provider.list({ directory: dir }, { throwOnError: true })
+    return data
+  }
+
+  const { data } = await client.config.providers({ directory: dir }, { throwOnError: true })
+  const all = data.providers
+  return {
+    all,
+    connected: all.map((item) => item.id),
+    default: data.default,
+    failed: [],
+  }
+}
+
+function keepCatalogModels(id: string, connected: Set<string>, authStates: Record<string, AuthState>) {
+  // 设置页只需要少量模型目录用于自定义 provider 默认值补全；
+  // 其余 provider 保留基础信息即可，避免 Remote-SSH 下把超大 catalog
+  // 整包塞进 webview 后把远端扩展宿主拖到无响应。
+  return connected.has(id) || authStates[id] !== undefined || CATALOG_MODEL_PROVIDER_IDS.has(id)
+}
+
+function trimCatalogModels<T extends { id: string; models?: Record<string, unknown> }>(
+  item: T,
+  connected: Set<string>,
+  authStates: Record<string, AuthState>,
+): T {
+  if (keepCatalogModels(item.id, connected, authStates)) return item
+  if (!item.models || Object.keys(item.models).length === 0) return item
+  return { ...item, models: {} } as T
+}
+
 /** 拉取 provider 可用性和认证状态,但不把已保存凭据暴露给 webview。 */
-export async function fetchProviderData(client: KiloClient, dir: string) {
+export async function fetchProviderData(client: KiloClient, dir: string, mode: ProviderFetchMode = "connected") {
   const authRequest =
     typeof client.provider.auth === "function"
       ? client.provider
@@ -94,8 +138,8 @@ export async function fetchProviderData(client: KiloClient, dir: string) {
     .then((r) => (r.data?.authenticated ? (r.data.type ?? null) : null))
     .catch(() => null)
 
-  const [{ data: response }, authMethods, kiloAuth] = await Promise.all([
-    client.provider.list({ directory: dir }, { throwOnError: true }),
+  const [response, authMethods, kiloAuth] = await Promise.all([
+    fetchProviderList(client, dir, mode),
     authRequest,
     kiloRequest,
   ])
@@ -130,7 +174,10 @@ export async function fetchProviderData(client: KiloClient, dir: string) {
   })
   delete authStates[KILO_PROVIDER_ID]
   if (kiloAuth) authStates[KILO_PROVIDER_ID] = kiloAuth
-  return { response: { ...response, all }, authMethods, authStates, storedKeys }
+
+  const connected = new Set(response.connected)
+  const trimmed = mode === "catalog" ? all.map((item) => trimCatalogModels(item, connected, authStates)) : all
+  return { response: { ...response, all: trimmed }, authMethods, authStates, storedKeys }
 }
 
 /**
@@ -161,6 +208,7 @@ export function buildActionContext(
   errFn: (err: unknown) => string,
   dir: string,
   refresh: () => Promise<void>,
+  notify?: () => void,
 ): ActionContext {
   return {
     client,
@@ -176,6 +224,7 @@ export function buildActionContext(
       })
     },
     fetchAndSendProviders: refresh,
+    notifyProvidersChanged: notify,
   }
 }
 
@@ -251,6 +300,7 @@ interface ActionContext {
   workspaceDir: string
   disposeGlobal: (reason: string) => Promise<void>
   fetchAndSendProviders: () => Promise<void>
+  notifyProvidersChanged?: () => void
 }
 
 function postError(
@@ -349,6 +399,17 @@ async function enableConfigured(ctx: ActionContext, id: string, config: Config) 
   await saveGlobal(ctx, { disabled_providers: disabled })
 }
 
+function refreshProvidersLater(ctx: ActionContext, reason: string, refresh?: () => Promise<void>) {
+  void (async () => {
+    await refresh?.()
+    await ctx.disposeGlobal(reason)
+    await ctx.fetchAndSendProviders()
+    ctx.notifyProvidersChanged?.()
+  })().catch((error: unknown) => {
+    console.warn(`[Kilo New] KiloProvider: provider refresh after ${reason} failed:`, error)
+  })
+}
+
 export async function connectProvider(
   ctx: ActionContext,
   requestId: string,
@@ -365,6 +426,7 @@ export async function connectProvider(
     await ctx.disposeGlobal(`provider connect (${id})`)
     await ctx.fetchAndSendProviders()
     ctx.postMessage({ type: "providerConnected", requestId, providerID: id })
+    ctx.notifyProvidersChanged?.()
   } catch (error) {
     postError(ctx, requestId, providerID, "connect", ctx.getErrorMessage(error) || "Failed to connect provider")
   }
@@ -416,6 +478,7 @@ export async function completeProviderOAuth(
     await ctx.disposeGlobal(`provider oauth (${id})`)
     await ctx.fetchAndSendProviders()
     ctx.postMessage({ type: "providerConnected", requestId, providerID: id })
+    ctx.notifyProvidersChanged?.()
   } catch (error) {
     postError(
       ctx,
@@ -469,11 +532,12 @@ export async function disconnectProvider(
       await enableConfigured(ctx, id, config.global)
     }
 
-    if (configured) await refreshConfig(ctx, setCachedConfig)
-
-    await ctx.disposeGlobal(`provider disconnect (${id})`)
-    await ctx.fetchAndSendProviders()
     ctx.postMessage({ type: "providerDisconnected", requestId, providerID: id })
+    refreshProvidersLater(
+      ctx,
+      `provider disconnect (${id})`,
+      configured ? () => refreshConfig(ctx, setCachedConfig) : undefined,
+    )
   } catch (error) {
     postError(ctx, requestId, providerID, "disconnect", ctx.getErrorMessage(error) || "Failed to disconnect provider")
   }
@@ -498,12 +562,8 @@ export async function saveCustomProvider(
     return
   }
 
-  const refresh = async () => {
-    await ctx.disposeGlobal(`custom provider save (${id})`)
-    await ctx.fetchAndSendProviders()
-  }
   const refreshLater = () => {
-    void refresh().catch(() => undefined)
+    refreshProvidersLater(ctx, `custom provider save (${id})`)
   }
   const refreshConfigLater = () => {
     void refreshConfig(ctx, setCachedConfig).catch(() => undefined)

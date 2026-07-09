@@ -21,6 +21,7 @@ import * as fs from "fs/promises"
 import * as os from "os"
 import * as path from "path"
 import type { ChildProcess } from "child_process"
+import { EventEmitter } from "events"
 
 type TestableServerManager = ServerManager & {
   getCliPath: () => string
@@ -291,6 +292,42 @@ describe("server workspace helpers", () => {
 })
 
 describe("ServerManager shared startup", () => {
+  it("removes dead shared server state during construction", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-vscode-dead-shared-state-"))
+    const file = path.join(root, "server-start.json")
+    const cli = path.join(root, "bin", process.platform === "win32" ? "kilo.exe" : "kilo")
+    const context = {
+      globalStorageUri: { fsPath: root },
+      extensionPath: root,
+      extension: { packageJSON: { version: "test" } },
+    } as unknown as ConstructorParameters<typeof ServerManager>[0]
+
+    try {
+      await fs.mkdir(path.dirname(cli), { recursive: true })
+      await fs.writeFile(
+        file,
+        JSON.stringify({
+          pid: 99_999_999,
+          port: 40123,
+          password: "secret",
+          cliPath: cli,
+          version: "test",
+        }),
+      )
+
+      new ServerManager(context)
+
+      expect(
+        await fs.stat(file).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(false)
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
   it("starts one backend when multiple managers cold-start concurrently", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-vscode-shared-server-"))
     const context = {
@@ -324,6 +361,81 @@ describe("ServerManager shared startup", () => {
       expect(servers.every((server) => server.port === 40123 && server.password === "secret")).toBe(true)
       expect(servers.filter((server) => server.shared).length).toBe(4)
     } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("removes an abandoned startup lock immediately instead of waiting for staleness", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-vscode-abandoned-lock-"))
+    const context = {
+      globalStorageUri: { fsPath: root },
+      extensionPath: root,
+      extension: { packageJSON: { version: "test" } },
+    } as unknown as ConstructorParameters<typeof ServerManager>[0]
+    const manager = new ServerManager(context) as unknown as TestableServerManager & {
+      withStartupLock: <T>(fn: () => Promise<T>) => Promise<T>
+    }
+    const lock = path.join(root, "server-start.lock")
+
+    try {
+      await fs.mkdir(lock, { recursive: true })
+      await fs.writeFile(path.join(lock, "owner.json"), JSON.stringify({ pid: 99_999_999, time: Date.now() }))
+
+      const result = await manager.withStartupLock(async () => "ok")
+
+      expect(result).toBe("ok")
+      expect(
+        await fs.stat(lock).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(false)
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps shared server state until the child actually exits", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-vscode-dispose-state-"))
+    const context = {
+      globalStorageUri: { fsPath: root },
+      extensionPath: root,
+      extension: { packageJSON: { version: "test" } },
+    } as unknown as ConstructorParameters<typeof ServerManager>[0]
+    const manager = new ServerManager(context) as unknown as TestableServerManager & {
+      instance: ServerInstance | null
+      writeSharedState: (server: ServerInstance) => void
+    }
+    const proc = Object.assign(new EventEmitter(), {
+      pid: 43_210,
+      exitCode: null,
+    }) as EventEmitter & ChildProcess
+    const file = path.join(root, "server-start.json")
+    const kill = process.kill
+
+    try {
+      manager.writeSharedState({
+        port: 40123,
+        password: "secret",
+        process: proc,
+      })
+      manager.instance = {
+        port: 40123,
+        password: "secret",
+        process: proc,
+      }
+      ;(process as { kill: typeof process.kill }).kill = (() => true) as typeof process.kill
+
+      manager.dispose()
+
+      expect(
+        await fs.stat(file).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(true)
+    } finally {
+      ;(process as { kill: typeof process.kill }).kill = kill
       await fs.rm(root, { recursive: true, force: true })
     }
   })

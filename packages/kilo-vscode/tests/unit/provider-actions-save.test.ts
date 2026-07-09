@@ -9,10 +9,24 @@ import {
 
 type ExistingGlobal = { disabled_providers?: string[]; provider?: Record<string, unknown> }
 
+function listed(config: ExistingGlobal) {
+  const entries = Object.entries(config.provider ?? {})
+    .filter(([id]) => id !== "openai")
+    .map(([id, provider]) => ({
+      name: id,
+      source: "config",
+      env: [],
+      models: {},
+      ...(provider && typeof provider === "object" && !Array.isArray(provider) ? provider : {}),
+      id,
+    }))
+  return [{ id: "openai", name: "OpenAI", source: "custom", env: [], models: {} }, ...entries]
+}
+
 function createCtx(
   existing: ExistingGlobal = { disabled_providers: [] },
   merged: ExistingGlobal = existing,
-  opts: { failGlobalUpdateAt?: number; hangDispose?: boolean; hangConfigGet?: boolean } = {},
+  opts: { failGlobalUpdateAt?: number; hangDispose?: boolean; hangConfigGet?: boolean; hangConfigGetAfter?: number } = {},
 ) {
   const calls = {
     set: [] as Array<{ providerID: string; auth: { type: string; key: string; metadata?: Record<string, string> } }>,
@@ -22,6 +36,7 @@ function createCtx(
     project: [] as Array<{ config: Record<string, unknown> }>,
     cached: [] as unknown[],
     refresh: 0,
+    notify: 0,
     dispose: 0,
     mergedGet: 0,
   }
@@ -75,9 +90,16 @@ function createCtx(
       config: {
         get: async () => {
           calls.mergedGet += 1
-          if (opts.hangConfigGet) await new Promise(() => {})
+          if (opts.hangConfigGet || (opts.hangConfigGetAfter !== undefined && calls.mergedGet > opts.hangConfigGetAfter))
+            await new Promise(() => {})
           return { data: merged }
         },
+        providers: async () => ({
+          data: {
+            providers: listed(merged),
+            default: {},
+          },
+        }),
         update: async (input: { config: Record<string, unknown> }) => {
           calls.project.push(input)
           return { data: input }
@@ -93,6 +115,9 @@ function createCtx(
     },
     fetchAndSendProviders: async () => {
       calls.refresh += 1
+    },
+    notifyProvidersChanged: () => {
+      calls.notify += 1
     },
   } as unknown as Parameters<typeof saveCustomProvider>[0]
 
@@ -140,6 +165,8 @@ describe("disconnectProvider", () => {
 
     expect(calls.remove).toEqual([{ providerID: "openai" }])
     expect(calls.config).toEqual([{ config: { disabled_providers: ["groq"] } }])
+    expect(calls.posts).toContainEqual({ type: "providerDisconnected", requestId: "req", providerID: "openai" })
+    await flush()
     expect(calls.refresh).toBe(1)
   })
 })
@@ -164,6 +191,7 @@ describe("connectProvider", () => {
       },
     ])
     expect(calls.refresh).toBe(1)
+    expect(calls.notify).toBe(1)
     expect(calls.posts).toContainEqual({ type: "providerConnected", requestId: "req", providerID: "azure" })
   })
 
@@ -202,6 +230,7 @@ describe("saveCustomProvider", () => {
     expect(calls.set).toHaveLength(0)
     expect(calls.remove).toHaveLength(0)
     expect(calls.refresh).toBe(1)
+    expect(calls.notify).toBe(1)
   })
 
   it("clears auth when the api key field was intentionally cleared", async () => {
@@ -458,6 +487,7 @@ describe("saveCustomProvider", () => {
     expect(result).toBe("done")
     expect(calls.dispose).toBe(1)
     expect(calls.refresh).toBe(0)
+    expect(calls.notify).toBe(0)
     expect(calls.posts).toContainEqual({ type: "providerConnected", requestId: "req", providerID: "myprovider" })
   })
 
@@ -481,6 +511,76 @@ describe("saveCustomProvider", () => {
   })
 })
 
+describe("fetchProviderData", () => {
+  it("trims catalog models for unrelated providers but keeps defaults sources", async () => {
+    const client = {
+      provider: {
+        list: async () => ({
+          data: {
+            all: [
+              {
+                id: "openai",
+                name: "OpenAI",
+                source: "custom",
+                env: [],
+                models: {
+                  "gpt-5": { name: "GPT-5" },
+                },
+              },
+              {
+                id: "groq",
+                name: "Groq",
+                source: "custom",
+                env: [],
+                models: {
+                  "llama-4": { name: "Llama 4" },
+                },
+              },
+              {
+                id: "myprovider",
+                name: "My Provider",
+                source: "config",
+                env: [],
+                key: "sk-test",
+                options: { baseURL: "https://example.com/v1" },
+                npm: "@ai-sdk/openai-compatible",
+                models: {
+                  "model-1": { name: "Model One" },
+                },
+              },
+            ],
+            connected: ["myprovider"],
+            default: {},
+          },
+        }),
+        auth: async () => ({ data: {} }),
+      },
+      kilo: {
+        authStatus: async () => ({ data: { authenticated: false } }),
+      },
+      config: {
+        providers: async () => ({
+          data: {
+            providers: [],
+            default: {},
+          },
+        }),
+      },
+    } as unknown as Parameters<typeof fetchProviderData>[0]
+
+    const data = await fetchProviderData(
+      client,
+      "/tmp",
+      "catalog",
+    )
+
+    const providers = Object.fromEntries(data.response.all.map((item) => [item.id, item]))
+    expect(Object.keys(providers.openai.models)).toEqual(["gpt-5"])
+    expect(Object.keys(providers.groq.models)).toEqual([])
+    expect(Object.keys(providers.myprovider.models)).toEqual(["model-1"])
+  })
+})
+
 describe("disconnectProvider", () => {
   it("adds configured providers to disabled_providers without deleting their config", async () => {
     const existing = {
@@ -496,8 +596,10 @@ describe("disconnectProvider", () => {
     expect(calls.config).toHaveLength(1)
     expect(calls.config[0].config).toEqual({ disabled_providers: ["openai", "myprovider"] })
     expect(calls.remove).toEqual([{ providerID: "myprovider" }])
-    expect(calls.refresh).toBe(1)
     expect(calls.posts).toContainEqual({ type: "providerDisconnected", requestId: "req", providerID: "myprovider" })
+    await flush()
+    expect(calls.refresh).toBe(1)
+    expect(calls.notify).toBe(1)
   })
 
   it("does not duplicate configured providers already disabled", async () => {
@@ -512,6 +614,7 @@ describe("disconnectProvider", () => {
     await disconnectProvider(ctx, "req", "myprovider", null, setCachedConfig)
 
     expect(calls.config).toHaveLength(0)
+    await flush()
     expect(calls.refresh).toBe(1)
   })
 
@@ -533,7 +636,53 @@ describe("disconnectProvider", () => {
     })
     expect(calls.project).toEqual([{ config: { provider: { myprovider: null } }, directory: "/tmp" }])
     expect(calls.remove).toEqual([{ providerID: "myprovider" }])
+    expect(calls.posts).toContainEqual({ type: "providerDisconnected", requestId: "req", providerID: "myprovider" })
+    await flush()
     expect(calls.refresh).toBe(1)
+  })
+
+  it("confirms custom provider disconnects before refresh completes", async () => {
+    const existing = {
+      disabled_providers: ["myprovider", "openai"],
+      provider: {
+        myprovider: createSavedProvider(),
+      },
+    }
+    const { ctx, calls, setCachedConfig } = createCtx(existing, existing, { hangDispose: true })
+
+    const result = await Promise.race([
+      disconnectProvider(ctx, "req", "myprovider", null, setCachedConfig).then(() => "done"),
+      Bun.sleep(50).then(() => "timeout"),
+    ])
+
+    expect(result).toBe("done")
+    expect(calls.config).toHaveLength(1)
+    expect(calls.remove).toEqual([{ providerID: "myprovider" }])
+    expect(calls.dispose).toBe(1)
+    expect(calls.refresh).toBe(0)
+    expect(calls.notify).toBe(0)
+    expect(calls.posts).toContainEqual({ type: "providerDisconnected", requestId: "req", providerID: "myprovider" })
+  })
+
+  it("confirms custom provider disconnects before config refresh completes", async () => {
+    const existing = {
+      disabled_providers: ["myprovider", "openai"],
+      provider: {
+        myprovider: createSavedProvider(),
+      },
+    }
+    const { ctx, calls, setCachedConfig } = createCtx(existing, existing, { hangConfigGetAfter: 1 })
+
+    const result = await Promise.race([
+      disconnectProvider(ctx, "req", "myprovider", null, setCachedConfig).then(() => "done"),
+      Bun.sleep(50).then(() => "timeout"),
+    ])
+
+    expect(result).toBe("done")
+    expect(calls.mergedGet).toBe(2)
+    expect(calls.refresh).toBe(0)
+    expect(calls.notify).toBe(0)
+    expect(calls.posts).toContainEqual({ type: "providerDisconnected", requestId: "req", providerID: "myprovider" })
   })
 
   it("deletes project custom provider config when it is not in global config", async () => {
@@ -549,6 +698,7 @@ describe("disconnectProvider", () => {
     expect(calls.config).toHaveLength(0)
     expect(calls.project).toEqual([{ config: { provider: { myprovider: null } }, directory: "/tmp" }])
     expect(calls.remove).toEqual([{ providerID: "myprovider" }])
+    await flush()
     expect(calls.refresh).toBe(1)
   })
 
@@ -582,6 +732,7 @@ describe("disconnectProvider", () => {
     ])
     expect(calls.project).toEqual([{ config: { provider: { myprovider: null } }, directory: "/tmp" }])
     expect(calls.remove).toEqual([{ providerID: "myprovider" }])
+    await flush()
     expect(calls.refresh).toBe(1)
   })
 })
@@ -589,10 +740,10 @@ describe("disconnectProvider", () => {
 describe("fetchProviderData", () => {
   it("derives api auth state and strips keys from provider payloads", async () => {
     const client = {
-      provider: {
-        list: async () => ({
+      config: {
+        providers: async () => ({
           data: {
-            all: [
+            providers: [
               {
                 id: "groq-test",
                 name: "Groq Test",
@@ -602,6 +753,14 @@ describe("fetchProviderData", () => {
                 models: {},
               },
             ],
+            default: { "groq-test": "llama-3.1-8b-instant" },
+          },
+        }),
+      },
+      provider: {
+        list: async () => ({
+          data: {
+            all: [],
             connected: ["groq-test"],
             default: { "groq-test": "llama-3.1-8b-instant" },
           },
@@ -622,10 +781,18 @@ describe("fetchProviderData", () => {
 
   it("uses local Kilo auth status instead of profile availability", async () => {
     const client = {
+      config: {
+        providers: async () => ({
+          data: {
+            providers: [{ id: "kilo", name: "Kilo Gateway", source: "custom", env: [], models: {} }],
+            default: { kilo: "kilo-auto/frontier" },
+          },
+        }),
+      },
       provider: {
         list: async () => ({
           data: {
-            all: [{ id: "kilo", name: "Kilo Gateway", source: "custom", env: [], models: {} }],
+            all: [],
             connected: ["kilo"],
             default: { kilo: "kilo-auto/frontier" },
           },
@@ -644,10 +811,18 @@ describe("fetchProviderData", () => {
 
   it("does not infer Kilo speech access without stored Gateway auth", async () => {
     const client = {
+      config: {
+        providers: async () => ({
+          data: {
+            providers: [{ id: "kilo", name: "Kilo Gateway", source: "config", key: "configured", env: [], models: {} }],
+            default: { kilo: "kilo-auto/frontier" },
+          },
+        }),
+      },
       provider: {
         list: async () => ({
           data: {
-            all: [{ id: "kilo", name: "Kilo Gateway", source: "config", key: "configured", env: [], models: {} }],
+            all: [],
             connected: ["kilo"],
             default: { kilo: "kilo-auto/frontier" },
           },
@@ -666,10 +841,10 @@ describe("fetchProviderData", () => {
 
   it("retains stripped keys for providers with a configured baseURL", async () => {
     const client = {
-      provider: {
-        list: async () => ({
+      config: {
+        providers: async () => ({
           data: {
-            all: [
+            providers: [
               {
                 id: "myprovider",
                 name: "My Provider",
@@ -722,6 +897,14 @@ describe("fetchProviderData", () => {
                 },
               },
             ],
+            default: {},
+          },
+        }),
+      },
+      provider: {
+        list: async () => ({
+          data: {
+            all: [],
             connected: [],
             default: {},
           },
@@ -741,6 +924,59 @@ describe("fetchProviderData", () => {
       "env-provider": { env: "MY_PROVIDER_KEY", baseURL: "https://env.example.com/v1", npm: "@ai-sdk/openai-compatible" },
     })
     expect(result.response.all.every((item) => !("key" in (item as Record<string, unknown>)))).toBe(true)
+  })
+
+  it("uses config providers for the default connected payload", async () => {
+    const client = {
+      config: {
+        providers: async () => ({
+          data: {
+            providers: [{ id: "custom", name: "Custom", source: "config", env: [], models: { m: { id: "m" } } }],
+            default: { custom: "m" },
+          },
+        }),
+      },
+      provider: {
+        list: async () => {
+          throw new Error("catalog should not be fetched")
+        },
+        auth: async () => ({ data: {} }),
+      },
+      kilo: {
+        authStatus: async () => ({ data: { authenticated: false } }),
+      },
+    } as unknown as Parameters<typeof fetchProviderData>[0]
+
+    const result = await fetchProviderData(client, "/tmp")
+
+    expect(result.response.connected).toEqual(["custom"])
+    expect(result.response.all.map((item) => item.id)).toEqual(["custom"])
+  })
+
+  it("strips disconnected catalog models while retaining connected models", async () => {
+    const client = {
+      provider: {
+        list: async () => ({
+          data: {
+            all: [
+              { id: "connected", name: "Connected", source: "api", env: [], models: { m: { id: "m" } } },
+              { id: "other", name: "Other", source: "custom", env: [], models: { x: { id: "x" } } },
+            ],
+            connected: ["connected"],
+            default: { connected: "m", other: "x" },
+          },
+        }),
+        auth: async () => ({ data: {} }),
+      },
+      kilo: {
+        authStatus: async () => ({ data: { authenticated: false } }),
+      },
+    } as unknown as Parameters<typeof fetchProviderData>[0]
+
+    const result = await fetchProviderData(client, "/tmp", "catalog")
+
+    expect(result.response.all.find((item) => item.id === "connected")?.models).toEqual({ m: { id: "m" } })
+    expect(result.response.all.find((item) => item.id === "other")?.models).toEqual({})
   })
 })
 

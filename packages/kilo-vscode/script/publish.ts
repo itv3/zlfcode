@@ -43,7 +43,7 @@ const flag = prerelease ? ["--pre-release"] : []
 for (const target of targets) {
   const vsixPath = join(outDir, `kilo-vscode-${target}.vsix`)
   console.log(`\n🚀 Publishing ${target} to VS Code Marketplace${prerelease ? " (pre-release)" : ""}...`)
-  await $`vsce publish ${flag} --packagePath ${vsixPath}`
+  await $`bunx vsce publish ${flag} --packagePath ${vsixPath}`
   console.log(`  ✅ Published ${target} to VS Code Marketplace`)
 
   console.log(`\n📤 Publishing ${target} to Open VSX${prerelease ? " (pre-release)" : ""}...`)
