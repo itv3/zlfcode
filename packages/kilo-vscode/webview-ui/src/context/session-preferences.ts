@@ -23,3 +23,13 @@ export function resolveMessagePrefs(messages: Message[], names: Set<string>): Me
   }
   return prefs
 }
+
+export function recoverModel(
+  model: ModelSelection | undefined,
+  ready: boolean,
+  valid: (selection: ModelSelection) => boolean,
+): ModelSelection | undefined {
+  if (!model) return undefined
+  if (!ready) return undefined
+  return valid(model) ? model : undefined
+}

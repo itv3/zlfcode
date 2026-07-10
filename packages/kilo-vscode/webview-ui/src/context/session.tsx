@@ -66,7 +66,8 @@ import {
 } from "./session-utils"
 import { Identifier } from "../utils/id"
 import { resolveModelSelection } from "./model-selection"
-import { resolveMessagePrefs } from "./session-preferences"
+import { recoverModel, resolveMessagePrefs } from "./session-preferences"
+import { createPreferenceRecovery } from "./session-preference-recovery"
 import { errorIDs } from "./session-errors"
 import { PartStash } from "./part-stash"
 import { mergeParts, sameParts } from "./session-parts"
@@ -580,14 +581,11 @@ export const SessionProvider: ParentComponent = (props) => {
   }
 
   function validModel(selection: ModelSelection | null | undefined) {
-    if (!selection) return false
-    if (Object.keys(provider.providers()).length === 0) return true
-    return provider.isModelValid(selection)
+    return !!selection && (Object.keys(provider.providers()).length === 0 || provider.isModelValid(selection))
   }
 
   function sessionModel(sessionID: string) {
-    const selection = store.sessionOverrides[sessionID]
-    return validModel(selection) ? selection : undefined
+    return validModel(store.sessionOverrides[sessionID]) ? store.sessionOverrides[sessionID] : undefined
   }
 
   // Keep model selection in sync with provider/mode default until the user
@@ -944,6 +942,7 @@ export const SessionProvider: ParentComponent = (props) => {
   onCleanup(unsubFavorites)
 
   createStaleModelPruner({ providers: provider.providers, connected: provider.connected, store, setStore, setAgents: setUserSetAgents, post: vscode.postMessage, valid: provider.isModelValid })
+  createPreferenceRecovery({ ready: () => Object.keys(provider.providers()).length > 0, connected: provider.connected, agents, messages: () => store.messages, recover: recoverPrefs })
 
   // Clear model overrides that match the previous config model (not intentional user overrides).
   // When config.model changes, old overrides that were just default values should be cleared
@@ -1381,12 +1380,13 @@ export const SessionProvider: ParentComponent = (props) => {
     if (prefs.agent && !store.agentSelections[sessionID]) {
       setStore("agentSelections", sessionID, prefs.agent)
     }
-    if (prefs.model && !store.sessionOverrides[sessionID]) {
-      setStore("sessionOverrides", sessionID, prefs.model)
+    const model = recoverModel(prefs.model, Object.keys(provider.providers()).length > 0, provider.isModelValid)
+    if (model && !store.sessionOverrides[sessionID]) {
+      setStore("sessionOverrides", sessionID, model)
     }
-    if (prefs.model && prefs.variant) {
+    if (model && prefs.variant) {
       const agent = prefs.agent ?? store.agentSelections[sessionID] ?? defaultAgent()
-      const key = variantKey(prefs.model, agent, sessionID)
+      const key = variantKey(model, agent, sessionID)
       if (!store.variantSelections[key]) setStore("variantSelections", key, prefs.variant)
     }
   }

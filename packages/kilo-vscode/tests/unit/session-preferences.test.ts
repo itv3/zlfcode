@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { resolveMessagePrefs } from "../../webview-ui/src/context/session-preferences"
+import { recoverModel, resolveMessagePrefs } from "../../webview-ui/src/context/session-preferences"
 import type { Message } from "../../webview-ui/src/types/messages"
 
 function msg(input: Partial<Message>): Message {
@@ -68,5 +68,23 @@ describe("session preference recovery", () => {
       model: { providerID: "anthropic", modelID: "claude-sonnet-4" },
       variant: undefined,
     })
+  })
+
+  it("does not recover message model before providers load", () => {
+    const model = { providerID: "12", modelID: "gpt-5.5" }
+
+    expect(recoverModel(model, false, () => true)).toBeUndefined()
+  })
+
+  it("does not recover message model after the provider was removed", () => {
+    const model = { providerID: "sg", modelID: "gpt-5.5" }
+
+    expect(recoverModel(model, true, (selection) => selection.providerID === "12")).toBeUndefined()
+  })
+
+  it("recovers message model after providers load when it is still valid", () => {
+    const model = { providerID: "12", modelID: "gpt-5.5" }
+
+    expect(recoverModel(model, true, (selection) => selection.providerID === "12")).toEqual(model)
   })
 })

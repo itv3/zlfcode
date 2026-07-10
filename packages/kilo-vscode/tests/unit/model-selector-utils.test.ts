@@ -212,12 +212,12 @@ describe("buildTriggerLabel", () => {
 
   it("returns modelID for kilo gateway raw selection", () => {
     const raw = { providerID: "kilo", modelID: "kilo-auto/frontier" }
-    expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", true, labels)).toBe("kilo-auto/frontier")
+    expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", false, labels)).toBe("kilo-auto/frontier")
   })
 
   it("returns providerID / modelID for non-kilo raw selection", () => {
     const raw = { providerID: "anthropic", modelID: "claude-3-5-sonnet" }
-    expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", true, labels)).toBe(
+    expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", false, labels)).toBe(
       "anthropic / claude-3-5-sonnet",
     )
   })
@@ -241,6 +241,11 @@ describe("buildTriggerLabel", () => {
   it("prefers resolvedName over raw selection", () => {
     const raw = { providerID: "anthropic", modelID: "claude-3-5-sonnet" }
     expect(buildTriggerLabel("Claude Sonnet", undefined, undefined, raw, false, "", true, labels)).toBe("Claude Sonnet")
+  })
+
+  it("ignores unresolved raw selection after providers are available", () => {
+    const raw = { providerID: "sg", modelID: "gpt-5.5" }
+    expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", true, labels)).toBe("Select model")
   })
 
   it("ignores partial raw selection (only providerID)", () => {
