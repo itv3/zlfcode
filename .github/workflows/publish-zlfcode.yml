@@ -26,25 +26,16 @@ env:
   ZLF_TARGETS: "darwin-arm64 darwin-x64 win32-x64 win32-arm64 linux-x64 linux-arm64"
 
 jobs:
-  build-cli:
+  prepare:
     if: github.repository == 'itv3/zlfcode'
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-bun
-
-      - name: Setup Zig for Linux sandbox helpers
-        run: |
-          curl --fail --location --retry 3 \
-            https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz \
-            --output "$RUNNER_TEMP/zig.tar.xz"
-          echo "473ec26806133cf4d1918caf1a410f8403a13d979726a9045b421b685031a982  $RUNNER_TEMP/zig.tar.xz" | sha256sum --check --status
-          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/zig-linux-x86_64-0.14.0" >> "$GITHUB_PATH"
 
       - name: 解析版本号
         id: meta
@@ -80,26 +71,6 @@ jobs:
             echo "pre=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: 构建全平台 CLI binary
-        run: bun packages/opencode/script/build.ts
-        env:
-          KILO_VERSION: ${{ steps.meta.outputs.version }}
-          KILO_RELEASE: true
-          KILO_SKIP_CLI_RELEASE_UPLOAD: "1"
-          KILO_PRE_RELEASE: ${{ steps.meta.outputs.pre }}
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-
-      - name: 打包 CLI dist
-        run: |
-          find packages/opencode/dist -name '*.map' -delete
-          tar --zstd -cf /tmp/kilo-cli.tar.zst -C packages/opencode/dist .
-
-      - uses: actions/upload-artifact@v7
-        with:
-          path: /tmp/kilo-cli.tar.zst
-          archive: false
-
     outputs:
       version: ${{ steps.meta.outputs.version }}
       label: ${{ steps.meta.outputs.label }}
@@ -107,7 +78,7 @@ jobs:
       pre: ${{ steps.meta.outputs.pre }}
 
   publish:
-    needs: build-cli
+    needs: prepare
     if: github.repository == 'itv3/zlfcode'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -130,16 +101,24 @@ jobs:
       - name: Install @vscode/vsce
         run: bun install -g @vscode/vsce
 
-      - uses: actions/download-artifact@v8
-        with:
-          name: kilo-cli.tar.zst
-          path: /tmp
-          skip-decompress: true
-
-      - name: 解包 CLI dist
+      - name: Setup Zig for Linux sandbox helpers
         run: |
-          mkdir -p packages/opencode/dist
-          tar --zstd -xf /tmp/kilo-cli.tar.zst -C packages/opencode/dist
+          curl --fail --location --retry 3 \
+            https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz \
+            --output "$RUNNER_TEMP/zig.tar.xz"
+          echo "473ec26806133cf4d1918caf1a410f8403a13d979726a9045b421b685031a982  $RUNNER_TEMP/zig.tar.xz" | sha256sum --check --status
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-linux-x86_64-0.14.0" >> "$GITHUB_PATH"
+
+      - name: 构建全平台 CLI binary
+        run: bun packages/opencode/script/build.ts
+        env:
+          KILO_VERSION: ${{ needs.prepare.outputs.version }}
+          KILO_RELEASE: true
+          KILO_SKIP_CLI_RELEASE_UPLOAD: "1"
+          KILO_PRE_RELEASE: ${{ needs.prepare.outputs.pre }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
 
       - name: 检查发布密钥
         shell: bash
@@ -155,15 +134,15 @@ jobs:
           fi
 
       - name: 同步包版本
-        run: bun run script/sync-versions.ts "${{ needs.build-cli.outputs.version }}"
+        run: bun run script/sync-versions.ts "${{ needs.prepare.outputs.version }}"
 
       - name: 构建全部 VSIX
         working-directory: packages/kilo-vscode
         run: bun script/build.ts
         env:
           CLI_DIST_DIR: ../../packages/opencode/dist
-          KILO_VERSION: ${{ needs.build-cli.outputs.version }}
-          KILO_PRE_RELEASE: ${{ needs.build-cli.outputs.pre }}
+          KILO_VERSION: ${{ needs.prepare.outputs.version }}
+          KILO_PRE_RELEASE: ${{ needs.prepare.outputs.pre }}
           GH_REPO: ${{ github.repository }}
 
       - name: 整理 ZLF 发布包
@@ -173,17 +152,11 @@ jobs:
           set -euo pipefail
           for target in $ZLF_TARGETS; do
             src="out/kilo-vscode-$target.vsix"
-            dst="out/zlfcode-${{ needs.build-cli.outputs.label }}-$target.vsix"
+            dst="out/zlfcode-${{ needs.prepare.outputs.label }}-$target.vsix"
             test -f "$src"
             cp "$src" "$dst"
           done
-          ls -lh out/zlfcode-${{ needs.build-cli.outputs.label }}-*.vsix
-
-      - name: 上传 VSIX 构建产物
-        uses: actions/upload-artifact@v7
-        with:
-          name: zlfcode-${{ needs.build-cli.outputs.label }}-vsix
-          path: packages/kilo-vscode/out/zlfcode-${{ needs.build-cli.outputs.label }}-*.vsix
+          ls -lh out/zlfcode-${{ needs.prepare.outputs.label }}-*.vsix
 
       - name: 发布到 VS Marketplace
         working-directory: packages/kilo-vscode
@@ -204,8 +177,8 @@ jobs:
               fi
             fi
 
-            args=(--packagePath "out/zlfcode-${{ needs.build-cli.outputs.label }}-$target.vsix")
-            if [[ "${{ needs.build-cli.outputs.pre }}" == "true" ]]; then
+            args=(--packagePath "out/zlfcode-${{ needs.prepare.outputs.label }}-$target.vsix")
+            if [[ "${{ needs.prepare.outputs.pre }}" == "true" ]]; then
               args=(--pre-release "${args[@]}")
             fi
             for i in 1 2 3; do
@@ -219,7 +192,7 @@ jobs:
             done
           done
         env:
-          VERSION: ${{ needs.build-cli.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
 
       - name: 发布到 Open VSX
         working-directory: packages/kilo-vscode
@@ -229,14 +202,14 @@ jobs:
           pat="${OVSX_TOKEN:-${OPENVSX_TOKEN:-}}"
           for target in $ZLF_TARGETS; do
             if curl --fail --silent --show-error \
-              "https://open-vsx.org/api/itv3/zlfcode/$target/${{ needs.build-cli.outputs.version }}" \
+              "https://open-vsx.org/api/itv3/zlfcode/$target/${{ needs.prepare.outputs.version }}" \
               >/dev/null; then
-              echo "Open VSX 已存在 ${{ needs.build-cli.outputs.version }} ($target)，跳过发布。"
+              echo "Open VSX 已存在 ${{ needs.prepare.outputs.version }} ($target)，跳过发布。"
               continue
             fi
 
-            args=(--pat "$pat" --packagePath "out/zlfcode-${{ needs.build-cli.outputs.label }}-$target.vsix")
-            if [[ "${{ needs.build-cli.outputs.pre }}" == "true" ]]; then
+            args=(--pat "$pat" --packagePath "out/zlfcode-${{ needs.prepare.outputs.label }}-$target.vsix")
+            if [[ "${{ needs.prepare.outputs.pre }}" == "true" ]]; then
               args=(--pre-release "${args[@]}")
             fi
             for i in 1 2 3; do
@@ -256,9 +229,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ needs.build-cli.outputs.tag }}"
-          label="${{ needs.build-cli.outputs.label }}"
-          version="${{ needs.build-cli.outputs.version }}"
+          tag="${{ needs.prepare.outputs.tag }}"
+          label="${{ needs.prepare.outputs.label }}"
+          version="${{ needs.prepare.outputs.version }}"
           src=".github/release-notes/$tag.md"
           notes="/tmp/zlfcode-release-notes.md"
           if [[ -f "$src" ]]; then
@@ -290,5 +263,5 @@ jobs:
               --notes-file "$notes"
           fi
           for target in $ZLF_TARGETS; do
-            gh release upload "$tag" "packages/kilo-vscode/out/zlfcode-${{ needs.build-cli.outputs.label }}-$target.vsix" --clobber
+            gh release upload "$tag" "packages/kilo-vscode/out/zlfcode-${{ needs.prepare.outputs.label }}-$target.vsix" --clobber
           done
