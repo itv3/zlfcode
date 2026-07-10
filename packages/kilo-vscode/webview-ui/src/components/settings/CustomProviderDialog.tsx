@@ -45,6 +45,7 @@ import {
   mergeModelDefaults,
   parseDefaults,
   parseVariant,
+  replaceModelDefaults,
   type CustomProviderDefaults,
   type DefaultCandidate,
 } from "./CustomProviderDefaults"
@@ -525,7 +526,17 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   }
 
   function choose(i: number, defaults: CustomProviderDefaults) {
-    apply(i, defaults)
+    const model = form.models[i]
+    if (!model) return
+
+    const next = replaceModelDefaults(model, defaults)
+    setForm("models", i, next)
+    setErrors(
+      "models",
+      i,
+      "variants",
+      next.variants.map(() => ({})),
+    )
     setSuggestion(undefined)
     setPreview(undefined)
   }

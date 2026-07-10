@@ -146,6 +146,25 @@ export function mergeModelDefaults(model: ModelEntry, defaults: CustomProviderDe
   }
 }
 
+export function replaceModelDefaults(model: ModelEntry, defaults: CustomProviderDefaults): ModelEntry {
+  const variants = parseDefaults(defaults)
+  const prices = [defaults.inputCost, defaults.outputCost, defaults.cacheReadCost, defaults.cacheWriteCost]
+
+  return {
+    ...model,
+    supportsImages: defaults.image ?? false,
+    reasoning: variants.length > 0 || (defaults.reasoning ?? false),
+    contextLimit: text(defaults.contextLimit),
+    outputLimit: text(defaults.outputLimit),
+    costEnabled: prices.some((value) => value !== undefined),
+    inputCost: text(defaults.inputCost),
+    outputCost: text(defaults.outputCost),
+    cacheReadCost: text(defaults.cacheReadCost),
+    cacheWriteCost: text(defaults.cacheWriteCost),
+    variants,
+  }
+}
+
 export function catalogDefaults(model: ProviderModel | undefined): CustomProviderDefaults {
   if (!model) return {}
   const variants = model.variants && Object.keys(model.variants).length > 0 ? model.variants : undefined

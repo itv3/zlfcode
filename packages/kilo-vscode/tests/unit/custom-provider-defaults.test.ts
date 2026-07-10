@@ -5,6 +5,7 @@ import {
   defaultsForModel,
   mergeModelDefaults,
   parseDefaults,
+  replaceModelDefaults,
 } from "../../webview-ui/src/components/settings/CustomProviderDefaults"
 import {
   customProviderCatalog,
@@ -311,6 +312,70 @@ describe("custom provider default matching", () => {
     const out = mergeModelDefaults(model, defaultsForModel(providers(), "@ai-sdk/openai-compatible", "GLM-5.2"))
 
     expect(out).toEqual(model)
+  })
+
+  it("replaces inferred defaults when a candidate is selected", () => {
+    const model: ModelEntry = {
+      id: "gpt-5.6-sol",
+      name: "gpt-5.6-sol",
+      supportsImages: false,
+      modalities: { input: ["text"], output: ["text"] },
+      contextLimit: "400000",
+      outputLimit: "32000",
+      costEnabled: false,
+      inputCost: "",
+      outputCost: "",
+      cacheReadCost: "",
+      cacheWriteCost: "",
+      reasoning: true,
+      variants: ["none", "low", "medium", "high", "xhigh"].map((name) => ({
+        name,
+        enableThinking: undefined,
+        thinking: undefined,
+        splitReasoning: undefined,
+        reasoningEffort: name as "none" | "low" | "medium" | "high" | "xhigh",
+        outputEffort: undefined,
+        chatTemplateArgs: undefined,
+      })),
+    }
+
+    const out = replaceModelDefaults(model, {
+      image: true,
+      reasoning: true,
+      contextLimit: 1050000,
+      outputLimit: 128000,
+      inputCost: 5,
+      outputCost: 30,
+      cacheReadCost: 0.5,
+      cacheWriteCost: 6.25,
+      variants: {
+        none: { reasoningEffort: "none" },
+        low: { reasoningEffort: "low" },
+        medium: { reasoningEffort: "medium" },
+        high: { reasoningEffort: "high" },
+        xhigh: { reasoningEffort: "xhigh" },
+        max: { reasoningEffort: "max" },
+      },
+    })
+
+    expect(out.id).toBe(model.id)
+    expect(out.name).toBe(model.name)
+    expect(out.supportsImages).toBe(true)
+    expect(out.contextLimit).toBe("1050000")
+    expect(out.outputLimit).toBe("128000")
+    expect(out.costEnabled).toBe(true)
+    expect(out.inputCost).toBe("5")
+    expect(out.outputCost).toBe("30")
+    expect(out.cacheReadCost).toBe("0.5")
+    expect(out.cacheWriteCost).toBe("6.25")
+    expect(out.variants.map((item) => [item.name, item.reasoningEffort])).toEqual([
+      ["none", "none"],
+      ["low", "low"],
+      ["medium", "medium"],
+      ["high", "high"],
+      ["xhigh", "xhigh"],
+      ["max", "max"],
+    ])
   })
 
   it("preserves provider-native variant fields that the compact editor does not model", () => {

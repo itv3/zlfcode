@@ -7,9 +7,9 @@ ZLF Code 是面向内部使用的 AI coding agent。当前版本已接入官方 
 | 项 | 值 |
 |---|---|
 | 上游底座 | Kilo Code `v7.4.5` |
-| ZLF 自定义版本 | `v0.01` |
-| 发布批次 | `7.4.5-v0.01` |
-| 市场版本 | `7.4.501` |
+| ZLF 自定义版本 | `v0.02` |
+| 发布批次 | `7.4.5-v0.02` |
+| 市场版本 | `7.4.502` |
 | 扩展 ID | `itv3.zlfcode` |
 | `publisher` | `itv3` |
 | `name` | `zlfcode` |
@@ -18,7 +18,7 @@ ZLF Code 是面向内部使用的 AI coding agent。当前版本已接入官方 
 | Open VSX | `https://open-vsx.org/extension/itv3/zlfcode` |
 | GitHub 仓库 | `https://github.com/itv3/zlfcode` |
 
-VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，所以市场页面显示 `7.4.501`。GitHub tag、GitHub Release 和 VSIX 文件名使用发布批次 `7.4.5-v0.01`。
+VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，所以市场页面显示 `7.4.502`。GitHub tag、GitHub Release 和 VSIX 文件名使用发布批次 `7.4.5-v0.02`。
 
 ## 维护原则
 
@@ -41,7 +41,7 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 | 模型自动发现 | 支持 OpenAI、Anthropic、Gemini，并自动处理 endpoint 和认证头。 |
 | 自动发现交互优化 | 默认不全选，已添加模型不再显示，删除已添加模型后会重新拉取模型列表。 |
 | 高级参数配置 | 支持配置图像输入能力、推理能力、`context token limit`、`output token limit`，以及输入、输出、缓存读取、缓存写入成本。 |
-| 默认参数匹配 | 添加模型时优先用模型 ID 精确匹配内置默认模型，自动带入能力、成本和 token limit；未命中时显示候选模型列表 |
+| 默认参数匹配 | 添加模型时按模型 ID 匹配内置默认参数，自动填充能力、成本和 token limit；也可选择候选模型应用其参数，并在保存前手动调整。 |
 | 候选模型预览 | 候选模型支持 hover 预览，显示图片、推理、上下文/输出 token、成本和推理强度等默认参数。 |
 | 配置界面增强 | 优化自定义提供商配置界面布局、提示语和参数命名，减少表单高度。 |
 
@@ -62,7 +62,7 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 - 自动发现返回的 `contextLimit`、`outputLimit`、成本等字段先进入模型卡片。
 - 精确命中的内置 catalog 默认值只补空字段、未开启能力或空 `variants`，不覆盖接口返回值或用户已填写值。
 - 未命中精确默认值时显示最多 5 个候选模型，候选排序考虑 token 命中、覆盖度、顺序、尾缀、精确命中和前缀命中。
-- 用户点击候选项后复制该候选模型的 `limit`、`modalities`、`reasoning`、`cost`、`variants`。
+- 用户点击候选项后，候选模型的能力、token limit、成本和完整 `variants` 会覆盖自动匹配的默认参数；之后仍可手动调整，并以保存时的表单值为准。
 - 配置界面保持紧凑布局：`Provider API` 与 `BASE_URL` 在桌面宽度下并排显示。
 
 关键文件：
@@ -205,11 +205,11 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 标准发布目标平台：`darwin-arm64`、`darwin-x64`、`win32-x64`、`win32-arm64`、`linux-x64`、`linux-arm64`。
 
 ```bash
-git tag zlfcode-v7.4.5-v0.01
-git push origin zlfcode-v7.4.5-v0.01
+git tag zlfcode-v7.4.5-v0.02
+git push origin zlfcode-v7.4.5-v0.02
 ```
 
-发布前必须准备 `.github/release-notes/zlfcode-v7.4.5-v0.01.md`，并确认根 `package.json.version` 与 `packages/kilo-vscode/package.json.version` 都是 `7.4.501`。
+发布前必须准备 `.github/release-notes/zlfcode-v7.4.5-v0.02.md`，并确认根 `package.json.version` 与 `packages/kilo-vscode/package.json.version` 都是 `7.4.502`。
 
 发布前检查：
 
@@ -236,7 +236,7 @@ bun run prepare:cli-binary -- --force
 bun run rebuild-sdk
 bun run typecheck
 node esbuild.js --production
-./node_modules/.bin/vsce package --no-dependencies --skip-license --target darwin-arm64 -o out/zlfcode-7.4.5-v0.01-darwin-arm64.vsix
+./node_modules/.bin/vsce package --no-dependencies --skip-license --target darwin-arm64 -o out/zlfcode-7.4.5-v0.02-darwin-arm64.vsix
 ```
 
 安装到 Cursor 后验收：
@@ -244,9 +244,9 @@ node esbuild.js --production
 | 项 | 期望 |
 |---|---|
 | 扩展详情页 | 显示 `ZLF Code` 和中文 ZLF 说明。 |
-| 扩展版本 | 显示市场版本 `7.4.501`。 |
+| 扩展版本 | 显示市场版本 `7.4.502`。 |
 | 关于页面 | 版本信息不显示 `unknown`。 |
-| 自定义 provider | OpenAI / Anthropic / Gemini 模型发现、保存、请求头、图片能力、推理能力、默认推理强度、token limit、成本选项、默认参数匹配和候选模型预览正常。 |
+| 自定义 provider | OpenAI / Anthropic / Gemini 模型发现、保存、请求头、图片能力、推理能力、默认推理强度、token limit、成本选项和候选模型预览正常；选择候选模型会覆盖自动默认参数并保留后续手动调整。 |
 | 模型列表 | 只显示 Kilo Gateway 免费模型以及用户已添加或已连接 provider 的模型。 |
 | 模型选择器 | 用户 provider 排在免费模型前面，默认折叠详情页，单击模型可直接切换。 |
 | 默认收藏 | 首次没有收藏记录时注入 StepFun Step 3.7 Flash 免费模型，用户取消后不自动恢复。 |
