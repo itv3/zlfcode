@@ -133,7 +133,7 @@ export function mergeModelDefaults(model: ModelEntry, defaults: CustomProviderDe
 
   return {
     ...model,
-    image: flag(model.image, defaults.image),
+    supportsImages: flag(model.supportsImages, defaults.image),
     reasoning,
     contextLimit: field(model.contextLimit, defaults.contextLimit),
     outputLimit: field(model.outputLimit, defaults.outputLimit),

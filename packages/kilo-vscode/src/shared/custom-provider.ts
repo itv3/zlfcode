@@ -12,19 +12,32 @@ export const EnvSchema = z
   .trim()
   .regex(/^[A-Z_][A-Z0-9_]*$/, INVALID_ENV)
 
-const VariantConfigSchema = z.object({
-  enable_thinking: z.boolean().optional(),
-  thinking: z.object({ type: z.enum(["enabled", "disabled", "adaptive"]) }).passthrough().optional(),
-  reasoning_split: z.boolean().optional(),
-  reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max"]).optional(),
-  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
-  chat_template_args: z.object({ enable_thinking: z.boolean() }).passthrough().optional(),
-}).passthrough()
+const VariantConfigSchema = z
+  .object({
+    enable_thinking: z.boolean().optional(),
+    thinking: z
+      .object({ type: z.enum(["enabled", "disabled", "adaptive"]) })
+      .passthrough()
+      .optional(),
+    reasoning_split: z.boolean().optional(),
+    reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max"]).optional(),
+    effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+    chat_template_args: z.object({ enable_thinking: z.boolean() }).passthrough().optional(),
+  })
+  .passthrough()
 
 export type VariantConfig = z.infer<typeof VariantConfigSchema>
 
 const ModalitySchema = z.enum(["text", "image", "audio", "video", "pdf"])
-type Modality = z.infer<typeof ModalitySchema>
+
+// 与 CLI provider schema 保持一致，保存表单时不能丢弃手写的 modality。
+const ModelModalitiesSchema = z.object({
+  input: z.array(ModalitySchema).optional(),
+  output: z.array(ModalitySchema).optional(),
+})
+
+export type ModelModalities = z.infer<typeof ModelModalitiesSchema>
+
 const ModelLimitSchema = z
   .object({
     context: z.number().int().positive(),
@@ -65,13 +78,7 @@ export const CustomProviderConfigSchema = z
           .object({
             name: z.string().trim().min(1).max(200),
             reasoning: z.boolean().optional(),
-            modalities: z
-              .object({
-                input: z.array(ModalitySchema).optional(),
-                output: z.array(ModalitySchema).optional(),
-              })
-              .strict()
-              .optional(),
+            modalities: ModelModalitiesSchema.optional(),
             limit: ModelLimitSchema.optional(),
             cost: ModelCostSchema.optional(),
             variants: z.record(z.string().trim().min(1), VariantConfigSchema).optional(),
@@ -95,7 +102,7 @@ export type SanitizedProviderConfig = {
     {
       name: string
       reasoning?: true
-      modalities?: { input?: Modality[]; output?: Modality[] }
+      modalities?: ModelModalities
       limit?: { context: number; input?: number; output: number }
       cost?: { input: number; output: number; cache_read?: number; cache_write?: number }
       variants?: Record<string, VariantConfig>
@@ -208,8 +215,8 @@ type ProviderPatch = Omit<SanitizedProviderConfig, "env" | "models" | "options">
     null | {
       name: string
       reasoning?: true | null
+      modalities?: ModelModalities | null
       variants?: Record<string, VariantConfig | VariantPatch | null>
-      modalities?: { input?: Modality[]; output?: Modality[] } | null
       limit?: LimitPatch | null
       cost?: CostPatch | null
     }

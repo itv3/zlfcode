@@ -232,9 +232,7 @@ describe("custom provider default matching", () => {
     const items = defaultCandidates(providers(), "@ai-sdk/openai-compatible", "claude-opus-4-6")
 
     expect(items.map((item) => `${item.providerID}/${item.modelID}`)).toContain("anthropic/claude-opus-4-6")
-    expect(items.map((item) => `${item.providerID}/${item.modelID}`)).toContain(
-      "openrouter/anthropic/claude-opus-4-6",
-    )
+    expect(items.map((item) => `${item.providerID}/${item.modelID}`)).toContain("openrouter/anthropic/claude-opus-4-6")
   })
 
   it("falls back across providers and matches IDs case-insensitively", () => {
@@ -254,8 +252,8 @@ describe("custom provider default matching", () => {
     const model: ModelEntry = {
       id: "GLM-5.2",
       name: "GLM-5.2",
-      image: false,
-      outputModalities: ["text"],
+      supportsImages: false,
+      modalities: { input: ["text"], output: ["text"] },
       contextLimit: "",
       outputLimit: "",
       costEnabled: false,
@@ -287,8 +285,8 @@ describe("custom provider default matching", () => {
     const model: ModelEntry = {
       id: "GLM-5.2",
       name: "Custom GLM",
-      image: true,
-      outputModalities: ["text"],
+      supportsImages: true,
+      modalities: { input: ["text", "image"], output: ["text"] },
       contextLimit: "123",
       outputLimit: "456",
       costEnabled: true,

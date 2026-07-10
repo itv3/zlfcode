@@ -65,6 +65,7 @@ function connection() {
     onProfileChanged: () => () => undefined,
     onMigrationComplete: () => () => undefined,
     onFavoritesChanged: () => () => undefined,
+    onProvidersChanged: () => () => undefined,
     onModelSelectorExpandedChanged: () => () => undefined,
     registerDirectoryProvider: () => () => undefined,
     getServerInfo: () => ({ port: 12345 }),

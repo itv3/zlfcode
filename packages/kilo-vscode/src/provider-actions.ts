@@ -159,9 +159,7 @@ type ProviderChangeMessage =
       providerID: string
     }
 
-function savedCustomProvider(
-  config: unknown,
-): config is Record<string, unknown> & { id: string } {
+function savedCustomProvider(config: unknown): config is Record<string, unknown> & { id: string } {
   if (!record(config)) return false
   if (!customProviderPackage(config)) return false
   if (typeof config.id !== "string") return false

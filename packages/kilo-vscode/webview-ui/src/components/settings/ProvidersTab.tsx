@@ -274,9 +274,7 @@ const ProvidersTab: Component = () => {
         </Show>
       </Card>
 
-      <h4 style={{ "margin-top": "24px", "margin-bottom": "8px" }}>
-        {language.t("provider.custom.title")}
-      </h4>
+      <h4 style={{ "margin-top": "24px", "margin-bottom": "8px" }}>{language.t("provider.custom.title")}</h4>
       <Card>
         {/* Custom provider entry */}
         <div

@@ -43,12 +43,6 @@ export function kiloFallbackProvider(): Provider {
   return createKiloFallbackProvider()
 }
 
-export function providerNoteKey(provider: Provider | string) {
-  if (typeof provider !== "string" && provider.metadata?.noteKey) return provider.metadata.noteKey
-  if (provider === KILO_PROVIDER_ID) return "settings.providers.note.kilo"
-  return undefined
-}
-
 export function sortProviders(items: Provider[]) {
   return items.slice().sort((a, b) => {
     const rank = popularProviderIndex(a) - popularProviderIndex(b)

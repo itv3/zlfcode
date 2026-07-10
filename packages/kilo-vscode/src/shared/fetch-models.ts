@@ -65,7 +65,10 @@ function cost(item: Record<string, unknown>): Partial<ModelEntry> {
   const cfg = record(item.cost)
   const pricing = record(item.pricing)
   const input =
-    num(cfg.input) ?? perMillion(pricing.prompt) ?? perMillion(item.input_cost_per_token) ?? perMillion(item.prompt_cost_per_token)
+    num(cfg.input) ??
+    perMillion(pricing.prompt) ??
+    perMillion(item.input_cost_per_token) ??
+    perMillion(item.prompt_cost_per_token)
   const output =
     num(cfg.output) ??
     perMillion(pricing.completion) ??

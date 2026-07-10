@@ -69,4 +69,6 @@ export const invalidate = <A, E, R>(self: InstanceState<A, E, R>) =>
     return yield* ScopedCache.invalidate(self.cache, yield* directory)
   })
 
+export const invalidateAll = <A, E, R>(self: InstanceState<A, E, R>) => ScopedCache.invalidateAll(self.cache) // kilocode_change - 全局配置变更需要刷新所有目录的实例状态缓存
+
 export * as InstanceState from "./instance-state"

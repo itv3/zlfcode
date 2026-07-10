@@ -30,15 +30,6 @@ async function provider(target: ReturnType<typeof app>, directory: string) {
   return (await response.json()).indexing?.provider as string | undefined
 }
 
-async function waitProvider(target: ReturnType<typeof app>, directory: string, expected: string) {
-  const end = Date.now() + 1_000
-  while (Date.now() < end) {
-    if ((await provider(target, directory)) === expected) return expected
-    await Bun.sleep(20)
-  }
-  return provider(target, directory)
-}
-
 async function config(dir: string, value: object) {
   await Bun.write(path.join(dir, "kilo.json"), JSON.stringify(value))
 }
@@ -60,7 +51,7 @@ afterEach(async () => {
 })
 
 describe("global config refresh", () => {
-  test("update responds before background disposal completes", async () => {
+  test("update hot-reloads existing instance without disposal", async () => {
     await using config = await tmpdir()
     await using workspace = await tmpdir({ config: { formatter: false, lsp: false } })
     ;(Global.Path as { config: string }).config = config.path
@@ -70,22 +61,17 @@ describe("global config refresh", () => {
     expect((await update(target, "openrouter")).status).toBe(200)
     expect(await provider(target, workspace.path)).toBe("openrouter")
 
-    const started = Promise.withResolvers<void>()
-    const release = Promise.withResolvers<void>()
+    let disposed = false
     const unregister = registerDisposer(async (directory) => {
       if (directory !== workspace.path) return
-      started.resolve()
-      await release.promise
+      disposed = true
     })
     try {
-      const pending = update(target, "kilo")
-      expect((await pending).status).toBe(200)
-      const began = await Promise.race([started.promise.then(() => true), Bun.sleep(1_000).then(() => false)])
-      expect(began).toBe(true)
-      release.resolve()
-      expect(await waitProvider(target, workspace.path, "kilo")).toBe("kilo")
+      expect((await update(target, "kilo")).status).toBe(200)
+      expect(await provider(target, workspace.path)).toBe("kilo")
+      await Bun.sleep(50)
+      expect(disposed).toBe(false)
     } finally {
-      release.resolve()
       unregister()
     }
   })

@@ -1,5 +1,3 @@
-import { InstanceRuntime } from "@/project/instance-runtime"
-
 type ServerLike = {
   stop: (close?: boolean) => Promise<void>
 }
@@ -40,7 +38,9 @@ export namespace KiloShutdown {
           clearInterval(state.timer)
         }
         try {
-          await InstanceRuntime.disposeAllInstances()
+          // 延迟加载运行时，避免后台进程 schema 初始化时形成工具注册循环依赖。
+          const runtime = await import("@/project/instance-runtime")
+          await runtime.InstanceRuntime.disposeAllInstances()
           await server.stop(true)
         } finally {
           resolve()

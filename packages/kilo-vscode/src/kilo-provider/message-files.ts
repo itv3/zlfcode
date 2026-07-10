@@ -12,13 +12,15 @@ const source = z.object({
   }),
 })
 
-const file = z.object({
-  mime: z.string(),
-  url: z.string().optional(),
-  path: z.string().min(1).optional(),
-  filename: z.string().optional(),
-  source: source.optional(),
-}).refine((data) => Boolean(data.path) || Boolean(data.url?.startsWith("file://") || data.url?.startsWith("data:")))
+const file = z
+  .object({
+    mime: z.string(),
+    url: z.string().optional(),
+    path: z.string().min(1).optional(),
+    filename: z.string().optional(),
+    source: source.optional(),
+  })
+  .refine((data) => Boolean(data.path) || Boolean(data.url?.startsWith("file://") || data.url?.startsWith("data:")))
 
 export type MessageFile = z.infer<typeof file>
 

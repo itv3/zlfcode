@@ -13,7 +13,15 @@ interface Input {
 export function createPreferenceRecovery(input: Input) {
   createEffect(
     on(
-      () => [input.ready(), input.connected().join("\0"), input.agents().map((agent) => agent.name).join("\0")] as const,
+      () =>
+        [
+          input.ready(),
+          input.connected().join("\0"),
+          input
+            .agents()
+            .map((agent) => agent.name)
+            .join("\0"),
+        ] as const,
       ([ready, , value]) => {
         if (!ready) return
         const names = new Set(value ? value.split("\0") : [])

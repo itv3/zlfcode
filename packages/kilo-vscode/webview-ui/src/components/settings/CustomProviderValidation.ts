@@ -1,5 +1,5 @@
 import { normalizeCustomProviderBaseURL, type CustomProviderPackage } from "../../../../src/shared/provider-model"
-import type { ModelEntry, VariantEntry } from "./CustomProviderModelCard"
+import type { Modalities, ModelEntry, VariantEntry } from "./CustomProviderModelCard"
 
 type Translator = (key: string, params?: Record<string, string>) => string
 
@@ -99,15 +99,17 @@ function checkModel(m: ModelEntry, seenModels: Set<string>, t: Translator) {
   const nameErr = !m.name.trim() ? t("provider.custom.error.required") : undefined
   const context = m.contextLimit.trim()
   const output = m.outputLimit.trim()
-  const contextLimitErr = checkLimit(m.contextLimit, t) ?? (!context && output ? t("provider.custom.error.required") : undefined)
-  const outputLimitErr = checkLimit(m.outputLimit, t) ?? (context && !output ? t("provider.custom.error.required") : undefined)
+  const contextLimitErr =
+    checkLimit(m.contextLimit, t) ?? (!context && output ? t("provider.custom.error.required") : undefined)
+  const outputLimitErr =
+    checkLimit(m.outputLimit, t) ?? (context && !output ? t("provider.custom.error.required") : undefined)
   const input = m.inputCost.trim()
   const costOutput = m.outputCost.trim()
   const inputCostErr = m.costEnabled
-    ? checkCost(m.inputCost, t) ?? (!input ? t("provider.custom.error.required") : undefined)
+    ? (checkCost(m.inputCost, t) ?? (!input ? t("provider.custom.error.required") : undefined))
     : undefined
   const outputCostErr = m.costEnabled
-    ? checkCost(m.outputCost, t) ?? (!costOutput ? t("provider.custom.error.required") : undefined)
+    ? (checkCost(m.outputCost, t) ?? (!costOutput ? t("provider.custom.error.required") : undefined))
     : undefined
   const cacheReadCostErr = m.costEnabled ? checkCost(m.cacheReadCost, t) : undefined
   const cacheWriteCostErr = m.costEnabled ? checkCost(m.cacheWriteCost, t) : undefined
@@ -206,13 +208,36 @@ function extractModelCosts(m: ModelEntry) {
   return undefined
 }
 
+function modalities(m: ModelEntry): Modalities | undefined {
+  const input = new Set(m.modalities.input ?? [])
+  const existing = input.size > 0 || (m.modalities.output?.length ?? 0) > 0
+  if (!existing && !m.supportsImages) return
+
+  const image = input.has("image")
+  const changed = image !== m.supportsImages
+  if (m.supportsImages && !image) {
+    input.add("text")
+    input.add("image")
+  }
+  if (!m.supportsImages) input.delete("image")
+
+  const include = input.size > 0 || (m.modalities.input !== undefined && !changed)
+  if (!include && !m.modalities.output?.length) return
+
+  return {
+    ...(include ? { input: [...input] } : {}),
+    ...(m.modalities.output?.length ? { output: m.modalities.output } : {}),
+  }
+}
+
 function serializeModel(m: ModelEntry): [string, Record<string, unknown>] {
   const ventries = m.reasoning ? m.variants.filter((v) => v.name.trim()).map(serializeVariant) : []
   const limit = extractModelLimits(m)
   const cost = extractModelCosts(m)
   const entry: Record<string, unknown> = { name: m.name.trim() }
+  const modes = modalities(m)
   if (m.reasoning) entry.reasoning = true
-  entry.modalities = { input: m.image ? ["text", "image"] : ["text"], output: [...m.outputModalities] }
+  if (modes) entry.modalities = modes
   if (limit) entry.limit = limit
   if (cost) entry.cost = cost
   if (ventries.length > 0) entry.variants = Object.fromEntries(ventries)

@@ -24,7 +24,17 @@ import {
 } from "../../../../src/shared/provider-model"
 import { FETCH_MODELS_WEBVIEW_TIMEOUT_MS } from "../../../../src/shared/fetch-models-timeout"
 import { ModelCard } from "./CustomProviderModelCard"
-import type { ChatTemplateArgsValue, ModelEntry, VariantEntry } from "./CustomProviderModelCard"
+import type {
+  ChatTemplateArgsValue,
+  EnableThinkingValue,
+  Modalities,
+  Modality,
+  ModelEntry,
+  OutputEffortValue,
+  ReasoningEffortValue,
+  ThinkingTypeValue,
+  VariantEntry,
+} from "./CustomProviderModelCard"
 import { validateCustomProvider } from "./CustomProviderValidation"
 import type { FormErrors, FormState, HeaderRow } from "./CustomProviderValidation"
 import { prioritizeVariants } from "./CustomProviderVariants"
@@ -68,11 +78,7 @@ function isPrivateHost(raw: string) {
     if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) return false
     const [a, b] = parts
     return (
-      a === 10 ||
-      a === 127 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168)
+      a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
     )
   } catch {
     return false
@@ -94,18 +100,41 @@ type FetchedModel = {
 type RawModel = {
   name?: string
   reasoning?: boolean
-  modalities?: { input?: string[]; output?: string[] }
+  modalities?: { input?: unknown; output?: unknown }
   limit?: { context?: number; input?: number; output?: number }
   cost?: { input?: number; output?: number; cache_read?: number; cache_write?: number }
   variants?: Record<string, Record<string, unknown>>
+}
+
+// 与 CLI provider schema 保持一致，界面只编辑图片能力，其余 modality 原样保存。
+const MODES = new Set<Modality>(["text", "audio", "image", "video", "pdf"])
+
+function list(raw: unknown): Modality[] | undefined {
+  if (!Array.isArray(raw)) return
+  const set = new Set<Modality>()
+  raw.forEach((item) => {
+    if (typeof item === "string" && MODES.has(item as Modality)) set.add(item as Modality)
+  })
+  return set.size ? [...set] : undefined
+}
+
+function modes(raw: unknown): Modalities {
+  if (!raw || typeof raw !== "object") return {}
+  const obj = raw as { input?: unknown; output?: unknown }
+  const input = list(obj.input)
+  const output = list(obj.output)
+  return {
+    ...(input ? { input } : {}),
+    ...(output ? { output } : {}),
+  }
 }
 
 function blankModel(): ModelEntry {
   return {
     id: "",
     name: "",
-    image: false,
-    outputModalities: ["text"],
+    supportsImages: false,
+    modalities: { input: ["text"], output: ["text"] },
     contextLimit: "",
     outputLimit: "",
     costEnabled: false,
@@ -150,11 +179,13 @@ function initModels(cfg: ProviderConfig | undefined): ModelEntry[] {
   if (entries.length === 0) return [blank]
   return entries.map(([id, model]) => {
     const raw = model as RawModel
+    const modalities = modes(raw.modalities)
+    const input = modalities.input ?? []
     return {
       id,
       name: raw.name ?? id,
-      image: raw.modalities?.input?.includes("image") ?? false,
-      outputModalities: raw.modalities?.output ?? ["text"],
+      supportsImages: input.includes("image"),
+      modalities,
       contextLimit: text(raw.limit?.context),
       outputLimit: text(raw.limit?.output),
       costEnabled: modelCost(raw),
@@ -363,7 +394,9 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
       cleanup()
       if (version !== fetchVersion) return
       setFetching(false)
-      setFetchError(language.t("provider.custom.models.fetch.error", { error: ack ? "Timed out" : "Extension did not respond" }))
+      setFetchError(
+        language.t("provider.custom.models.fetch.error", { error: ack ? "Timed out" : "Extension did not respond" }),
+      )
     }, FETCH_MODELS_WEBVIEW_TIMEOUT_MS)
     cleanups.add(cleanup)
 
@@ -422,7 +455,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     })
   }
 
-  function flag(i: number, key: "image" | "reasoning", value: boolean | undefined, current: boolean) {
+  function flag(i: number, key: "supportsImages" | "reasoning", value: boolean | undefined, current: boolean) {
     if (value !== undefined && !current) setForm("models", i, key, value)
   }
 
@@ -440,7 +473,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     if (!model) return
 
     const variants = parseDefaults(defaults)
-    flag(i, "image", defaults.image, model.image)
+    flag(i, "supportsImages", defaults.image, model.supportsImages)
     flag(i, "reasoning", defaults.reasoning, model.reasoning)
     if (variants.length > 0 && !model.reasoning) setForm("models", i, "reasoning", true)
     field(i, "contextLimit", defaults.contextLimit, model.contextLimit)
@@ -455,7 +488,12 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     field(i, "cacheWriteCost", defaults.cacheWriteCost, model.cacheWriteCost)
     if (variants.length > 0 && model.variants.length === 0) {
       setForm("models", i, "variants", variants)
-      setErrors("models", i, "variants", variants.map(() => ({})))
+      setErrors(
+        "models",
+        i,
+        "variants",
+        variants.map(() => ({})),
+      )
     }
   }
 
@@ -500,7 +538,9 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     const current = model.variants.map((item) => item.name.trim()).filter(Boolean)
     if (current.length > 0) return current
     if (!editing() || !model.reasoning || !model.id.trim()) return undefined
-    const variants = parseDefaults(defaults(model.id)).map((item) => item.name.trim()).filter(Boolean)
+    const variants = parseDefaults(defaults(model.id))
+      .map((item) => item.name.trim())
+      .filter(Boolean)
     return variants.length > 0 ? variants : undefined
   }
 
@@ -515,7 +555,12 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     if (variants.length === 0) return
     if (!model.reasoning) setForm("models", i, "reasoning", true)
     setForm("models", i, "variants", variants)
-    setErrors("models", i, "variants", variants.map(() => ({})))
+    setErrors(
+      "models",
+      i,
+      "variants",
+      variants.map(() => ({})),
+    )
   }
 
   function addVariant(i: number) {
@@ -542,16 +587,12 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
 
   function variantSummary(defaults: CustomProviderDefaults) {
     const items = Object.keys(defaults.variants ?? {})
-    return items.length > 0
-      ? items.map(format).join(", ")
-      : language.t("provider.custom.models.defaults.empty")
+    return items.length > 0 ? items.map(format).join(", ") : language.t("provider.custom.models.defaults.empty")
   }
 
   function enabled(item: boolean | undefined) {
     if (item === undefined) return language.t("provider.custom.models.defaults.empty")
-    return item
-      ? language.t("provider.custom.models.defaults.yes")
-      : language.t("provider.custom.models.defaults.no")
+    return item ? language.t("provider.custom.models.defaults.yes") : language.t("provider.custom.models.defaults.no")
   }
 
   function costSummary(defaults: CustomProviderDefaults) {
@@ -617,7 +658,6 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     // 替换唯一空行,否则追加到现有列表末尾。
     const row = form.models[0]
     const empty = form.models.length === 1 && !!row && !row.id.trim() && !row.name.trim()
-
     // Dedup against models already in the form (trimmed, case-insensitive). The
     // picker is built from a fetch-time snapshot, so a model the user typed
     // manually after fetching hasn't been filtered out yet.
@@ -636,8 +676,8 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
         {
           id: m.id,
           name: m.name,
-          image: m.image ?? false,
-          outputModalities: ["text"],
+          supportsImages: m.image ?? false,
+          modalities: { input: ["text"], output: ["text"] },
           contextLimit: text(m.contextLimit),
           outputLimit: text(m.outputLimit),
           costEnabled:
@@ -750,7 +790,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
       model.outputCost.trim().length > 0 ||
       model.cacheReadCost.trim().length > 0 ||
       model.cacheWriteCost.trim().length > 0 ||
-      model.image ||
+      model.supportsImages ||
       model.reasoning ||
       model.variants.length > 0
     )
@@ -997,7 +1037,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                     variantNames={variantNames(m)}
                     onChangeId={(v) => fill(i(), v)}
                     onChangeName={(v) => setForm("models", i(), "name", v)}
-                    onChangeImage={(v) => setForm("models", i(), "image", v)}
+                    onChangeSupportsImages={(v) => setForm("models", i(), "supportsImages", v)}
                     onChangeContextLimit={(v) => setForm("models", i(), "contextLimit", v)}
                     onChangeOutputLimit={(v) => setForm("models", i(), "outputLimit", v)}
                     onChangeCostEnabled={(v) => setForm("models", i(), "costEnabled", v)}
@@ -1015,7 +1055,9 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                     onChangeSplitReasoning={(vi, v) => setVariant(i(), vi, "splitReasoning", v)}
                     onChangeReasoningEffort={(vi, v) => setVariant(i(), vi, "reasoningEffort", v)}
                     onChangeOutputEffort={(vi, v) => setVariant(i(), vi, "outputEffort", v)}
-                    onChangeChatTemplateArgs={(vi, v: ChatTemplateArgsValue) => setVariant(i(), vi, "chatTemplateArgs", v)}
+                    onChangeChatTemplateArgs={(vi, v: ChatTemplateArgsValue) =>
+                      setVariant(i(), vi, "chatTemplateArgs", v)
+                    }
                     onRemove={() => removeModel(i())}
                   />
                   <Show when={suggestion()?.index === i() ? suggestion() : undefined}>

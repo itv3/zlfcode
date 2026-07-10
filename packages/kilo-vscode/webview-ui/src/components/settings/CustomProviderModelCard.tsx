@@ -14,6 +14,12 @@ export type SplitReasoningValue = undefined | boolean
 export type ReasoningEffortValue = undefined | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
 export type OutputEffortValue = undefined | "low" | "medium" | "high" | "xhigh" | "max"
 export type ChatTemplateArgsValue = undefined | boolean
+export type Modality = "text" | "audio" | "image" | "video" | "pdf"
+
+export type Modalities = {
+  input?: Modality[]
+  output?: Modality[]
+}
 
 export type VariantEntry = {
   name: string
@@ -29,8 +35,8 @@ export type VariantEntry = {
 export type ModelEntry = {
   id: string
   name: string
-  image: boolean
-  outputModalities: string[]
+  supportsImages: boolean
+  modalities: Modalities
   contextLimit: string
   outputLimit: string
   costEnabled: boolean
@@ -115,7 +121,7 @@ type ModelCardProps = {
   variantNames?: string[]
   onChangeId: (val: string) => void
   onChangeName: (val: string) => void
-  onChangeImage: (val: boolean) => void
+  onChangeSupportsImages: (val: boolean) => void
   onChangeContextLimit: (val: string) => void
   onChangeOutputLimit: (val: string) => void
   onChangeCostEnabled: (val: boolean) => void
@@ -397,8 +403,8 @@ export function ModelCard(props: ModelCardProps) {
           >
             <input
               type="checkbox"
-              checked={props.m.image}
-              onChange={(e) => props.onChangeImage(e.currentTarget.checked)}
+              checked={props.m.supportsImages}
+              onChange={(e) => props.onChangeSupportsImages(e.currentTarget.checked)}
             />
             {props.t("provider.custom.models.image.label")}
           </label>
@@ -588,7 +594,6 @@ export function ModelCard(props: ModelCardProps) {
           </div>
         </div>
       </Show>
-
     </div>
   )
 }

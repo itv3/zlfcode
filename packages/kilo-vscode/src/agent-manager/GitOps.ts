@@ -76,6 +76,9 @@ export function nonInteractiveEnv(): NodeJS.ProcessEnv {
     ...process.env,
     GIT_TERMINAL_PROMPT: "0",
   }
+  // simple-git 3.36 会拒绝继承的分页器命令；后台 Git 操作不需要分页器。
+  delete env.GIT_PAGER
+  delete env.PAGER
   if (!process.env.GIT_SSH_COMMAND) {
     env.GIT_SSH_COMMAND = KILO_NON_INTERACTIVE_SSH_COMMAND
   }

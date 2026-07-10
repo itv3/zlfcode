@@ -99,7 +99,10 @@ function createCtx(
       config: {
         get: async () => {
           calls.mergedGet += 1
-          if (opts.hangConfigGet || (opts.hangConfigGetAfter !== undefined && calls.mergedGet > opts.hangConfigGetAfter))
+          if (
+            opts.hangConfigGet ||
+            (opts.hangConfigGetAfter !== undefined && calls.mergedGet > opts.hangConfigGetAfter)
+          )
             await new Promise(() => {})
           return { data: merged }
         },
@@ -615,11 +618,7 @@ describe("fetchProviderData", () => {
       },
     } as unknown as Parameters<typeof fetchProviderData>[0]
 
-    const data = await fetchProviderData(
-      client,
-      "/tmp",
-      "catalog",
-    )
+    const data = await fetchProviderData(client, "/tmp", "catalog")
 
     const providers = Object.fromEntries(data.response.all.map((item) => [item.id, item]))
     expect(Object.keys(providers.openai.models)).toEqual(["gpt-5"])
@@ -644,7 +643,11 @@ describe("disconnectProvider", () => {
     expect(calls.config[0].config).toEqual({ disabled_providers: ["openai", "myprovider"] })
     expect(calls.remove).toEqual([{ providerID: "myprovider" }])
     expect(calls.posts).toContainEqual({ type: "providerDisconnected", requestId: "req", providerID: "myprovider" })
-    expect(calls.broadcasts).toContainEqual({ type: "providerDisconnected", requestId: "req", providerID: "myprovider" })
+    expect(calls.broadcasts).toContainEqual({
+      type: "providerDisconnected",
+      requestId: "req",
+      providerID: "myprovider",
+    })
     await flush()
     expect(calls.refresh).toBe(1)
     expect(calls.notify).toBe(2)
@@ -991,7 +994,11 @@ describe("fetchProviderData", () => {
     expect(result.storedKeys).toEqual({
       myprovider: { key: "sk-stored", baseURL: "https://example.com/v1", npm: "@ai-sdk/openai-compatible" },
       "native-provider": { key: "sk-native", baseURL: "https://native.example.com/v1", npm: "@ai-sdk/openai" },
-      "env-provider": { env: "MY_PROVIDER_KEY", baseURL: "https://env.example.com/v1", npm: "@ai-sdk/openai-compatible" },
+      "env-provider": {
+        env: "MY_PROVIDER_KEY",
+        baseURL: "https://env.example.com/v1",
+        npm: "@ai-sdk/openai-compatible",
+      },
     })
     expect(result.response.all.every((item) => !("key" in (item as Record<string, unknown>)))).toBe(true)
   })

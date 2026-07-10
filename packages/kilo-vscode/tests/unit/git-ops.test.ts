@@ -2,7 +2,7 @@ import { describe, it, expect } from "bun:test"
 import * as fs from "fs/promises"
 import * as os from "os"
 import * as nodePath from "path"
-import { GitOps } from "../../src/agent-manager/GitOps"
+import { GitOps, nonInteractiveEnv } from "../../src/agent-manager/GitOps"
 import { Semaphore } from "../../src/agent-manager/semaphore"
 
 function ops(handler: (args: string[], cwd: string) => Promise<string>, semaphore?: Semaphore): GitOps {
@@ -41,6 +41,26 @@ async function withRepo(run: (cwd: string) => Promise<void>): Promise<void> {
 }
 
 describe("GitOps", () => {
+  describe("nonInteractiveEnv", () => {
+    it("removes inherited pager commands", () => {
+      const pager = process.env.GIT_PAGER
+      const fallback = process.env.PAGER
+      process.env.GIT_PAGER = "less"
+      process.env.PAGER = "more"
+
+      try {
+        const env = nonInteractiveEnv()
+        expect(env.GIT_PAGER).toBeUndefined()
+        expect(env.PAGER).toBeUndefined()
+      } finally {
+        if (pager === undefined) delete process.env.GIT_PAGER
+        else process.env.GIT_PAGER = pager
+        if (fallback === undefined) delete process.env.PAGER
+        else process.env.PAGER = fallback
+      }
+    })
+  })
+
   describe("currentBranch", () => {
     it("returns the current branch name", async () => {
       const git = ops(async (args) => {

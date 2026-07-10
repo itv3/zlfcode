@@ -1,5 +1,11 @@
 import { describe, it, expect } from "bun:test"
-import { flattenModels, findModel, isModelValid, isVisibleModel, visibleModels } from "../../webview-ui/src/context/provider-utils"
+import {
+  flattenModels,
+  findModel,
+  isModelValid,
+  isVisibleModel,
+  visibleModels,
+} from "../../webview-ui/src/context/provider-utils"
 import type { Provider } from "../../webview-ui/src/types/messages"
 
 function makeProvider(id: string, name: string, modelIds: string[], free: string[] = []): Provider {
@@ -128,7 +134,12 @@ describe("isVisibleModel", () => {
 describe("visibleModels", () => {
   it("returns the default visible model set for selector consumers", () => {
     const providers = {
-      kilo: makeProvider("kilo", "Kilo Gateway", ["kilo-auto/free", "paid", "kilo-auto/small"], ["kilo-auto/free", "kilo-auto/small"]),
+      kilo: makeProvider(
+        "kilo",
+        "Kilo Gateway",
+        ["kilo-auto/free", "paid", "kilo-auto/small"],
+        ["kilo-auto/free", "kilo-auto/small"],
+      ),
       openai: makeProvider("openai", "OpenAI", ["gpt-4o"]),
       anthropic: makeProvider("anthropic", "Anthropic", ["claude"]),
     }
