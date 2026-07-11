@@ -62,6 +62,8 @@ jobs:
             label="$version"
           fi
 
+          bun run script/zlfcode/check-release.ts "zlfcode-v$label"
+
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "label=$label" >> "$GITHUB_OUTPUT"
           echo "tag=zlfcode-v$label" >> "$GITHUB_OUTPUT"
