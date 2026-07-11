@@ -89,4 +89,25 @@ describe("Kilo provider transform variants", () => {
     expect(Object.keys(result)).toEqual(["low", "medium", "high"])
     expect(result.high).toEqual({ reasoningEffort: "high" })
   })
+
+  test("adds max reasoning effort for GPT-5.6 OpenAI models", () => {
+    const result = ProviderTransform.variants(
+      model({
+        id: "gpt-5.6-sol",
+        providerID: "openai",
+        api: {
+          id: "gpt-5.6-sol",
+          url: "https://api.openai.com/v1",
+          npm: "@ai-sdk/openai",
+        },
+      }),
+    )
+
+    expect(Object.keys(result)).toEqual(["none", "low", "medium", "high", "xhigh", "max"])
+    expect(result.max).toEqual({
+      reasoningEffort: "max",
+      reasoningSummary: "auto",
+      include: ["reasoning.encrypted_content"],
+    })
+  })
 })

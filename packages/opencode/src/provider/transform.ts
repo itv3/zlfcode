@@ -561,6 +561,7 @@ function versionedGpt5ReasoningEfforts(apiId: string) {
   const version = gpt5Version(apiId)
   if (version === undefined) return undefined
   if (version === 1) return OPENAI_GPT5_1_EFFORTS
+  if (version === 6) return [...OPENAI_GPT5_2_PLUS_EFFORTS, "max"] // kilocode_change - GPT-5.6 支持 Max 推理强度
   return OPENAI_GPT5_2_PLUS_EFFORTS
 }
 
