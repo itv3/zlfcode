@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test"
 import { prioritizeVariants } from "../../webview-ui/src/components/settings/CustomProviderVariants"
 import type { VariantEntry } from "../../webview-ui/src/components/settings/CustomProviderModelCard"
+import { validateCustomProvider } from "../../webview-ui/src/components/settings/CustomProviderValidation"
+import type { FormState } from "../../webview-ui/src/components/settings/CustomProviderValidation"
 
 function item(name: string): VariantEntry {
   return {
@@ -12,6 +14,44 @@ function item(name: string): VariantEntry {
     outputEffort: undefined,
     chatTemplateArgs: undefined,
   }
+}
+
+function save(variants: VariantEntry[]) {
+  const form: FormState = {
+    providerID: "provider-13",
+    name: "Provider 13",
+    npm: "@ai-sdk/openai-compatible",
+    baseURL: "https://example.com/v1",
+    apiKey: "",
+    models: [
+      {
+        id: "gpt-5.6-sol",
+        name: "gpt-5.6-sol",
+        supportsImages: true,
+        modalities: {},
+        contextLimit: "1050000",
+        outputLimit: "128000",
+        costEnabled: false,
+        inputCost: "",
+        outputCost: "",
+        cacheReadCost: "",
+        cacheWriteCost: "",
+        reasoning: true,
+        variants,
+      },
+    ],
+    headers: [],
+    saving: false,
+  }
+  const out = validateCustomProvider({
+    form,
+    t: (key) => key,
+    editing: false,
+    disabledProviders: [],
+    existingProviderIDs: new Set(),
+  })
+  expect(out.result).toBeDefined()
+  return (out.result!.config.models["gpt-5.6-sol"] as { variants: Record<string, unknown> }).variants
 }
 
 describe("prioritizeVariants", () => {
@@ -29,5 +69,27 @@ describe("prioritizeVariants", () => {
     const result = prioritizeVariants(variants, "low")
 
     expect(result.map((entry) => entry.name)).toEqual(["low", "medium", "high"])
+  })
+
+  it("updates the default variant immediately after selecting Max from candidate defaults", () => {
+    const variants = ["none", "low", "medium", "high", "xhigh", "max"].map(item)
+
+    expect(variants[0]?.name).toBe("none")
+
+    const result = prioritizeVariants(variants, "max")
+
+    expect(result[0]?.name).toBe("max")
+    expect(Object.keys(save(result))[0]).toBe("max")
+  })
+
+  it("updates and serializes every consecutive default variant selection", () => {
+    const selected = ["xhigh", "low", "medium", "high", "none"]
+    let variants = ["none", "low", "medium", "high", "xhigh", "max"].map(item)
+
+    for (const name of selected) {
+      variants = prioritizeVariants(variants, name)
+      expect(variants[0]?.name).toBe(name)
+      expect(Object.keys(save(variants))[0]).toBe(name)
+    }
   })
 })

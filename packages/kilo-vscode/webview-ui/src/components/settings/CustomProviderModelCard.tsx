@@ -48,7 +48,6 @@ export type ModelEntry = {
   variants: VariantEntry[]
 }
 
-type VariantOption = { value: string }
 type SelectOption<T> = { value: T; labelKey: string }
 
 const COST_INPUT = /^(?:\d+(?:\.\d*)?|\.\d*)?$/
@@ -298,10 +297,7 @@ function VariantRow(props: VariantRowProps) {
 export function ModelCard(props: ModelCardProps) {
   const [open, setOpen] = createSignal(false)
   const opts = createMemo(() =>
-    (props.variantNames ?? props.m.variants.map((item) => item.name))
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .map((item) => ({ value: item })),
+    (props.variantNames ?? props.m.variants.map((item) => item.name)).map((item) => item.trim()).filter(Boolean),
   )
 
   const current = createMemo(() => opts()[0])
@@ -439,12 +435,12 @@ export function ModelCard(props: ModelCardProps) {
                 {props.t("provider.custom.models.variants.default.label")}
               </span>
               <div style={{ width: "112px", "min-width": "92px" }}>
-                <Select<VariantOption>
+                <Select<string>
                   options={opts()}
                   current={current()}
-                  value={(o) => o.value}
-                  label={(o) => format(o.value)}
-                  onSelect={(o) => o && props.onSelectVariant(o.value)}
+                  value={(o) => o}
+                  label={format}
+                  onSelect={(o) => o && props.onSelectVariant(o)}
                   placeholder={props.t("provider.custom.models.variants.reasoningEffort.placeholder")}
                   variant="secondary"
                   size="small"

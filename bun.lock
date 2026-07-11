@@ -332,7 +332,7 @@
     },
     "packages/kilo-vscode": {
       "name": "zlfcode",
-      "version": "7.4.503",
+      "version": "7.4.504",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.39.0",
         "@kilocode/kilo-gateway": "workspace:*",

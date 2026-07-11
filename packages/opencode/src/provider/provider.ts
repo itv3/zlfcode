@@ -1607,7 +1607,16 @@ export const layer = Layer.effect(
     )
     yield* ModelsRefresh.watch(state) // kilocode_change
 
-    const list = Effect.fn("Provider.list")(() => InstanceState.use(state, (s) => s.providers))
+    // kilocode_change start - 读取 Provider 注册表缓存前检测外部配置变化
+    const current = Effect.fn("Provider.state")(function* () {
+      yield* config.get()
+      return yield* InstanceState.get(state)
+    })
+
+    const list = Effect.fn("Provider.list")(function* () {
+      return (yield* current()).providers
+    })
+    // kilocode_change end
 
     async function resolveSDK(model: Model, s: State, envs: Record<string, string | undefined>) {
       try {
@@ -1776,12 +1785,14 @@ export const layer = Layer.effect(
       }
     }
 
-    const getProvider = Effect.fn("Provider.getProvider")((providerID: ProviderID) =>
-      InstanceState.use(state, (s) => s.providers[providerID]),
-    )
+    // kilocode_change start
+    const getProvider = Effect.fn("Provider.getProvider")(function* (providerID: ProviderID) {
+      return (yield* current()).providers[providerID]
+    })
+    // kilocode_change end
 
     const getModel = Effect.fn("Provider.getModel")(function* (providerID: ProviderID, modelID: ModelID) {
-      const s = yield* InstanceState.get(state)
+      const s = yield* current() // kilocode_change
       const provider = s.providers[providerID]
       if (!provider) {
         const catalogProvider = s.catalog[providerID]
@@ -1807,7 +1818,7 @@ export const layer = Layer.effect(
     })
 
     const getLanguage = Effect.fn("Provider.getLanguage")(function* (model: Model) {
-      const s = yield* InstanceState.get(state)
+      const s = yield* current() // kilocode_change
       const envs = yield* env.all()
       const key = `${model.providerID}/${model.id}`
       if (s.models.has(key)) return s.models.get(key)!
@@ -1833,7 +1844,7 @@ export const layer = Layer.effect(
     })
 
     const closest = Effect.fn("Provider.closest")(function* (providerID: ProviderID, query: string[]) {
-      const s = yield* InstanceState.get(state)
+      const s = yield* current() // kilocode_change
       const provider = s.providers[providerID]
       if (!provider) return undefined
       for (const item of query) {
@@ -1854,7 +1865,7 @@ export const layer = Layer.effect(
         )
       }
 
-      const s = yield* InstanceState.get(state)
+      const s = yield* current() // kilocode_change
       const provider = s.providers[providerID]
       if (!provider) return undefined
 
@@ -1915,7 +1926,7 @@ export const layer = Layer.effect(
       const cfg = yield* config.get()
       if (cfg.model) return parseModel(cfg.model)
 
-      const s = yield* InstanceState.get(state)
+      const s = yield* current() // kilocode_change
       const recent = yield* fs.readJson(path.join(Global.Path.state, "model.json")).pipe(
         Effect.map((x): { providerID: ProviderID; modelID: ModelID }[] => {
           if (!isRecord(x) || !Array.isArray(x.recent)) return []

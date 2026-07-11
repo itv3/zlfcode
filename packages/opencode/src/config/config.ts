@@ -54,6 +54,7 @@ import { primaryPaths } from "../kilocode/primary-worktree"
 import { Git } from "@/git"
 import { KilocodeDefaultPlugins } from "@/kilocode/config/default-plugins"
 import { KilocodeGlobalConfigStamp } from "@/kilocode/config/global-stamp"
+import * as ModelsRefresh from "@opencode-ai/core/kilocode/models-refresh"
 import { SandboxConfig } from "@/kilocode/sandbox/config"
 import {
   IndexingConfig as KiloIndexingConfig,
@@ -616,10 +617,10 @@ export const layer = Layer.effect(
 
     let globalStamp = "" // kilocode_change
 
-    const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {
+    const loadSnapshot = Effect.fnUntraced(function* (env?: Record<string, string>) {
       // kilocode_change start
       yield* Effect.promise(() => KilocodeConfig.migrateBashPermission())
-      globalStamp = yield* KilocodeGlobalConfigStamp.read(fs, Global.Path.config)
+      const before = yield* KilocodeGlobalConfigStamp.read(fs, Global.Path.config)
       // kilocode_change end
       let result: Info = {}
       // Seed the default global config with the schema for editor completion, but avoid writing when the user
@@ -657,9 +658,20 @@ export const layer = Layer.effect(
         )
       }
 
-      globalStamp = yield* KilocodeGlobalConfigStamp.read(fs, Global.Path.config) // kilocode_change
-      return result
+      const after = yield* KilocodeGlobalConfigStamp.read(fs, Global.Path.config) // kilocode_change
+      return { result, before, after } // kilocode_change
     })
+
+    // kilocode_change start - 仅缓存加载期间保持稳定的全局配置快照
+    const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {
+      while (true) {
+        const snapshot = yield* loadSnapshot(env)
+        if (snapshot.before !== snapshot.after) continue
+        globalStamp = snapshot.after
+        return snapshot.result
+      }
+    })
+    // kilocode_change end
 
     const [cachedGlobal, invalidateGlobal] = yield* Effect.cachedInvalidateWithTTL(
       loadGlobal().pipe(
@@ -675,16 +687,10 @@ export const layer = Layer.effect(
     const refreshGlobal = Effect.fnUntraced(function* () {
       const stamp = yield* KilocodeGlobalConfigStamp.read(fs, Global.Path.config)
       if (!globalStamp || stamp === globalStamp) return false
-      globalStamp = stamp
       yield* invalidateGlobal
       return true
     })
     // kilocode_change end
-
-    const getGlobal = Effect.fn("Config.getGlobal")(function* () {
-      yield* refreshGlobal() // kilocode_change
-      return yield* cachedGlobal
-    })
 
     const ensureGitignore = Effect.fn("Config.ensureGitignore")(function* (dir: string) {
       const gitignore = path.join(dir, ".gitignore")
@@ -840,7 +846,7 @@ export const layer = Layer.effect(
         }
 
         // kilocode_change start - capture global config failures as warnings
-        const global = yield* (Object.keys(authEnv).length ? loadGlobal(authEnv) : getGlobal()).pipe(
+        const global = yield* (Object.keys(authEnv).length ? loadGlobal(authEnv) : cachedGlobal).pipe(
           Effect.catchDefect((err: unknown) => {
             caughtWarning(warnings, "global config", err)
             return Effect.succeed({} as Info)
@@ -1154,24 +1160,58 @@ export const layer = Layer.effect(
       }),
     )
 
-    const get = Effect.fn("Config.get")(function* () {
-      // kilocode_change start - reload instance config when global config changed elsewhere
-      if (yield* refreshGlobal()) {
-        yield* InstanceState.invalidate(state).pipe(Effect.catchCause(() => Effect.void))
+    // kilocode_change start - 全局配置变化后刷新所有配置和 Provider 缓存
+    const refresh = Effect.fnUntraced(function* () {
+      yield* InstanceState.invalidateAll(state).pipe(Effect.catchCause(() => Effect.void))
+      yield* ModelsRefresh.notify()
+    })
+
+    const reload = Effect.fnUntraced(function* (event = true) {
+      if (!(yield* refreshGlobal())) return false
+      yield* refresh()
+      if (event) {
+        yield* Effect.sync(() =>
+          GlobalBus.emit("event", {
+            directory: "global",
+            payload: {
+              type: Event.ConfigUpdated.type,
+              properties: {},
+            },
+          }),
+        ).pipe(Effect.catchCause(() => Effect.void))
       }
-      // kilocode_change end
+      return true
+    })
+
+    const reset = Effect.fnUntraced(function* () {
+      yield* invalidateGlobal
+      yield* refresh()
+    })
+
+    const getGlobal = Effect.fn("Config.getGlobal")(function* () {
+      yield* reload()
+      return yield* cachedGlobal
+    })
+
+    // kilocode_change end
+
+    const get = Effect.fn("Config.get")(function* () {
+      yield* reload() // kilocode_change - 外部全局配置变化时刷新所有实例和 Provider
       return yield* InstanceState.use(state, (s) => s.config)
     })
 
     const directories = Effect.fn("Config.directories")(function* () {
+      yield* reload() // kilocode_change
       return yield* InstanceState.use(state, (s) => s.directories)
     })
 
     const getConsoleState = Effect.fn("Config.getConsoleState")(function* () {
+      yield* reload() // kilocode_change
       return yield* InstanceState.use(state, (s) => s.consoleState)
     })
 
     const waitForDependencies = Effect.fn("Config.waitForDependencies")(function* () {
+      yield* reload() // kilocode_change
       yield* InstanceState.useEffect(state, (s) =>
         Effect.forEach(s.deps, Fiber.join, { concurrency: "unbounded" }).pipe(Effect.asVoid),
       )
@@ -1191,6 +1231,7 @@ export const layer = Layer.effect(
         writable,
       })
       yield* InstanceState.invalidate(state)
+      yield* ModelsRefresh.notify() // kilocode_change - 项目 Provider 变化后重建运行时模型注册表
       yield* Effect.sync(() =>
         GlobalBus.emit("event", {
           directory: ctx.directory,
@@ -1203,6 +1244,7 @@ export const layer = Layer.effect(
     })
 
     const warnings = Effect.fn("Config.warnings")(function* () {
+      yield* reload() // kilocode_change
       return yield* InstanceState.use(state, (s) => s.warnings)
     })
     // kilocode_change end
@@ -1235,10 +1277,14 @@ export const layer = Layer.effect(
         if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
       }
 
+      if (changed) yield* reset() // kilocode_change - 配置更新返回前失效 Provider 注册表
+
       // kilocode_change start - skip dispose when caller opts out
       if (!dispose) {
-        yield* invalidateGlobal
-        yield* InstanceState.invalidateAll(state).pipe(Effect.catchCause(() => Effect.void))
+        if (!changed) {
+          yield* invalidateGlobal
+          yield* InstanceState.invalidateAll(state).pipe(Effect.catchCause(() => Effect.void))
+        }
         yield* Effect.sync(() =>
           GlobalBus.emit("event", {
             directory: "global",
@@ -1252,10 +1298,8 @@ export const layer = Layer.effect(
       }
       // kilocode_change end
 
-      if (changed) yield* invalidate()
       // kilocode_change start - hot-reload global config changes in the active instance
       if (changed) {
-        yield* InstanceState.invalidateAll(state).pipe(Effect.catchCause(() => Effect.void))
         yield* Effect.sync(() =>
           GlobalBus.emit("event", {
             directory: "global",

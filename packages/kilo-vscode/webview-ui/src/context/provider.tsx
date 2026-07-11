@@ -18,6 +18,22 @@ import {
 import { KILO_AUTO } from "../../../src/shared/provider-model"
 
 export type EnrichedModel = ProviderModel & { providerID: string; providerName: string }
+type Loaded = Extract<ExtensionMessage, { type: "providersLoaded" }>
+
+/**
+ * 将后端刷新结果作为权威快照,并结束本次保存产生的乐观覆盖。
+ * providerConnected 负责在保存完成到刷新返回之间即时更新界面;
+ * providersLoaded 到达后必须允许服务端的新增、修改和删除结果生效。
+ */
+export function reconcile(message: Loaded) {
+  return {
+    providers: message.providers,
+    connected: [...new Set(message.connected)],
+    authStates: message.authStates,
+    optimistic: {} as Record<string, Provider>,
+    optimisticAuth: {} as Record<string, ProviderAuthState>,
+  }
+}
 
 interface ProviderContextValue {
   providers: Accessor<Record<string, Provider>>
@@ -103,15 +119,15 @@ export const ProviderProvider: ParentComponent = (props) => {
 
     if (message.type !== "providersLoaded") return
 
-    const saved = optimistic()
-    const providers = { ...message.providers, ...saved }
-    const connected = [...new Set([...message.connected, ...Object.keys(saved)])]
-    setProviders(providers)
-    setConnected(connected)
+    const state = reconcile(message)
+    setProviders(state.providers)
+    setConnected(state.connected)
     setDefaults(message.defaults)
     setDefaultSelection(message.defaultSelection)
     setAuthMethods(message.authMethods)
-    setAuthStates({ ...message.authStates, ...optimisticAuth() })
+    setAuthStates(state.authStates)
+    setOptimistic(state.optimistic)
+    setOptimisticAuth(state.optimisticAuth)
   })
 
   onCleanup(unsubscribe)
