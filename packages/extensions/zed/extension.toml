@@ -1,7 +1,10 @@
 id = "kilo"
 name = "Kilo"
 description = "The open source coding agent."
-version = "7.4.5"
+# kilocode_change start
+# 同步 ZLF Code 发布版本。
+version = "7.4.505"
+# kilocode_change end
 schema_version = 1
 authors = ["Anomaly"]
 repository = "https://github.com/Kilo-Org/kilocode"
@@ -11,26 +14,41 @@ name = "Kilo"
 icon = "./icons/opencode.svg"
 
 [agent_servers.opencode.targets.darwin-aarch64]
-archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.5/opencode-darwin-arm64.zip"
+# kilocode_change start
+# 同步 Kilo 发布产物地址。
+archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.505/opencode-darwin-arm64.zip"
+# kilocode_change end
 cmd = "./opencode"
 args = ["acp"]
 
 [agent_servers.opencode.targets.darwin-x86_64]
-archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.5/opencode-darwin-x64.zip"
+# kilocode_change start
+# 同步 Kilo 发布产物地址。
+archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.505/opencode-darwin-x64.zip"
+# kilocode_change end
 cmd = "./opencode"
 args = ["acp"]
 
 [agent_servers.opencode.targets.linux-aarch64]
-archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.5/opencode-linux-arm64.tar.gz"
+# kilocode_change start
+# 同步 Kilo 发布产物地址。
+archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.505/opencode-linux-arm64.tar.gz"
+# kilocode_change end
 cmd = "./opencode"
 args = ["acp"]
 
 [agent_servers.opencode.targets.linux-x86_64]
-archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.5/opencode-linux-x64.tar.gz"
+# kilocode_change start
+# 同步 Kilo 发布产物地址。
+archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.505/opencode-linux-x64.tar.gz"
+# kilocode_change end
 cmd = "./opencode"
 args = ["acp"]
 
 [agent_servers.opencode.targets.windows-x86_64]
-archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.5/opencode-windows-x64.zip"
+# kilocode_change start
+# 同步 Kilo 发布产物地址。
+archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.505/opencode-windows-x64.zip"
+# kilocode_change end
 cmd = "./opencode.exe"
 args = ["acp"]

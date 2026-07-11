@@ -7,9 +7,9 @@ ZLF Code 是面向内部使用的 AI coding agent。当前版本已接入官方 
 | 项 | 值 |
 |---|---|
 | 上游底座 | Kilo Code `v7.4.5` |
-| ZLF 自定义版本 | `v0.04` |
-| 发布批次 | `7.4.5-v0.04` |
-| 市场版本 | `7.4.504` |
+| ZLF 自定义版本 | `v0.06` |
+| 发布批次 | `7.4.5-v0.06` |
+| 市场版本 | `7.4.505` |
 | 扩展 ID | `itv3.zlfcode` |
 | `publisher` | `itv3` |
 | `name` | `zlfcode` |
@@ -18,7 +18,7 @@ ZLF Code 是面向内部使用的 AI coding agent。当前版本已接入官方 
 | Open VSX | `https://open-vsx.org/extension/itv3/zlfcode` |
 | GitHub 仓库 | `https://github.com/itv3/zlfcode` |
 
-VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，所以市场页面显示 `7.4.504`。GitHub tag、GitHub Release 和 VSIX 文件名使用发布批次 `7.4.5-v0.04`。
+VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，所以市场页面显示 `7.4.505`。GitHub tag、GitHub Release 和 VSIX 文件名使用发布批次 `7.4.5-v0.06`。
 
 ## 维护原则
 
@@ -237,11 +237,11 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 标准发布目标平台：`darwin-arm64`、`darwin-x64`、`win32-x64`、`win32-arm64`、`linux-x64`、`linux-arm64`。
 
 ```bash
-git tag zlfcode-v7.4.5-v0.04
-git push origin zlfcode-v7.4.5-v0.04
+git tag zlfcode-v7.4.5-v0.06
+git push origin zlfcode-v7.4.5-v0.06
 ```
 
-发布前必须准备 `.github/release-notes/zlfcode-v7.4.5-v0.04.md`，并确认根 `package.json.version` 与 `packages/kilo-vscode/package.json.version` 都是 `7.4.504`。
+发布前必须准备 `.github/release-notes/zlfcode-v7.4.5-v0.06.md`，并确认根 `package.json.version` 与 `packages/kilo-vscode/package.json.version` 都是 `7.4.505`。
 
 发布前检查：
 
@@ -271,7 +271,7 @@ bun run prepare:cli-binary -- --force
 bun run rebuild-sdk
 bun run typecheck
 node esbuild.js --production
-./node_modules/.bin/vsce package --no-dependencies --skip-license --target darwin-arm64 -o out/zlfcode-7.4.5-v0.04-darwin-arm64.vsix
+./node_modules/.bin/vsce package --no-dependencies --skip-license --target darwin-arm64 -o out/zlfcode-7.4.5-v0.06-darwin-arm64.vsix
 ```
 
 安装到 Cursor 后验收：
@@ -279,7 +279,7 @@ node esbuild.js --production
 | 项 | 期望 |
 |---|---|
 | 扩展详情页 | 显示 `ZLF Code` 和中文 ZLF 说明。 |
-| 扩展版本 | 显示市场版本 `7.4.504`。 |
+| 扩展版本 | 显示市场版本 `7.4.505`。 |
 | 关于页面 | 版本信息不显示 `unknown`。 |
 | 自定义 provider | OpenAI / Anthropic / Gemini 模型发现、保存、请求头、图片能力、推理能力、默认推理强度、token limit、成本选项和候选模型预览正常；选择候选模型会覆盖自动默认参数并保留后续手动调整。 |
 | Provider 热更新 | 后端启动后给已有自定义 Provider 新增模型，保存后无需重启即可选择并发送；删除后模型立即从聊天选择器消失；重新添加后可立即发送。 |
