@@ -68,7 +68,16 @@ describe("prioritizeVariants", () => {
 
     const result = prioritizeVariants(variants, "low")
 
+    expect(result).toBe(variants)
     expect(result.map((entry) => entry.name)).toEqual(["low", "medium", "high"])
+  })
+
+  it("does not create a reactive update when the selected variant is missing", () => {
+    const variants = ["none", "low", "medium"].map(item)
+
+    const result = prioritizeVariants(variants, "max")
+
+    expect(result).toBe(variants)
   })
 
   it("updates the default variant immediately after selecting Max from candidate defaults", () => {
@@ -78,6 +87,7 @@ describe("prioritizeVariants", () => {
 
     const result = prioritizeVariants(variants, "max")
 
+    expect(result).not.toBe(variants)
     expect(result[0]?.name).toBe("max")
     expect(Object.keys(save(result))[0]).toBe("max")
   })

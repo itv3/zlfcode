@@ -564,6 +564,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
 
     const variants = prioritizeVariants(source, name)
     if (variants.length === 0) return
+    if (model.variants.length > 0 && variants === source) return
     if (!model.reasoning) setForm("models", i, "reasoning", true)
     setForm("models", i, "variants", variants)
     setErrors(
@@ -1373,6 +1374,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                 left: `${data().left}px`,
                 width: "280px",
                 "z-index": 1000,
+                "pointer-events": "none",
                 border: "1px solid var(--border-weak-base, var(--vscode-panel-border))",
                 "border-radius": "6px",
                 padding: "10px",
