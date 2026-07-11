@@ -44,6 +44,7 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 | 默认参数匹配 | 添加模型时按模型 ID 匹配内置默认参数，自动填充能力、成本和 token limit；也可选择候选模型应用其参数，并在保存前手动调整。 |
 | 候选模型预览 | 候选模型支持 hover 预览，显示图片、推理、上下文/输出 token、成本和推理强度等默认参数。 |
 | 配置界面增强 | 优化自定义提供商配置界面布局、提示语和参数命名，减少表单高度。 |
+| Provider 热更新 | 新增、修改或删除自定义 Provider 模型后，无需重启后端即可在所有活动工作区和聊天界面使用最新配置。 |
 
 关键实现：
 
@@ -84,6 +85,37 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 | `opencode` Kilo 边界 | `packages/opencode/src/kilocode/provider/{provider,transform}.ts` | Kilo 专属 provider transform。 |
 | `opencode` Kilo 边界 | `packages/opencode/src/kilocode/server/provider-auth-lifecycle.ts` | provider env/auth 顺序和模型缓存刷新。 |
 
+### 自定义 Provider 配置热更新
+
+自定义 Provider 配置通过设置页保存或直接修改全局配置后，运行时注册表必须在不重启 Kilo 后端的情况下更新。新增、修改和删除模型时只原子替换发生变化的自定义 Provider，避免重建全部 Provider 和模型目录。
+
+关键行为：
+
+- `Provider.getModel()`、Provider 列表和语言模型加载在读取缓存前检查最新配置快照，保证新模型能够立即使用，已删除模型不会残留。
+- 一次全局配置保存会刷新所有已活动工作区实例；项目配置更新只刷新对应工作区。
+- 目标 Provider 更新时精确清理语言模型、SDK 和 loader 缓存，保留其他 Provider 的认证、SDK、语言模型实例和运行时状态。
+- 每个 Provider 维护独立 version，配置更新前启动的异步 SDK 或语言模型加载不能回写新缓存。
+- 配置快照通过信号量串行应用，连续快速保存以后一次配置为准。
+- 设置页保存以配置 PATCH 成功为完成条件，不阻塞等待远端模型目录或 `/provider/ready`；模型目录使用缓存复用、single-flight 和后台刷新。
+- Extension host 为 Provider 状态分配单调 revision，并向所有活动 Webview 发布同一份增量结果；Webview 拒绝迟到的旧快照。
+- 删除当前模型后，聊天界面立即回退到有效模型；重新添加后可立即选择并发送。
+- 自定义 Provider 认证明确区分 `preserve`、`set` 和 `clear`，普通模型编辑不会清除已有 API key。
+- 候选 catalog 晚到后会自动重新计算；候选参数和默认推理强度在当前表单中立即生效。
+
+关键文件：
+
+| 范围 | 文件 | 说明 |
+|---|---|---|
+| Core refresh | `packages/core/src/kilocode/models-refresh.ts` | 向所有活动实例发布模型刷新通知。 |
+| Provider refresh | `packages/opencode/src/kilocode/provider/config-refresh.ts` | 比较配置快照并精确刷新变化的自定义 Provider。 |
+| Provider readiness | `packages/opencode/src/kilocode/provider/ready.ts` | 检查目标 Provider 的运行时模型集合，不实例化模型 SDK。 |
+| Provider registry | `packages/opencode/src/provider/provider.ts` | 读取前同步配置，维护 Provider version 并防止旧异步缓存回写。 |
+| Model catalog cache | `packages/opencode/src/provider/model-cache.ts` | 模型目录 single-flight、缓存复用和后台刷新。 |
+| HTTP API | `packages/opencode/src/kilocode/server/httpapi/groups/provider-ready.ts` | 定义 `/provider/ready` 诊断接口。 |
+| Extension state | `packages/kilo-vscode/src/KiloProvider.ts` | 维护 Provider revision、共享认证缓存和多 Webview 状态发布。 |
+| Provider actions | `packages/kilo-vscode/src/provider-actions.ts` | 保存后发布精确 Provider 状态，不阻塞等待 catalog 刷新。 |
+| Webview state | `packages/kilo-vscode/webview-ui/src/context/provider.tsx` | 合并增量状态并拒绝迟到 revision。 |
+
 ### 模型列表过滤、排序与选择体验
 
 | 功能 | 说明 |
@@ -111,7 +143,7 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 
 | 范围 | 文件 | 说明 |
 |---|---|---|
-| 数据下发 | `packages/kilo-vscode/src/KiloProvider.ts` | 下发完整 provider catalog 和 connected provider 列表。 |
+| 数据下发 | `packages/kilo-vscode/src/KiloProvider.ts` | 分别下发 connected/catalog 快照和带 revision 的增量 Provider 状态。 |
 | 收藏清理 | `packages/kilo-vscode/src/provider-actions.ts` | 校验收藏模型并维护默认收藏初始化状态。 |
 | 单一入口 | `packages/kilo-vscode/webview-ui/src/context/provider-utils.ts` | `isVisibleModel` / `isModelValid`。 |
 | 会话状态 | `packages/kilo-vscode/webview-ui/src/context/session.tsx` | 防御不可见的会话覆盖、最近模型和 pending Kilo 模型。 |
@@ -225,7 +257,10 @@ bun test ./tests/unit/provider-actions-validate.test.ts ./tests/unit/i18n-keys.t
 bun run typecheck
 
 cd ../opencode
-bun test ./test/kilocode/custom-provider-delete.test.ts ./test/kilocode/provider-transform.test.ts ./test/kilocode/provider-variant-order.test.ts ./test/kilocode/server/provider-auth-lifecycle.test.ts
+bun test ./test/kilocode/custom-provider-delete.test.ts ./test/kilocode/provider-transform.test.ts ./test/kilocode/provider-variant-order.test.ts ./test/kilocode/server/provider-auth-lifecycle.test.ts ./test/kilocode/provider-config-refresh.test.ts ./test/kilocode/model-cache-effect.test.ts
+
+cd ../core
+bun test ./test/kilocode/models-refresh.test.ts
 ```
 
 本地打包：
@@ -247,6 +282,12 @@ node esbuild.js --production
 | 扩展版本 | 显示市场版本 `7.4.504`。 |
 | 关于页面 | 版本信息不显示 `unknown`。 |
 | 自定义 provider | OpenAI / Anthropic / Gemini 模型发现、保存、请求头、图片能力、推理能力、默认推理强度、token limit、成本选项和候选模型预览正常；选择候选模型会覆盖自动默认参数并保留后续手动调整。 |
+| Provider 热更新 | 后端启动后给已有自定义 Provider 新增模型，保存后无需重启即可选择并发送；删除后模型立即从聊天选择器消失；重新添加后可立即发送。 |
+| 多 Webview 同步 | 同时打开聊天和设置页，Provider 模型变化在两个界面同步，迟到快照不会恢复已删除模型。 |
+| 默认推理强度 | 候选参数带入后选择 `Max`，当前选择框立即显示 `Max`；保存退出后重新进入仍显示 `Max`。 |
+| 认证保留 | 编辑模型但不填写 API key 时，已有认证保持不变。 |
+| 快速连续保存 | 连续新增、修改和删除模型后，最终界面与运行时注册表都对应最后一次保存。 |
+| 多工作区实例 | 修改全局自定义 Provider 后，所有已活动工作区实例都能使用最新模型集合。 |
 | 模型列表 | 只显示 Kilo Gateway 免费模型以及用户已添加或已连接 provider 的模型。 |
 | 模型选择器 | 用户 provider 排在免费模型前面，默认折叠详情页，单击模型可直接切换。 |
 | 默认收藏 | 首次没有收藏记录时注入 StepFun Step 3.7 Flash 免费模型，用户取消后不自动恢复。 |
@@ -275,7 +316,7 @@ curl -fsSL https://open-vsx.org/api/itv3/zlfcode/versions | jq .
 - 发布身份：`.github/workflows/publish-zlfcode.yml`、`.github/release-notes/zlfcode-v*.md`、`package.json`、`packages/kilo-vscode/package.json`、`packages/kilo-vscode/README.md`、`packages/kilo-vscode/assets/icons/zlfcode.png`。
 - Extension host：`packages/kilo-vscode/src/KiloProvider.ts`、`packages/kilo-vscode/src/provider-actions.ts`、`packages/kilo-vscode/src/kilo-provider-utils.ts`、`packages/kilo-vscode/src/shared/`。
 - Webview UI：`packages/kilo-vscode/webview-ui/agent-manager/`、`packages/kilo-vscode/webview-ui/src/components/settings/CustomProvider*`、`ModeSwitcher.tsx`、`ModelSelector.tsx`、`provider-utils.ts`、`session.tsx`、`utils/agent-display.ts` 和 i18n 文件。
-- `opencode` 触点：`packages/opencode/src/config/provider.ts`、`packages/opencode/src/provider/transform.ts`、`packages/opencode/src/server/routes/instance/httpapi/public.ts`、`packages/opencode/script/build.ts`。
+- `opencode` 触点：`packages/opencode/src/config/provider.ts`、`packages/opencode/src/provider/{provider,model-cache,transform}.ts`、`packages/opencode/src/server/routes/instance/httpapi/{api,public}.ts`、`packages/opencode/script/build.ts`。
 - Kilo 边界与测试：`packages/opencode/src/kilocode/`、`packages/opencode/test/kilocode/`、`packages/kilo-vscode/tests/unit/custom-provider-*`、`provider-actions-*`、`model-selection.test.ts`、`provider-utils.test.ts`、`agent-display.test.ts`、`kilo-provider-utils.test.ts`。
 - CI 与生成物：`script/check-opencode-annotations.ts`、`script/check-md-table-padding.ts`、`script/check-workflows.ts`、`packages/sdk/openapi.json`、`packages/sdk/js/src/v2/gen/types.gen.ts`。
 

@@ -12,6 +12,7 @@ import {
   withCustomProviderDeletions,
 } from "./shared/custom-provider"
 import type { SanitizedProviderConfig } from "./shared/custom-provider"
+import type { CustomProviderAuthChange } from "./shared/custom-provider"
 import {
   customProviderProtocol,
   isCustomProviderPackage,
@@ -145,18 +146,25 @@ function publicCustomProvider(id: string, config: SanitizedProviderConfig) {
   }
 }
 
-type ProviderChangeMessage =
+type PublicAuthChange =
+  | { mode: "preserve" }
+  | { mode: "set"; state: AuthState }
+  | { mode: "clear" }
+
+export type ProviderChangeMessage =
   | {
       type: "providerConnected"
       requestId: string
       providerID: string
       provider?: ReturnType<typeof publicCustomProvider>
-      authState?: AuthState
+      auth: PublicAuthChange
     }
   | {
       type: "providerDisconnected"
       requestId: string
       providerID: string
+      removed: boolean
+      auth: { mode: "clear" }
     }
 
 function savedCustomProvider(config: unknown): config is Record<string, unknown> & { id: string } {
@@ -329,7 +337,8 @@ export function buildActionContext(
   errFn: (err: unknown) => string,
   dir: string,
   refresh: () => Promise<void>,
-  notify?: (message?: ProviderChangeMessage) => void,
+  notify?: (message?: ProviderChangeMessage) => number,
+  store?: (id: string, provider: SanitizedProviderConfig, auth: CustomProviderAuthChange) => void,
 ): ActionContext {
   return {
     client,
@@ -346,6 +355,7 @@ export function buildActionContext(
     },
     fetchAndSendProviders: refresh,
     notifyProvidersChanged: notify,
+    updateStoredProvider: store,
   }
 }
 
@@ -421,7 +431,18 @@ interface ActionContext {
   workspaceDir: string
   disposeGlobal: (reason: string) => Promise<void>
   fetchAndSendProviders: () => Promise<void>
-  notifyProvidersChanged?: (message?: ProviderChangeMessage) => void
+  notifyProvidersChanged?: (message?: ProviderChangeMessage) => number
+  updateStoredProvider?: (id: string, provider: SanitizedProviderConfig, auth: CustomProviderAuthChange) => void
+}
+
+function publish(ctx: ActionContext, message: ProviderChangeMessage) {
+  const revision = ctx.notifyProvidersChanged?.(message)
+  ctx.postMessage(revision === undefined ? message : { ...message, revision })
+}
+
+function publicAuth(auth: CustomProviderAuthChange): PublicAuthChange {
+  if (auth.mode === "set") return { mode: "set", state: "api" }
+  return auth
 }
 
 function postError(
@@ -544,13 +565,11 @@ async function disposeForRefresh(ctx: ActionContext, reason: string) {
 async function refreshProvidersNow(ctx: ActionContext, reason: string) {
   await disposeForRefresh(ctx, reason)
   await ctx.fetchAndSendProviders()
-  ctx.notifyProvidersChanged?.()
 }
 
 async function refreshProvidersLightly(ctx: ActionContext, refresh?: () => Promise<void>) {
   await refresh?.()
   await ctx.fetchAndSendProviders()
-  ctx.notifyProvidersChanged?.()
 }
 
 function refreshProvidersLater(ctx: ActionContext, reason: string, refresh?: () => Promise<void>) {
@@ -583,8 +602,12 @@ export async function connectProvider(
     await ctx.client.auth.set({ providerID: id, auth }, { throwOnError: true })
     await ctx.disposeGlobal(`provider connect (${id})`)
     await ctx.fetchAndSendProviders()
-    ctx.postMessage({ type: "providerConnected", requestId, providerID: id })
-    ctx.notifyProvidersChanged?.()
+    publish(ctx, {
+      type: "providerConnected",
+      requestId,
+      providerID: id,
+      auth: { mode: "set", state: "api" },
+    })
   } catch (error) {
     postError(ctx, requestId, providerID, "connect", ctx.getErrorMessage(error) || "Failed to connect provider")
   }
@@ -635,8 +658,12 @@ export async function completeProviderOAuth(
     )
     await ctx.disposeGlobal(`provider oauth (${id})`)
     await ctx.fetchAndSendProviders()
-    ctx.postMessage({ type: "providerConnected", requestId, providerID: id })
-    ctx.notifyProvidersChanged?.()
+    publish(ctx, {
+      type: "providerConnected",
+      requestId,
+      providerID: id,
+      auth: { mode: "set", state: "oauth" },
+    })
   } catch (error) {
     postError(
       ctx,
@@ -693,9 +720,14 @@ export async function disconnectProvider(
       await enableConfigured(ctx, id, config.global)
     }
 
-    const message = { type: "providerDisconnected" as const, requestId, providerID: id }
-    ctx.postMessage(message)
-    ctx.notifyProvidersChanged?.(message)
+    const message = {
+      type: "providerDisconnected" as const,
+      requestId,
+      providerID: id,
+      removed: custom,
+      auth: { mode: "clear" as const },
+    }
+    publish(ctx, message)
     const refresh = configured ? () => refreshConfig(ctx, setCachedConfig) : undefined
     if (custom) {
       refreshProvidersLightlyLater(ctx, `provider disconnect (${id})`, refresh)
@@ -788,6 +820,7 @@ export async function saveCustomProvider(
         await ctx.client.auth.remove({ providerID: id }, { throwOnError: true })
       }
     } catch (error) {
+      ctx.notifyProvidersChanged?.()
       refreshLater()
       refreshConfigLater()
       postError(ctx, requestId, providerID, "connect", ctx.getErrorMessage(error) || "Failed to save custom provider")
@@ -795,16 +828,15 @@ export async function saveCustomProvider(
     }
 
     refreshConfigLater()
+    ctx.updateStoredProvider?.(id, sanitized.value, auth)
     const message = {
       type: "providerConnected",
       requestId,
       providerID: id,
       provider: publicCustomProvider(id, sanitized.value),
-      authState: auth.mode === "clear" ? undefined : "api",
+      auth: publicAuth(auth),
     } as const
-    ctx.postMessage(message)
-    ctx.notifyProvidersChanged?.(message)
-    refreshProvidersLightlyLater(ctx, `custom provider save (${id})`)
+    publish(ctx, message)
   } catch (error) {
     postError(ctx, requestId, providerID, "connect", ctx.getErrorMessage(error) || "Failed to save custom provider")
   }

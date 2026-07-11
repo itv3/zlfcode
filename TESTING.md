@@ -170,6 +170,33 @@ curl -sS -H "$AUTH" \
   "$BASE/config?directory=$(printf %s "$PWD" | jq -sRr @uri)"
 ```
 
+### 检查 Provider 运行时模型注册表
+
+修改自定义 Provider 后，可调用 `/provider/ready`，确认运行时注册表与预期模型集合完全一致：
+
+```bash
+curl -sS -X POST "$BASE/provider/ready" \
+  -H "$AUTH" -H "$DIR_HEADER" -H "Content-Type: application/json" \
+  -d '{
+    "providerID": "13",
+    "modelIDs": ["gpt-5.5", "gpt-5.6-sol"]
+  }'
+```
+
+注册表完全同步后返回：
+
+```json
+{
+  "ready": true,
+  "missing": [],
+  "unexpected": []
+}
+```
+
+`missing` 表示预期存在但尚未注册的模型；`unexpected` 表示运行时仍已注册、但不在预期集合中的模型，适合用于验证删除是否生效。
+
+该接口只检查注册表元数据，不调用 `Provider.getModel()`、不实例化 AI SDK，也不等待远端模型目录请求。它只用于诊断和回归测试；VS Code 自定义 Provider 保存链路不会阻塞等待该接口。
+
 ### Stream global events (SSE)
 
 ```bash

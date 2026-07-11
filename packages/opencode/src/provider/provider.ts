@@ -17,7 +17,7 @@ import { iife } from "@/util/iife"
 import { Global } from "@opencode-ai/core/global"
 import path from "path"
 import { pathToFileURL } from "url"
-import { Effect, Layer, Context, Schema, Types } from "effect"
+import { Effect, Layer, Context, Schema, Semaphore, Types } from "effect" // kilocode_change - Semaphore 用于串行应用配置快照
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { EffectPromise } from "@/effect/promise"
@@ -42,6 +42,7 @@ import {
   orderedVariants,
 } from "@/kilocode/provider/provider"
 import * as ModelsRefresh from "@/kilocode/provider/models-refresh"
+import * as ConfigRefresh from "@/kilocode/provider/config-refresh"
 // kilocode_change end
 import { ProviderError } from "./error"
 
@@ -1078,12 +1079,14 @@ export interface Interface {
 }
 
 interface State {
+  config: Config.Info // kilocode_change - 识别当前 Provider 注册表对应的配置快照
   models: Map<string, LanguageModelV3>
   providers: Record<ProviderID, Info>
   catalog: Record<ProviderID, Info>
   sdk: Map<string, BundledSDK>
   modelLoaders: Record<string, CustomModelLoader>
   varsLoaders: Record<string, CustomVarsLoader>
+  version: Map<ProviderID, number> // kilocode_change - 防止配置更新前的异步加载回写旧模型缓存
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Provider") {}
@@ -1596,21 +1599,42 @@ export const layer = Layer.effect(
         }
 
         return {
+          config: cfg, // kilocode_change
           models: languages,
           providers,
           catalog,
           sdk,
           modelLoaders,
           varsLoaders,
+          version: new Map(), // kilocode_change
         }
       }),
     )
     yield* ModelsRefresh.watch(state) // kilocode_change
 
-    // kilocode_change start - 读取 Provider 注册表缓存前检测外部配置变化
+    // kilocode_change start - 自定义 Provider 配置变化时仅原子替换目标 Provider
+    const lock = Semaphore.makeUnsafe(1)
+
     const current = Effect.fn("Provider.state")(function* () {
-      yield* config.get()
-      return yield* InstanceState.get(state)
+      return yield* lock.withPermits(1)(
+        Effect.gen(function* () {
+          const cfg = yield* config.get()
+          const cached = yield* InstanceState.get(state)
+          if (cached.config === cfg) return cached
+
+          const refreshed = yield* ConfigRefresh.refresh({
+            config: cfg,
+            state: cached,
+            auth: (id) => auth.get(id).pipe(Effect.orDie),
+            env: env.all(),
+            experimental: runtimeFlags.enableExperimentalModels,
+          })
+          if (refreshed) return cached
+
+          yield* InstanceState.invalidate(state)
+          return yield* InstanceState.get(state)
+        }),
+      )
     })
 
     const list = Effect.fn("Provider.list")(function* () {
@@ -1675,15 +1699,16 @@ export const layer = Layer.effect(
             ...model.headers,
           }
 
-        const key = Hash.fast(
+        const key = `${model.providerID}/${Hash.fast(
           JSON.stringify({
             providerID: model.providerID,
             npm: model.api.npm,
             options,
           }),
-        )
+        )}` // kilocode_change - 允许配置热更新精确清理目标 Provider SDK
         const existing = s.sdk.get(key)
         if (existing) return existing
+        const version = s.version.get(model.providerID) ?? 0 // kilocode_change
 
         const customFetch = options["fetch"]
         const chunkTimeout = options["chunkTimeout"]
@@ -1754,7 +1779,7 @@ export const layer = Layer.effect(
             name: model.providerID,
             ...options,
           })
-          s.sdk.set(key, loaded)
+          if ((s.version.get(model.providerID) ?? 0) === version) s.sdk.set(key, loaded) // kilocode_change
           return loaded as SDK
         }
 
@@ -1778,7 +1803,7 @@ export const layer = Layer.effect(
           name: model.providerID,
           ...options,
         })
-        s.sdk.set(key, loaded)
+        if ((s.version.get(model.providerID) ?? 0) === version) s.sdk.set(key, loaded) // kilocode_change
         return loaded as SDK
       } catch (e) {
         throw new InitError({ providerID: model.providerID, cause: e })
@@ -1822,6 +1847,7 @@ export const layer = Layer.effect(
       const envs = yield* env.all()
       const key = `${model.providerID}/${model.id}`
       if (s.models.has(key)) return s.models.get(key)!
+      const version = s.version.get(model.providerID) ?? 0 // kilocode_change
 
       const provider = s.providers[model.providerID]
       return yield* EffectPromise.refineRejection(
@@ -1833,7 +1859,7 @@ export const layer = Layer.effect(
                 ...model.options,
               })
             : sdk.languageModel(model.api.id)
-          s.models.set(key, language)
+          if ((s.version.get(model.providerID) ?? 0) === version) s.models.set(key, language) // kilocode_change
           return language
         },
         (cause) =>

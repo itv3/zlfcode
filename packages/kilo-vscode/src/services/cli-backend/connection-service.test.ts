@@ -22,7 +22,7 @@ describe("KiloConnectionService sandbox preference", () => {
 
 describe("KiloConnectionService clients", () => {
   test("returns a connected client without a workspace folder", async () => {
-    const service = new KiloConnectionService({} as any)
+    const service = new KiloConnectionService({} as ConstructorParameters<typeof KiloConnectionService>[0])
     const client = {}
     const workspace = vscode.workspace as { workspaceFolders?: readonly vscode.WorkspaceFolder[] }
     const folders = workspace.workspaceFolders
@@ -84,17 +84,80 @@ describe("KiloConnectionService viewed sessions", () => {
 })
 
 describe("KiloConnectionService provider broadcasts", () => {
-  test("broadcasts provider changes to active listeners", () => {
+  test("broadcasts monotonically versioned provider changes to every active listener", () => {
     const service = new KiloConnectionService({} as any)
-    const calls: Array<{ source?: string; message?: unknown }> = []
-    const off = service.onProvidersChanged((source, message) => calls.push({ source, message }))
+    const first: Array<{ source?: string; revision: number; message?: unknown }> = []
+    const second: Array<{ source?: string; revision: number; message?: unknown }> = []
+    const off = service.onProvidersChanged((source, revision, message) => first.push({ source, revision, message }))
+    service.onProvidersChanged((source, revision, message) => second.push({ source, revision, message }))
     const message = { type: "providerDisconnected", providerID: "custom" }
 
-    service.notifyProvidersChanged("sidebar", message)
+    expect(service.notifyProvidersChanged("sidebar", message)).toBe(1)
     off()
-    service.notifyProvidersChanged("settings")
+    expect(service.notifyProvidersChanged("settings")).toBe(2)
 
-    expect(calls).toEqual([{ source: "sidebar", message }])
+    expect(first).toEqual([{ source: "sidebar", revision: 1, message }])
+    expect(second).toEqual([
+      { source: "sidebar", revision: 1, message },
+      { source: "settings", revision: 2, message: undefined },
+    ])
+    expect(service.getProviderRevision()).toBe(2)
+  })
+
+  test("atomically shares provider keys without exposing mutable state", () => {
+    const service = new KiloConnectionService({} as any)
+    const key = {
+      key: "sk-old",
+      baseURL: "https://old.example.com/v1",
+      npm: "@ai-sdk/openai-compatible" as const,
+    }
+    service.replaceProviderKeys({ custom: key })
+
+    const copy = service.getProviderKeys()
+    delete copy.custom
+    expect(service.getProviderKeys()).toEqual({ custom: key })
+
+    service.setProviderKey("custom", { ...key, key: "sk-new", baseURL: "https://new.example.com/v1" })
+    expect(service.getProviderKeys().custom).toEqual({
+      ...key,
+      key: "sk-new",
+      baseURL: "https://new.example.com/v1",
+    })
+    service.setProviderKey("custom")
+    expect(service.getProviderKeys()).toEqual({})
+  })
+})
+
+describe("KiloConnectionService provider save queue", () => {
+  test("serializes saves and continues after a failure", async () => {
+    const service = new KiloConnectionService({} as any)
+    const calls: string[] = []
+    let begin = () => undefined
+    const started = new Promise<void>((resolve) => {
+      begin = resolve
+    })
+    let release = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const first = service.enqueue(async () => {
+      calls.push("first:start")
+      begin()
+      await gate
+      calls.push("first:end")
+      throw new Error("failed")
+    })
+    const second = service.enqueue(async () => {
+      calls.push("second")
+      return "done"
+    })
+
+    await started
+    expect(calls).toEqual(["first:start"])
+    release()
+    await expect(first).rejects.toThrow("failed")
+    expect(await second).toBe("done")
+    expect(calls).toEqual(["first:start", "first:end", "second"])
   })
 })
 

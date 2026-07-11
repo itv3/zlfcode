@@ -2,15 +2,21 @@ import { afterEach, describe, expect, it } from "bun:test"
 
 const { KiloProvider } = await import("../../src/KiloProvider")
 
+type Key = { key?: string; env?: string; baseURL: string; npm: "@ai-sdk/openai-compatible" }
+
 type Internals = {
-  storedProviderKeys: Record<string, { key?: string; env?: string; baseURL: string; npm: "@ai-sdk/openai-compatible" }>
   webview: { postMessage: (message: unknown) => Promise<unknown> } | null
   handleFetchCustomProviderModels: (msg: Record<string, unknown>) => Promise<void>
 }
 
 function provider() {
   const sent: unknown[] = []
-  const subject = new KiloProvider({} as never, {} as never)
+  let keys: Record<string, Key> = {}
+  const service = {
+    sandboxPreference: undefined,
+    getProviderKeys: () => ({ ...keys }),
+  }
+  const subject = new KiloProvider({} as never, service as never)
   const internal = subject as unknown as Internals
   internal.webview = {
     postMessage: async (message: unknown) => {
@@ -18,7 +24,13 @@ function provider() {
       return true
     },
   }
-  return { internal, sent }
+  return {
+    internal,
+    sent,
+    setKeys: (next: Record<string, Key>) => {
+      keys = { ...next }
+    },
+  }
 }
 
 describe("custom provider model fetch", () => {
@@ -68,14 +80,14 @@ describe("custom provider model fetch", () => {
     }) as typeof fetch
 
     try {
-      const { internal } = provider()
-      internal.storedProviderKeys = {
+      const { internal, setKeys } = provider()
+      setKeys({
         myprovider: {
           env: "KILO_TEST_LEAK_KEY",
           baseURL: "https://example.com/v1",
           npm: "@ai-sdk/openai-compatible",
         },
-      }
+      })
 
       await internal.handleFetchCustomProviderModels({
         type: "fetchCustomProviderModels",
@@ -108,10 +120,10 @@ describe("custom provider model fetch", () => {
     }) as typeof fetch
 
     try {
-      const { internal } = provider()
-      internal.storedProviderKeys = {
+      const { internal, setKeys } = provider()
+      setKeys({
         myprovider: { key: "sk-stored", baseURL: "https://example.com/v1", npm: "@ai-sdk/openai-compatible" },
-      }
+      })
 
       await internal.handleFetchCustomProviderModels({
         type: "fetchCustomProviderModels",

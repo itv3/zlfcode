@@ -39,15 +39,16 @@ import { validateCustomProvider } from "./CustomProviderValidation"
 import type { FormErrors, FormState, HeaderRow } from "./CustomProviderValidation"
 import { prioritizeVariants } from "./CustomProviderVariants"
 import {
-  defaultCandidates,
   defaultsForModel,
   hasDefaults,
   mergeModelDefaults,
   parseDefaults,
   parseVariant,
   replaceModelDefaults,
+  resolveSuggestion,
   type CustomProviderDefaults,
   type DefaultCandidate,
+  type DefaultSuggestion,
 } from "./CustomProviderDefaults"
 const DEBOUNCE_MS = 500
 const SEARCH_DEBOUNCE_MS = 150
@@ -271,11 +272,8 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   const [fetchedModels, setFetchedModels] = createSignal<FetchedModel[]>()
   const [selected, setSelected] = createSignal<Set<string>>(new Set())
   const [fetchStatus, setFetchStatus] = createSignal<string>()
-  const [suggestion, setSuggestion] = createSignal<{
-    index: number
-    id: string
-    items: ReturnType<typeof defaultCandidates>
-  }>()
+  // 仅保存查询条件；候选数组必须随完整 provider catalog 的晚到结果重新计算。
+  const [suggestion, setSuggestion] = createSignal<DefaultSuggestion>()
   const [preview, setPreview] = createSignal<{
     item: DefaultCandidate
     top: number
@@ -498,11 +496,18 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     }
   }
 
-  function nearby(id: string) {
+  function derive(item: DefaultSuggestion | undefined) {
     const pids = [form.providerID.trim(), props.existing?.providerID].filter(Boolean) as string[]
-    return defaultCandidates(provider.providers(), form.npm, id, 5, {
+    return resolveSuggestion(provider.providers(), form.npm, item, 5, {
       excludeProviders: pids,
     })
+  }
+
+  const suggested = createMemo(() => derive(suggestion()))
+
+  function shown(i: number) {
+    const item = suggested()
+    return item?.index === i ? item : undefined
   }
 
   function suggest(i: number, id: string) {
@@ -510,8 +515,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
       setSuggestion((value) => (value?.index === i ? undefined : value))
       return
     }
-    const items = nearby(id)
-    setSuggestion(items.length > 0 ? { index: i, id, items } : undefined)
+    setSuggestion({ index: i, id })
   }
 
   function fill(i: number, id: string) {
@@ -718,7 +722,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
       setFetchStatus(language.t("provider.custom.models.fetch.added", { count: String(toAdd.length) }))
       const target = toAdd
         .map((m, offset) => ({ id: m.id, index: start + offset }))
-        .find((m) => nearby(m.id).length > 0)
+        .find((m) => derive(m) !== undefined)
       if (target) suggest(target.index, target.id)
     }
 
@@ -1072,7 +1076,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                     }
                     onRemove={() => removeModel(i())}
                   />
-                  <Show when={suggestion()?.index === i() ? suggestion() : undefined}>
+                  <Show when={shown(i())}>
                     {(data) => (
                       <div
                         style={{

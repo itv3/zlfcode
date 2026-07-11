@@ -17,7 +17,7 @@ import type {
 import type { PermissionRequest } from "./permissions"
 import type { AnacondaDesktopExtensionMessage } from "../../../../src/shared/anaconda-desktop-messages"
 import type { QuestionRequest, SuggestionRequest, TodoItem } from "./questions"
-import type { ModelSelection, Provider, ProviderAuthState } from "./providers"
+import type { ModelSelection, Provider, ProviderAuthChange, ProviderAuthState } from "./providers"
 import type { AgentInfo, AgentRequirementResult, SkillInfo, SlashCommandInfo } from "./agents"
 import type { BrowserSettings, Config, FeatureFlags, IndexingStatus, KiloEmbeddingModelCatalog } from "./config"
 import type { WorkStyle, WorkStyleState } from "../../../../src/shared/work-style-presets"
@@ -348,6 +348,7 @@ export interface ImageModelsLoadedMessage {
 
 export interface ProvidersLoadedMessage {
   type: "providersLoaded"
+  revision: number
   providers: Record<string, Provider>
   connected: string[]
   defaults: Record<string, string>
@@ -1007,16 +1008,20 @@ export interface ProviderOAuthReadyMessage {
 
 export interface ProviderConnectedMessage {
   type: "providerConnected"
+  revision: number
   requestId: string
   providerID: string
   provider?: Provider
-  authState?: ProviderAuthState
+  auth: ProviderAuthChange
 }
 
 export interface ProviderDisconnectedMessage {
   type: "providerDisconnected"
+  revision: number
   requestId: string
   providerID: string
+  removed: boolean
+  auth: Extract<ProviderAuthChange, { mode: "clear" }>
 }
 
 export interface ProviderActionErrorMessage {

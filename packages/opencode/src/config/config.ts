@@ -54,7 +54,6 @@ import { primaryPaths } from "../kilocode/primary-worktree"
 import { Git } from "@/git"
 import { KilocodeDefaultPlugins } from "@/kilocode/config/default-plugins"
 import { KilocodeGlobalConfigStamp } from "@/kilocode/config/global-stamp"
-import * as ModelsRefresh from "@opencode-ai/core/kilocode/models-refresh"
 import { SandboxConfig } from "@/kilocode/sandbox/config"
 import {
   IndexingConfig as KiloIndexingConfig,
@@ -1160,10 +1159,9 @@ export const layer = Layer.effect(
       }),
     )
 
-    // kilocode_change start - 全局配置变化后刷新所有配置和 Provider 缓存
+    // kilocode_change start - 全局配置变化后失效配置缓存；Provider 会按配置快照自行重建
     const refresh = Effect.fnUntraced(function* () {
       yield* InstanceState.invalidateAll(state).pipe(Effect.catchCause(() => Effect.void))
-      yield* ModelsRefresh.notify()
     })
 
     const reload = Effect.fnUntraced(function* (event = true) {
@@ -1231,7 +1229,6 @@ export const layer = Layer.effect(
         writable,
       })
       yield* InstanceState.invalidate(state)
-      yield* ModelsRefresh.notify() // kilocode_change - 项目 Provider 变化后重建运行时模型注册表
       yield* Effect.sync(() =>
         GlobalBus.emit("event", {
           directory: ctx.directory,

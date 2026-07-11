@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import path from "node:path"
 import {
   defaultCandidates,
   defaultKeys,
@@ -435,5 +436,95 @@ describe("custom provider default matching", () => {
       "3ab_antigravity/gemini-3.1-pro-low",
     )
     expect(items[0]?.providerID).toBe("nano-gpt")
+  })
+
+  it("recomputes the current suggestion when the complete provider catalog arrives", () => {
+    const webview = path.resolve(import.meta.dir, "../../webview-ui")
+    const script = `
+      const { createMemo, createRoot, createSignal } = await import("solid-js")
+      const { resolveSuggestion } = await import("./src/components/settings/CustomProviderDefaults.ts")
+      const entry = (id, name) => ({
+        id,
+        name,
+        capabilities: {
+          reasoning: true,
+          input: { text: true, image: true, audio: false, video: false, pdf: true },
+        },
+        limit: { context: 1050000, output: 128000 },
+        cost: { input: 5, output: 30, cache: { read: 0.5, write: 6.25 } },
+        variants: {
+          none: { reasoningEffort: "none" },
+          low: { reasoningEffort: "low" },
+          medium: { reasoningEffort: "medium" },
+          high: { reasoningEffort: "high" },
+          xhigh: { reasoningEffort: "xhigh" },
+          max: { reasoningEffort: "max" },
+        },
+      })
+      const connected = {
+        kilo: {
+          id: "kilo",
+          name: "Kilo Gateway",
+          models: {
+            "openai/gpt-5.6-sol": entry("openai/gpt-5.6-sol", "OpenAI: GPT-5.6 Sol (new)"),
+            "openai/gpt-5.6-sol-pro": entry("openai/gpt-5.6-sol-pro", "OpenAI: GPT-5.6 Sol Pro"),
+          },
+        },
+        "13": {
+          id: "13",
+          name: "Provider 13",
+          models: { "gpt-5.6-sol": entry("gpt-5.6-sol", "gpt-5.6-sol") },
+        },
+      }
+      const full = {
+        ...connected,
+        openai: {
+          id: "openai",
+          name: "OpenAI",
+          models: { "gpt-5.6-sol": entry("gpt-5.6-sol", "GPT-5.6 Sol") },
+        },
+        llmgateway: {
+          id: "llmgateway",
+          name: "LLMGateway",
+          models: { "gpt-5.6-sol": entry("gpt-5.6-sol", "GPT-5.6 Sol") },
+        },
+      }
+      const fail = (message) => {
+        console.error(message)
+        process.exit(1)
+      }
+
+      createRoot((dispose) => {
+        const [catalog, update] = createSignal(connected)
+        const suggestion = { index: 0, id: "gpt-5.6-sol" }
+        const current = createMemo(() =>
+          resolveSuggestion(catalog(), "@ai-sdk/openai-compatible", suggestion, 5, {
+            excludeProviders: ["13"],
+          }),
+        )
+        const ids = () => current()?.items.map((item) => item.providerID + "/" + item.modelID) ?? []
+
+        if (ids().join(",") !== "kilo/openai/gpt-5.6-sol,kilo/openai/gpt-5.6-sol-pro") {
+          fail("connected 快照候选不符合预期: " + ids().join(","))
+        }
+
+        update(full)
+
+        if (ids().slice(0, 2).join(",") !== "openai/gpt-5.6-sol,llmgateway/gpt-5.6-sol") {
+          fail("完整 catalog 到达后候选没有重算: " + ids().join(","))
+        }
+        if (current()?.items.some((item) => item.providerID === "13")) fail("候选包含正在编辑的 Provider")
+        if (!Object.hasOwn(current()?.items[0]?.defaults.variants ?? {}, "max")) fail("Max 变体丢失")
+        dispose()
+      })
+    `
+    const result = Bun.spawnSync(["bun", "--conditions=browser", "-e", script], {
+      cwd: webview,
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const output = result.stdout.toString() + result.stderr.toString()
+
+    expect(result.exitCode, output).toBe(0)
   })
 })

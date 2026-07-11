@@ -1,7 +1,8 @@
 // kilocode_change - new file
 import { expect } from "bun:test"
 import { Deferred, Effect, Fiber, Layer, Ref } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
+import * as TestClock from "effect/testing/TestClock"
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http"
 import { Auth } from "../../src/auth"
 import { ModelCache } from "../../src/provider/model-cache"
 import { TestConfig } from "../fixture/config"
@@ -19,16 +20,27 @@ function layer(
   hits: Ref.Ref<Hit[]>,
   cfg = TestConfig.layer(),
   access = auth,
-  gates?: { readonly started: Deferred.Deferred<void>; readonly wait: Deferred.Deferred<void> },
+  gates?: {
+    readonly started: Deferred.Deferred<void>
+    readonly wait: Deferred.Deferred<void>
+    readonly count?: number
+    readonly fail?: number
+  },
 ) {
   const http = HttpClient.make((request) =>
     Effect.gen(function* () {
       yield* Ref.update(hits, (list) => [...list, { url: request.url }])
       const count = (yield* Ref.get(hits)).length
-      if (gates && count === 1) {
+      if (gates && count === (gates.count ?? 1)) {
         yield* Deferred.succeed(gates.started, undefined)
         yield* Deferred.await(gates.wait)
       }
+      if (gates?.fail === count)
+        return yield* Effect.fail(
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({ request, description: `request ${count} failed` }),
+          }),
+        )
       return HttpClientResponse.fromWeb(
         request,
         Response.json({ data: [{ id: `apertis-${count}`, owned_by: "apertis" }] }),
@@ -73,6 +85,100 @@ it.live("reuses cached values and refresh invalidates the provider cell", () =>
     expect(Object.keys(out.cached)).toEqual(["apertis-1"])
     expect(Object.keys(out.refreshed)).toEqual(["apertis-2"])
     expect((yield* Ref.get(hits)).length).toBe(2)
+  }),
+)
+
+it.effect("过期模型立即返回旧值并在后台刷新", () =>
+  Effect.gen(function* () {
+    const hits = yield* Ref.make<Hit[]>([])
+    const started = yield* Deferred.make<void>()
+    const wait = yield* Deferred.make<void>()
+    const out = yield* ModelCache.Service.use((cache) =>
+      Effect.gen(function* () {
+        const first = yield* cache.fetch("apertis", { apiKey: "test-key" })
+        yield* TestClock.adjust("6 minutes")
+        const stale = yield* cache.fetch("apertis", { apiKey: "test-key" })
+        yield* Deferred.await(started)
+        const pending = yield* cache.get("apertis")
+        yield* Deferred.succeed(wait, undefined)
+        const fresh = yield* Effect.gen(function* () {
+          while (true) {
+            const current = yield* cache.get("apertis")
+            if (current && Object.keys(current)[0] === "apertis-2") return current
+            yield* Effect.yieldNow
+          }
+        })
+        return { first, stale, pending, fresh }
+      }),
+    ).pipe(Effect.provide(layer(hits, TestConfig.layer(), auth, { started, wait, count: 2 })))
+
+    expect(Object.keys(out.first)).toEqual(["apertis-1"])
+    expect(out.stale).toEqual(out.first)
+    expect(out.pending).toBeUndefined()
+    expect(Object.keys(out.fresh)).toEqual(["apertis-2"])
+    expect((yield* Ref.get(hits)).length).toBe(2)
+  }),
+)
+
+it.effect("并发读取过期模型时只启动一次后台刷新", () =>
+  Effect.gen(function* () {
+    const hits = yield* Ref.make<Hit[]>([])
+    const started = yield* Deferred.make<void>()
+    const wait = yield* Deferred.make<void>()
+    const out = yield* ModelCache.Service.use((cache) =>
+      Effect.gen(function* () {
+        const first = yield* cache.fetch("apertis", { apiKey: "test-key" })
+        yield* TestClock.adjust("6 minutes")
+        const left = yield* cache.fetch("apertis", { apiKey: "test-key" })
+        yield* Deferred.await(started)
+        const right = yield* cache.fetch("apertis", { apiKey: "test-key" })
+        const count = (yield* Ref.get(hits)).length
+        yield* Deferred.succeed(wait, undefined)
+        const fresh = yield* Effect.gen(function* () {
+          while (true) {
+            const current = yield* cache.get("apertis")
+            if (current && Object.keys(current)[0] === "apertis-2") return current
+            yield* Effect.yieldNow
+          }
+        })
+        return { first, left, right, count, fresh }
+      }),
+    ).pipe(Effect.provide(layer(hits, TestConfig.layer(), auth, { started, wait, count: 2 })))
+
+    expect(out.left).toEqual(out.first)
+    expect(out.right).toEqual(out.first)
+    expect(out.count).toBe(2)
+    expect(Object.keys(out.fresh)).toEqual(["apertis-2"])
+  }),
+)
+
+it.effect("后台刷新失败后允许下一次读取重试", () =>
+  Effect.gen(function* () {
+    const hits = yield* Ref.make<Hit[]>([])
+    const started = yield* Deferred.make<void>()
+    const wait = yield* Deferred.make<void>()
+    const out = yield* ModelCache.Service.use((cache) =>
+      Effect.gen(function* () {
+        const first = yield* cache.fetch("apertis", { apiKey: "test-key" })
+        yield* TestClock.adjust("6 minutes")
+        const stale = yield* cache.fetch("apertis", { apiKey: "test-key" })
+        yield* Deferred.await(started)
+        yield* Deferred.succeed(wait, undefined)
+        const fresh = yield* Effect.gen(function* () {
+          while (true) {
+            yield* cache.fetch("apertis", { apiKey: "test-key" })
+            const current = yield* cache.get("apertis")
+            if (current && Object.keys(current)[0] === "apertis-3") return current
+            yield* Effect.yieldNow
+          }
+        })
+        return { first, stale, fresh }
+      }),
+    ).pipe(Effect.provide(layer(hits, TestConfig.layer(), auth, { started, wait, count: 2, fail: 2 })))
+
+    expect(out.stale).toEqual(out.first)
+    expect(Object.keys(out.fresh)).toEqual(["apertis-3"])
+    expect((yield* Ref.get(hits)).length).toBe(3)
   }),
 )
 

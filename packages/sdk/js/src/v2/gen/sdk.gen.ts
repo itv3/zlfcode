@@ -285,6 +285,8 @@ import type {
   ProviderOauthAuthorizeResponses,
   ProviderOauthCallbackErrors,
   ProviderOauthCallbackResponses,
+  ProviderReadyErrors,
+  ProviderReadyResponses,
   PtyConnectErrors,
   PtyConnectResponses,
   PtyConnectTokenErrors,
@@ -3758,6 +3760,45 @@ export class Provider extends HeyApiClient {
       url: "/provider/auth",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * 检查 Provider 模型
+   *
+   * 等待当前工作区的 Provider 注册表完成加载，并返回仍不可用的模型。
+   */
+  public ready<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      providerID?: string
+      modelIDs?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "providerID" },
+            { in: "body", key: "modelIDs" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ProviderReadyResponses, ProviderReadyErrors, ThrowOnError>({
+      url: "/provider/ready",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 

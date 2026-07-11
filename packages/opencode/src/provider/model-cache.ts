@@ -1,6 +1,6 @@
 // kilocode_change - new file
 import { fetchKiloModels, type KiloModelsResult } from "@kilocode/kilo-gateway"
-import { Context, Duration, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { Config } from "../config/config"
 import { Auth } from "../auth"
@@ -66,6 +66,7 @@ export const layer: Layer.Layer<
     const active = new Map<string, Cell>()
     const versions = new Map<string, number>()
     const failures = new Map<string, Failure>()
+    const pending = new Set<string>()
 
     const getFailure = Effect.fn("ModelCache.getFailure")(function* (providerID: string) {
       return failures.get(providerID)
@@ -198,8 +199,14 @@ export const layer: Layer.Layer<
     // Failed loads are not cached so a temporary outage can recover on the next read.
     const evaluate = (entry: Cell) => entry.cached.pipe(Effect.tapCause(() => entry.invalidate))
 
-    const commit = (providerID: string, version: number, entry: Cell, result: Result) =>
-      Effect.sync(() => {
+    const commit = Effect.fn("ModelCache.commit")(function* (
+      providerID: string,
+      version: number,
+      entry: Cell,
+      result: Result,
+    ) {
+      const now = yield* Clock.currentTimeMillis
+      return yield* Effect.sync(() => {
         if ((versions.get(providerID) ?? 0) !== version) return result.models
         if (result.error) {
           failures.set(providerID, result.error)
@@ -208,12 +215,12 @@ export const layer: Layer.Layer<
           failures.delete(providerID)
         }
         entry.view.models = result.models
-        entry.view.timestamp = Date.now()
+        entry.view.timestamp = now
         active.set(providerID, entry)
         log.info("models fetched and cached", { providerID, count: Object.keys(result.models).length })
         return result.models
       })
-
+    })
     const get = Effect.fn("ModelCache.get")(function* (providerID: string) {
       const entry = active.get(providerID)
       if (!entry?.view.models || entry.view.timestamp === undefined) {
@@ -221,12 +228,9 @@ export const layer: Layer.Layer<
         return
       }
 
-      const age = Date.now() - entry.view.timestamp
+      const age = (yield* Clock.currentTimeMillis) - entry.view.timestamp
       if (age > Duration.toMillis(ttl)) {
         log.debug("cache expired", { providerID, age })
-        entry.view.models = undefined
-        entry.view.timestamp = undefined
-        yield* entry.invalidate
         return
       }
 
@@ -234,9 +238,35 @@ export const layer: Layer.Layer<
       return entry.view.models
     })
 
+    const reload = Effect.fn("ModelCache.reload")(function* (providerID: string, options?: Options) {
+      const version = (versions.get(providerID) ?? 0) + 1
+      versions.set(providerID, version)
+      const entry = yield* cell(providerID, options)
+      log.info("refreshing models", { providerID })
+      yield* entry.invalidate
+      const result = yield* evaluate(entry)
+      return yield* commit(providerID, version, entry, result)
+    })
+
+    const background = Effect.fn("ModelCache.background")(function* (providerID: string, options?: Options) {
+      if (pending.has(providerID)) return
+      pending.add(providerID)
+      yield* reload(providerID, options).pipe(
+        Effect.ensuring(Effect.sync(() => pending.delete(providerID))),
+        Effect.ignore,
+        Effect.forkDetach,
+      )
+    })
+
     const fetch = Effect.fn("ModelCache.fetch")(function* (providerID: string, options?: Options) {
+      const previous = active.get(providerID)?.view.models
       const cached = yield* get(providerID)
       if (cached) return cached
+      if (previous) {
+        log.info("using stale models while refreshing", { providerID, count: Object.keys(previous).length })
+        yield* background(providerID, options)
+        return previous
+      }
       const version = (versions.get(providerID) ?? 0) + 1
       versions.set(providerID, version)
       const entry = yield* cell(providerID, options)
@@ -246,13 +276,7 @@ export const layer: Layer.Layer<
     })
 
     const refresh = Effect.fn("ModelCache.refresh")(function* (providerID: string, options?: Options) {
-      const version = (versions.get(providerID) ?? 0) + 1
-      versions.set(providerID, version)
-      const entry = yield* cell(providerID, options)
-      log.info("refreshing models", { providerID })
-      yield* entry.invalidate
-      const result = yield* evaluate(entry)
-      return yield* commit(providerID, version, entry, result)
+      return yield* reload(providerID, options)
     })
 
     const clear = Effect.fn("ModelCache.clear")(function* (providerID: string) {

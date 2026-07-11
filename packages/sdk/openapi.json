@@ -16418,6 +16418,102 @@
         ]
       }
     },
+    "/provider/ready": {
+      "post": {
+        "tags": ["provider-ready"],
+        "operationId": "provider.ready",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider 模型已就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ready": {
+                      "type": "boolean"
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "unexpected": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["ready", "missing", "unexpected"],
+                  "additionalProperties": false,
+                  "description": "Provider 模型已就绪"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "等待当前工作区的 Provider 注册表完成加载，并返回仍不可用的模型。",
+        "summary": "检查 Provider 模型",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "providerID": {
+                    "type": "string"
+                  },
+                  "modelIDs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": ["providerID", "modelIDs"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.provider.ready({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/remote/enable": {
       "post": {
         "tags": ["remote"],
@@ -20266,12 +20362,6 @@
             "$ref": "#/components/schemas/EventPermissionReplied"
           },
           {
-            "$ref": "#/components/schemas/EventCommandExecuted"
-          },
-          {
-            "$ref": "#/components/schemas/EventProjectUpdated"
-          },
-          {
             "$ref": "#/components/schemas/EventBackground_processUpdated"
           },
           {
@@ -20321,6 +20411,12 @@
           },
           {
             "$ref": "#/components/schemas/EventSuggestionDismissed"
+          },
+          {
+            "$ref": "#/components/schemas/EventCommandExecuted"
+          },
+          {
+            "$ref": "#/components/schemas/EventProjectUpdated"
           },
           {
             "$ref": "#/components/schemas/EventSessionCompacted"
@@ -21255,76 +21351,6 @@
         "required": ["id", "sessionID", "permission", "patterns", "metadata", "always"],
         "additionalProperties": false
       },
-      "Project": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "worktree": {
-            "type": "string"
-          },
-          "vcs": {
-            "type": "string",
-            "enum": ["git"]
-          },
-          "name": {
-            "type": "string"
-          },
-          "icon": {
-            "type": "object",
-            "properties": {
-              "url": {
-                "type": "string"
-              },
-              "override": {
-                "type": "string"
-              },
-              "color": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": false
-          },
-          "commands": {
-            "type": "object",
-            "properties": {
-              "start": {
-                "type": "string",
-                "description": "Startup script to run when creating a new workspace (worktree)"
-              }
-            },
-            "additionalProperties": false
-          },
-          "time": {
-            "type": "object",
-            "properties": {
-              "created": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "updated": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "initialized": {
-                "type": "integer",
-                "minimum": 0
-              }
-            },
-            "required": ["created", "updated"],
-            "additionalProperties": false
-          },
-          "sandboxes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": ["id", "worktree", "time", "sandboxes"],
-        "additionalProperties": false
-      },
       "BackgroundProcessInfo": {
         "type": "object",
         "properties": {
@@ -21944,6 +21970,76 @@
           }
         },
         "required": ["id", "sessionID", "text", "actions"],
+        "additionalProperties": false
+      },
+      "Project": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "worktree": {
+            "type": "string"
+          },
+          "vcs": {
+            "type": "string",
+            "enum": ["git"]
+          },
+          "name": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "override": {
+                "type": "string"
+              },
+              "color": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "commands": {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "string",
+                "description": "Startup script to run when creating a new workspace (worktree)"
+              }
+            },
+            "additionalProperties": false
+          },
+          "time": {
+            "type": "object",
+            "properties": {
+              "created": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "updated": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "initialized": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": ["created", "updated"],
+            "additionalProperties": false
+          },
+          "sandboxes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["id", "worktree", "time", "sandboxes"],
         "additionalProperties": false
       },
       "Pty": {
@@ -23449,12 +23545,6 @@
                 "$ref": "#/components/schemas/EventPermissionReplied"
               },
               {
-                "$ref": "#/components/schemas/EventCommandExecuted"
-              },
-              {
-                "$ref": "#/components/schemas/EventProjectUpdated"
-              },
-              {
                 "$ref": "#/components/schemas/EventBackground_processUpdated"
               },
               {
@@ -23504,6 +23594,12 @@
               },
               {
                 "$ref": "#/components/schemas/EventSuggestionDismissed"
+              },
+              {
+                "$ref": "#/components/schemas/EventCommandExecuted"
+              },
+              {
+                "$ref": "#/components/schemas/EventProjectUpdated"
               },
               {
                 "$ref": "#/components/schemas/EventSessionCompacted"
@@ -31409,58 +31505,6 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
-      "EventCommandExecuted": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["command.executed"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "arguments": {
-                "type": "string"
-              },
-              "messageID": {
-                "type": "string",
-                "pattern": "^msg"
-              }
-            },
-            "required": ["name", "sessionID", "arguments", "messageID"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventProjectUpdated": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["project.updated"]
-          },
-          "properties": {
-            "$ref": "#/components/schemas/Project"
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
       "EventBackground_processUpdated": {
         "type": "object",
         "properties": {
@@ -31971,6 +32015,58 @@
             },
             "required": ["sessionID", "requestID"],
             "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventCommandExecuted": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["command.executed"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "arguments": {
+                "type": "string"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg"
+              }
+            },
+            "required": ["name", "sessionID", "arguments", "messageID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventProjectUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["project.updated"]
+          },
+          "properties": {
+            "$ref": "#/components/schemas/Project"
           }
         },
         "required": ["id", "type", "properties"],
@@ -37263,6 +37359,10 @@
     {
       "name": "network",
       "description": "Kilo network routes."
+    },
+    {
+      "name": "provider-ready",
+      "description": "Kilo Provider 注册表就绪检查接口。"
     },
     {
       "name": "remote",

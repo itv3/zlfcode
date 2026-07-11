@@ -55,6 +55,11 @@ export interface ModelSelection {
 
 export type ProviderAuthState = "api" | "oauth" | "wellknown"
 
+export type ProviderAuthChange =
+  | { mode: "preserve" }
+  | { mode: "set"; state: ProviderAuthState }
+  | { mode: "clear" }
+
 export interface ProviderConfig {
   name?: string
   api_key?: string

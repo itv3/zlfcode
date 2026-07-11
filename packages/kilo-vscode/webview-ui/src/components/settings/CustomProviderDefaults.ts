@@ -28,6 +28,11 @@ export type DefaultCandidate = {
   defaults: CustomProviderDefaults
 }
 
+export type DefaultSuggestion = {
+  index: number
+  id: string
+}
+
 const FALLBACKS: Record<string, string> = {
   "claude-opus-4-8": "claude-opus-4-7",
 }
@@ -326,6 +331,19 @@ export function defaultCandidates(
       name: item.model.name,
       defaults: item.defaults,
     }))
+}
+
+export function resolveSuggestion(
+  providers: Record<string, Provider>,
+  npm: CustomProviderPackage,
+  suggestion: DefaultSuggestion | undefined,
+  limit = 5,
+  opts: { excludeProviders?: string[]; excludeModels?: string[] } = {},
+) {
+  if (!suggestion) return
+  const items = defaultCandidates(providers, npm, suggestion.id, limit, opts)
+  if (items.length === 0) return
+  return { ...suggestion, items }
 }
 
 export function hasDefaults(value: CustomProviderDefaults) {

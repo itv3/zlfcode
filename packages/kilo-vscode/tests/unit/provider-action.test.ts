@@ -53,13 +53,17 @@ describe("createProviderAction", () => {
     const requestId = "requestId" in (sent ?? {}) ? sent.requestId : ""
     transport.receive({
       type: "providerConnected",
+      revision: 1,
       requestId,
       providerID: "openai",
+      auth: { mode: "set", state: "api" },
     })
     transport.receive({
       type: "providerConnected",
+      revision: 1,
       requestId,
       providerID: "openai",
+      auth: { mode: "set", state: "api" },
     })
 
     expect(seen).toEqual(["connected:openai"])
@@ -98,8 +102,11 @@ describe("createProviderAction", () => {
 
     transport.receive({
       type: "providerDisconnected",
+      revision: 2,
       requestId: disconnectId,
       providerID: "openai",
+      removed: false,
+      auth: { mode: "clear" },
     })
     transport.receive({
       type: "providerOAuthReady",

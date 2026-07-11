@@ -5,6 +5,7 @@ import { SdkSSEAdapter, type SSEPayload } from "./sdk-sse-adapter"
 import type { ServerConfig } from "./types"
 import { resolveEventSessionId as resolveEventSessionIdPure } from "./connection-utils"
 import { SandboxPreference } from "../sandbox-preference"
+import type { StoredProviderKey } from "../../provider-actions"
 
 export type ConnectionState = "connecting" | "connected" | "disconnected" | "error"
 type SSEEventListener = (event: SSEPayload, directory?: string) => void
@@ -15,7 +16,7 @@ type LanguageChangeListener = (locale: string) => void
 type ProfileChangeListener = (data: unknown) => void
 type MigrationCompleteListener = () => void
 type FavoritesChangeListener = (favorites: Array<{ providerID: string; modelID: string }>) => void
-type ProvidersChangeListener = (source?: string, message?: unknown) => void
+type ProvidersChangeListener = (source: string | undefined, revision: number, message?: unknown) => void
 type ModelSelectorExpandedListener = (value: boolean) => void
 type ClearPendingPromptsListener = () => void
 type DirectoryProvider = () => string[]
@@ -78,6 +79,9 @@ export class KiloConnectionService {
   private readonly modelSelectorExpandedListeners: Set<ModelSelectorExpandedListener> = new Set()
   private readonly clearPendingPromptsListeners: Set<ClearPendingPromptsListener> = new Set()
   private readonly directoryProviders: Set<DirectoryProvider> = new Set()
+  private queue: Promise<void> = Promise.resolve()
+  private providerRevision = 0
+  private providerKeys: Record<string, StoredProviderKey> = {}
   private rootDirectory: string | undefined = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
   private currentDirectory: string | undefined
   private readonly permissionDirectories: Map<string, string> = new Map()
@@ -108,6 +112,39 @@ export class KiloConnectionService {
       } satisfies Pick<vscode.Memento, "get" | "update">)
     this.sandboxPreference = new SandboxPreference(state)
     this.serverManager = new ServerManager(context, (code) => this.handleServerExit(code))
+  }
+
+  /** 串行执行全局 Provider 配置保存，避免多个 Webview 并发覆盖同一个配置文件。 */
+  enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(task, task)
+    this.queue = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+
+  /** 当前共享 Provider 快照版本。 */
+  getProviderRevision(): number {
+    return this.providerRevision
+  }
+
+  /** 用最新权威拉取结果原子替换扩展宿主中的 Provider 密钥缓存。 */
+  replaceProviderKeys(keys: Record<string, StoredProviderKey>): void {
+    this.providerKeys = { ...keys }
+  }
+
+  /** 返回 Provider 密钥缓存副本，避免调用方意外修改共享状态。 */
+  getProviderKeys(): Record<string, StoredProviderKey> {
+    return { ...this.providerKeys }
+  }
+
+  /** 精确更新单个 Provider 的密钥缓存。 */
+  setProviderKey(id: string, key?: StoredProviderKey): void {
+    const keys = { ...this.providerKeys }
+    if (key) keys[id] = key
+    if (!key) delete keys[id]
+    this.providerKeys = keys
   }
 
   /**
@@ -462,10 +499,12 @@ export class KiloConnectionService {
   /**
    * 广播 provider 变更来源,让其他 KiloProvider 刷新 provider 状态。
    */
-  notifyProvidersChanged(source?: string, message?: unknown): void {
+  notifyProvidersChanged(source?: string, message?: unknown): number {
+    const revision = ++this.providerRevision
     for (const listener of this.providersChangeListeners) {
-      listener(source, message)
+      listener(source, revision, message)
     }
+    return revision
   }
 
   /**

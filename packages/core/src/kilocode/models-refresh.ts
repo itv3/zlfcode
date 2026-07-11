@@ -5,7 +5,11 @@ type Listener = () => Effect.Effect<void>
 const listeners = new Set<Listener>()
 
 export const notify = Effect.fn("ModelsRefresh.notify")(function* () {
-  yield* Effect.forEach([...listeners], (listener) => Effect.exit(listener()), { discard: true })
+  for (const listener of listeners) {
+    const result = yield* Effect.exit(listener())
+    if (result._tag === "Success") continue
+    yield* Effect.logWarning("Provider 模型缓存失效失败", result.cause)
+  }
 })
 
 export const watch = (listener: Listener) =>

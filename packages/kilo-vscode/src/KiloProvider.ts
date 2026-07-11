@@ -155,6 +155,7 @@ import {
   resolveStoredKey,
 } from "./provider-actions"
 import type { ProviderFetchMode, StoredProviderKey } from "./provider-actions"
+import type { CustomProviderAuthChange, SanitizedProviderConfig } from "./shared/custom-provider"
 import { AnacondaDesktopBridge } from "./anaconda-desktop/bridge"
 import { fetchModels, FetchModelsError } from "./shared/fetch-models"
 import { self as extensionSelf, version as extensionVersion } from "./extension-info"
@@ -333,13 +334,6 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private isWebviewReady = false
   private readonly extensionVersion: string
   private cachedProvidersMessage: unknown = null
-  /**
-   * Provider API keys retained extension-side for authenticated model
-   * fetches (#10139). Keys are stripped before provider data reaches the
-   * webview, so fetch requests for an existing provider carry a providerID
-   * and the key is resolved here. Refreshed on every provider fetch.
-   */
-  private storedProviderKeys: Record<string, StoredProviderKey> = {}
   /** Coalesce provider refreshes — at most one follow-up rerun when a request lands mid-flight. */
   private providersRefresh: Promise<void> | null = null
   private providersQueued = false
@@ -1606,11 +1600,22 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         this.postMessage({ type: "favoritesLoaded", favorites })
       })
 
-      // 其他 webview 保存/断开 provider 后,当前实例需要重新拉取 providersLoaded。
-      this.unsubscribeProvidersChange = this.connectionService.onProvidersChanged((source, message) => {
-        if (source === this.instanceId) return
-        if (message && typeof message === "object" && "type" in message) this.postMessage(message)
-        if (this.connectionState !== "connected") return
+      // 共享 revision 会先失效旧拉取和缓存，再把精确变更同步到其他 Webview。
+      this.unsubscribeProvidersChange = this.connectionService.onProvidersChanged((source, revision, message) => {
+        const change = message && typeof message === "object" && "type" in message ? message : undefined
+        const exact =
+          (change?.type === "providerConnected" && "provider" in change && !!change.provider) ||
+          (change?.type === "providerDisconnected" && "removed" in change && change.removed === true)
+        this.cachedProvidersMessage = null
+        this.providersGeneration += 1
+        if (this.providersRefresh && !exact) {
+          this.providersQueued = true
+          this.providersQueuedMode ??= "connected"
+        }
+        if (change?.type === "providerDisconnected" && "providerID" in change && typeof change.providerID === "string")
+          this.connectionService.setProviderKey?.(change.providerID)
+        if (source !== this.instanceId && change) this.postMessage({ ...change, revision })
+        if (source === this.instanceId || exact || this.connectionState !== "connected") return
         void this.fetchAndSendProviders().catch((error) =>
           console.error("[Kilo New] fetchAndSendProviders after provider broadcast failed:", error),
         )
@@ -2138,6 +2143,24 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     }
   }
 
+  /** 保存成功后精确更新共享密钥缓存，避免慢速全量拉取期间继续使用旧地址或旧密钥。 */
+  private updateStoredProvider(id: string, provider: SanitizedProviderConfig, auth: CustomProviderAuthChange): void {
+    const current = this.connectionService.getProviderKeys?.()[id]
+    const key = auth.mode === "set" ? auth.key : auth.mode === "preserve" ? current?.key : undefined
+    const env = provider.env?.[0]
+    if (!key && !env) {
+      this.connectionService.setProviderKey?.(id)
+      return
+    }
+    const stored: StoredProviderKey = {
+      ...(key ? { key } : {}),
+      ...(env ? { env } : {}),
+      baseURL: provider.options.baseURL,
+      npm: provider.npm,
+    }
+    this.connectionService.setProviderKey?.(id, stored)
+  }
+
   /** Fetch providers and send to webview. Coalesced: at most one in-flight + one queued. */
   private async fetchAndSendProviders(mode: ProviderFetchMode = "connected"): Promise<void> {
     const next = ++this.providersGeneration
@@ -2150,6 +2173,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const task = (async () => {
       let generation = next
       let current = mode
+      let revision = this.connectionService.getProviderRevision?.() ?? 0
       while (true) {
         this.providersQueued = false
         this.providersQueuedMode = null
@@ -2165,16 +2189,22 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             this.getWorkspaceDirectory(),
             current,
           )
-          if (generation !== this.providersGeneration || client !== this.client) {
+          if (
+            generation !== this.providersGeneration ||
+            revision !== (this.connectionService.getProviderRevision?.() ?? 0) ||
+            client !== this.client
+          ) {
             if (!this.providersQueued) return
             generation = this.providersGeneration
             current = this.providersQueuedMode ?? "connected"
+            revision = this.connectionService.getProviderRevision?.() ?? 0
             continue
           }
-          this.storedProviderKeys = storedKeys
+          this.connectionService.replaceProviderKeys?.(storedKeys)
           const settings = vscode.workspace.getConfiguration("kilo-code.new.model")
           const message = {
             type: "providersLoaded",
+            revision,
             providers: indexProvidersById(response.all),
             connected: response.connected,
             defaults: response.default,
@@ -2189,10 +2219,14 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           this.cachedProvidersMessage = message
           this.postMessage(message)
         } catch (error) {
-          if (generation !== this.providersGeneration) {
+          if (
+            generation !== this.providersGeneration ||
+            revision !== (this.connectionService.getProviderRevision?.() ?? 0)
+          ) {
             if (!this.providersQueued) return
             generation = this.providersGeneration
             current = this.providersQueuedMode ?? "connected"
+            revision = this.connectionService.getProviderRevision?.() ?? 0
             continue
           }
           console.error("[Kilo New] KiloProvider: Failed to fetch providers:", error)
@@ -2200,6 +2234,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         if (!this.providersQueued) return
         generation = this.providersGeneration
         current = this.providersQueuedMode ?? "connected"
+        revision = this.connectionService.getProviderRevision?.() ?? 0
       }
     })()
     const done = task.finally(() => {
@@ -2257,6 +2292,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       this.getWorkspaceDirectory(),
       () => this.fetchAndSendProviders(),
       (message) => this.connectionService.notifyProvidersChanged(this.instanceId, message),
+      (id, provider, auth) => this.updateStoredProvider(id, provider, auth),
     )
     const set = (m: unknown) => {
       this.cachedConfigMessage = m
@@ -2270,24 +2306,26 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const config = msg.config && typeof msg.config === "object" ? (msg.config as Record<string, unknown>) : undefined
     const metadata =
       msg.metadata && typeof msg.metadata === "object" ? (msg.metadata as Record<string, unknown>) : undefined
-    if (msg.type === "connectProvider" && key) {
-      await connectProviderAction(ctx, rid, pid, key, metadata)
-      return
-    }
     if (msg.type === "authorizeProviderOAuth") {
       await authorizeOAuthAction(ctx, rid, pid, method)
       return
     }
-    if (msg.type === "completeProviderOAuth") {
-      await completeOAuthAction(ctx, rid, pid, method, code)
-      return
-    }
-    if (msg.type === "disconnectProvider") {
-      await disconnectProviderAction(ctx, rid, pid, this.cachedConfigMessage, set)
-      return
-    }
-    if (msg.type === "saveCustomProvider" && config)
-      await saveCustomProviderAction(ctx, rid, pid, config, key, keyChanged, this.cachedConfigMessage, set)
+    await this.connectionService.enqueue(async () => {
+      if (msg.type === "connectProvider" && key) {
+        await connectProviderAction(ctx, rid, pid, key, metadata)
+        return
+      }
+      if (msg.type === "completeProviderOAuth") {
+        await completeOAuthAction(ctx, rid, pid, method, code)
+        return
+      }
+      if (msg.type === "disconnectProvider") {
+        await disconnectProviderAction(ctx, rid, pid, this.cachedConfigMessage, set)
+        return
+      }
+      if (msg.type === "saveCustomProvider" && config)
+        await saveCustomProviderAction(ctx, rid, pid, config, key, keyChanged, this.cachedConfigMessage, set)
+    })
   }
 
   private favoritesSeeded(): boolean {
@@ -2333,7 +2371,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const key =
       typeof msg.apiKey === "string"
         ? msg.apiKey
-        : resolveStoredKey(this.storedProviderKeys, msg.providerID, url, protocol)
+        : resolveStoredKey(this.connectionService.getProviderKeys?.() ?? {}, msg.providerID, url, protocol)
     const headers = msg.headers && typeof msg.headers === "object" ? (msg.headers as Record<string, string>) : undefined
     this.postMessage({ type: "customProviderModelsFetchStarted", requestId: rid })
     try {

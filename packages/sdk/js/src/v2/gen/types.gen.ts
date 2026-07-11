@@ -11916,6 +11916,41 @@ export type NetworkRejectResponses = {
 
 export type NetworkRejectResponse = NetworkRejectResponses[keyof NetworkRejectResponses]
 
+export type ProviderReadyData = {
+  body?: {
+    providerID: string
+    modelIDs: Array<string>
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/provider/ready"
+}
+
+export type ProviderReadyErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ProviderReadyError = ProviderReadyErrors[keyof ProviderReadyErrors]
+
+export type ProviderReadyResponses = {
+  /**
+   * Provider 模型已就绪
+   */
+  200: {
+    ready: boolean
+    missing: Array<string>
+    unexpected: Array<string>
+  }
+}
+
+export type ProviderReadyResponse = ProviderReadyResponses[keyof ProviderReadyResponses]
+
 export type RemoteEnableData = {
   body?: never
   path?: never

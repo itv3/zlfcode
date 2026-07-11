@@ -48,6 +48,7 @@ type Options = {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000
+const SAVE_TIMEOUT_MS = 120_000
 
 function action(message: ProviderRequestInput): ProviderActionErrorMessage["action"] {
   if (message.type === "disconnectProvider") return "disconnect"
@@ -101,6 +102,7 @@ export function createProviderAction(vscode: Transport, opts: Options = {}) {
 
   function send(message: ProviderRequestInput, handlers: Handlers = {}) {
     const requestId = crypto.randomUUID()
+    const ttl = message.type === "saveCustomProvider" && opts.timeoutMs === undefined ? SAVE_TIMEOUT_MS : timeout
     const timer = setTimeout(() => {
       const item = pending.get(requestId)
       if (!item) return
@@ -112,7 +114,7 @@ export function createProviderAction(vscode: Transport, opts: Options = {}) {
         action: action(message),
         message: "Provider action timed out.",
       })
-    }, timeout)
+    }, ttl)
     pending.set(requestId, { handlers, timer })
     const encoded = encode({ ...message, requestId } as ProviderRequest)
     if (!encoded.payload) {
