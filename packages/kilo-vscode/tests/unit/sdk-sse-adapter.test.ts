@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test"
 import type { KiloClient } from "@kilocode/sdk/v2/client"
 import { KiloConnectionService } from "../../src/services/cli-backend/connection-service"
 import { SdkSSEAdapter } from "../../src/services/cli-backend/sdk-sse-adapter"
+import type { ServerInstance, ServerManager } from "../../src/services/cli-backend/server-manager"
+import type { ServerConfig } from "../../src/services/cli-backend/types"
 
 type Opts = {
   onSseError?: (error: unknown) => void
@@ -9,6 +11,42 @@ type Opts = {
 }
 
 type Stream = AsyncGenerator<unknown, void, unknown>
+
+type TestableConnectionService = KiloConnectionService & {
+  client: KiloClient | null
+  sseClient: SdkSSEAdapter | null
+  config: ServerConfig | null
+  info: { port: number } | null
+  state: "connecting" | "connected" | "disconnected" | "error"
+  currentDirectory: string | undefined
+  healthFailures: number
+  healthPollTimer: ReturnType<typeof setInterval> | null
+  recoveryPromise: Promise<void> | null
+  serverManager: ServerManager & { instance: ServerInstance | null }
+  checkHealth: (baseUrl: string, password: string) => Promise<boolean>
+  pollHealth: (baseUrl: string, password: string) => Promise<void>
+  recover: (reason: Error) => Promise<void>
+  startConnection: (dir: string) => Promise<void>
+  doConnect: (dir: string) => Promise<void>
+  setState: (state: "connecting" | "connected" | "disconnected" | "error", error?: Error) => void
+  handleServerExit: (code: number | null) => void
+}
+
+function internal(service: KiloConnectionService) {
+  return service as unknown as TestableConnectionService
+}
+
+function fakeSse(calls: { reconnects: number; disconnects: number }) {
+  return {
+    reconnect: () => {
+      calls.reconnects += 1
+    },
+    disconnect: () => {
+      calls.disconnects += 1
+    },
+    dispose: () => undefined,
+  } as unknown as SdkSSEAdapter
+}
 
 function client(open: (opts: Opts) => Stream): KiloClient {
   return {
@@ -141,38 +179,232 @@ describe("SdkSSEAdapter", () => {
 })
 
 describe("KiloConnectionService backend crash", () => {
-  it("invalidates the stale SDK client and reports a retryable error", () => {
-    const service = new KiloConnectionService({} as any)
-    const states: Array<{ state: string; error?: string }> = []
-    ;(service as any).client = {}
-    ;(service as any).config = { baseUrl: "http://127.0.0.1:52512", password: "secret" }
-    ;(service as any).info = { port: 52512 }
-    ;(service as any).state = "connected"
-    service.onStateChange((state, error) => states.push({ state, error: error?.message }))
-    ;(service as any).handleServerExit(9)
+  it("does not finish a backend connection after disposal", async () => {
+    const service = new KiloConnectionService({} as ConstructorParameters<typeof KiloConnectionService>[0])
+    const value = internal(service)
+    let release = (_server: ServerInstance) => undefined
+    const server = new Promise<ServerInstance>((resolve) => {
+      release = resolve
+    })
+    value.serverManager.getServer = async () => server
 
-    expect(service.getConnectionState()).toBe("error")
-    expect(service.getConnectionError()?.message).toContain("CLI background process exited with code 9")
-    expect(service.getServerConfig()).toBeNull()
-    expect(service.getServerInfo()).toBeNull()
-    expect(() => service.getClient()).toThrow("Not connected")
+    const pending = service.connect("/tmp/workspace")
+    service.dispose()
+    const instance = { port: 52512, password: "secret", pid: 52512, shared: true }
+    value.serverManager.instance = instance
+    release(instance)
+
+    await expect(pending).rejects.toThrow("disposed")
+    await expect(service.connect("/tmp/workspace")).rejects.toThrow("disposed")
+    expect(value.serverManager.instance).toBeNull()
+    expect(value.client).toBeNull()
+    expect(value.sseClient).toBeNull()
+    expect(value.healthPollTimer).toBeNull()
+    expect(service.getConnectionState()).toBe("disconnected")
+  })
+
+  it("automatically reconnects after the owned backend exits", async () => {
+    const service = new KiloConnectionService({} as ConstructorParameters<typeof KiloConnectionService>[0])
+    const value = internal(service)
+    const states: Array<{ state: string; error?: string }> = []
+    const calls = { reconnects: 0, disconnects: 0 }
+    let starts = 0
+    let forgets = 0
+    value.client = {} as KiloClient
+    value.sseClient = fakeSse(calls)
+    value.config = { baseUrl: "http://127.0.0.1:52512", password: "secret" }
+    value.info = { port: 52512 }
+    value.state = "connected"
+    value.currentDirectory = "/tmp/workspace"
+    value.serverManager.forgetServer = () => {
+      forgets += 1
+      return false
+    }
+    value.startConnection = async () => {
+      starts += 1
+      value.setState("connecting")
+      value.client = {} as KiloClient
+      value.sseClient = fakeSse(calls)
+      value.config = { baseUrl: "http://127.0.0.1:52513", password: "next" }
+      value.info = { port: 52513 }
+      value.setState("connected")
+    }
+    service.onStateChange((state, error) => states.push({ state, error: error?.message }))
+    value.handleServerExit(9)
+    await value.recoveryPromise
+
+    expect(forgets).toBe(1)
+    expect(starts).toBe(1)
+    expect(calls.disconnects).toBe(1)
+    expect(service.getConnectionState()).toBe("connected")
+    expect(service.getServerConfig()?.baseUrl).toBe("http://127.0.0.1:52513")
+    expect(service.getServerInfo()).toEqual({ port: 52513 })
     expect(states).toEqual([
-      { state: "error", error: "CLI background process exited with code 9. Retry to reconnect." },
+      { state: "error", error: "CLI background process exited with code 9. Reconnecting automatically." },
+      { state: "connecting", error: undefined },
+      { state: "connected", error: undefined },
     ])
     service.dispose()
   })
 
   it("does not expose an SDK client while a replacement server is connecting", () => {
-    const service = new KiloConnectionService({} as any)
-    ;(service as any).client = {}
-    ;(service as any).state = "connecting"
+    const service = new KiloConnectionService({} as ConstructorParameters<typeof KiloConnectionService>[0])
+    const value = internal(service)
+    value.client = {} as KiloClient
+    value.state = "connecting"
 
     expect(() => service.getClient()).toThrow("Not connected")
+    service.dispose()
+  })
+
+  it("keeps the current backend when HTTP stays healthy during an SSE reconnect", async () => {
+    const service = new KiloConnectionService({} as ConstructorParameters<typeof KiloConnectionService>[0])
+    const value = internal(service)
+    const calls = { reconnects: 0, disconnects: 0 }
+    let starts = 0
+    let forgets = 0
+    value.client = {} as KiloClient
+    value.sseClient = fakeSse(calls)
+    value.config = { baseUrl: "http://127.0.0.1:52512", password: "secret" }
+    value.info = { port: 52512 }
+    value.state = "connecting"
+    value.healthFailures = 2
+    value.checkHealth = async () => true
+    value.serverManager.forgetServer = () => {
+      forgets += 1
+      return true
+    }
+    value.startConnection = async () => {
+      starts += 1
+    }
+
+    await value.pollHealth(value.config.baseUrl, value.config.password)
+
+    expect(value.healthFailures).toBe(0)
+    expect(forgets).toBe(0)
+    expect(starts).toBe(0)
+    expect(calls).toEqual({ reconnects: 0, disconnects: 0 })
+    expect(service.getConnectionState()).toBe("connecting")
+    service.dispose()
+  })
+
+  it("replaces an unavailable shared backend once while SSE is reconnecting", async () => {
+    const service = new KiloConnectionService({} as ConstructorParameters<typeof KiloConnectionService>[0])
+    const value = internal(service)
+    const calls = { reconnects: 0, disconnects: 0 }
+    let starts = 0
+    let forgets = 0
+    let release = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    value.client = {} as KiloClient
+    value.sseClient = fakeSse(calls)
+    value.config = { baseUrl: "http://127.0.0.1:52512", password: "secret" }
+    value.info = { port: 52512 }
+    value.state = "connecting"
+    value.currentDirectory = "/tmp/workspace"
+    value.checkHealth = async () => false
+    value.serverManager.instance = {
+      port: 52512,
+      password: "secret",
+      pid: 52512,
+      shared: true,
+    }
+    const forget = value.serverManager.forgetServer.bind(value.serverManager)
+    value.serverManager.forgetServer = () => {
+      forgets += 1
+      return forget()
+    }
+    value.startConnection = async () => {
+      starts += 1
+      await gate
+      value.client = {} as KiloClient
+      value.sseClient = fakeSse(calls)
+      value.config = { baseUrl: "http://127.0.0.1:52513", password: "next" }
+      value.info = { port: 52513 }
+      value.setState("connected")
+    }
+
+    await value.pollHealth(value.config.baseUrl, value.config.password)
+    await value.pollHealth(value.config.baseUrl, value.config.password)
+    await value.pollHealth(value.config.baseUrl, value.config.password)
+    const recovery = value.recoveryPromise
+    expect(recovery).not.toBeNull()
+    expect(value.recover(new Error("duplicate"))).toBe(recovery)
+    release()
+    await recovery
+
+    expect(forgets).toBe(1)
+    expect(starts).toBe(1)
+    expect(calls.reconnects).toBe(2)
+    expect(calls.disconnects).toBe(1)
+    expect(value.serverManager.instance).toBeNull()
+    expect(service.getConnectionState()).toBe("connected")
+    expect(service.getServerInfo()).toEqual({ port: 52513 })
+    service.dispose()
+  })
+
+  it("waits for an active connect attempt before starting one recovery attempt", async () => {
+    const service = new KiloConnectionService({} as ConstructorParameters<typeof KiloConnectionService>[0])
+    const value = internal(service)
+    let attempts = 0
+    let fail = (_error: Error) => undefined
+    const first = new Promise<void>((_resolve, reject) => {
+      fail = reject
+    })
+    value.doConnect = async () => {
+      attempts += 1
+      if (attempts === 1) return first
+      value.setState("connected")
+    }
+    value.serverManager.forgetServer = () => false
+
+    const initial = service.connect("/tmp/workspace")
+    value.handleServerExit(9)
+    const recovery = value.recoveryPromise
+    fail(new Error("initial backend exited"))
+    await initial.catch(() => undefined)
+    await recovery
+
+    expect(attempts).toBe(2)
+    expect(value.recoveryPromise).toBeNull()
+    expect(service.getConnectionState()).toBe("connected")
     service.dispose()
   })
 })
 
 describe("KiloConnectionService SSE startup", () => {
+  it("cancels a connection waiting for its first SSE event when disposed", async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(new ReadableStream<Uint8Array>(), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      })) as typeof fetch
+    const service = new KiloConnectionService({} as ConstructorParameters<typeof KiloConnectionService>[0])
+    const value = internal(service)
+    value.serverManager.getServer = async () => ({ port: 52512, password: "secret", pid: 52512, shared: true })
+
+    try {
+      const pending = service.connect("/tmp/workspace")
+      const outcome = pending.then(
+        () => "resolved",
+        (error) => (error instanceof Error ? error.message : String(error)),
+      )
+      await wait(10)
+      expect(value.sseClient).not.toBeNull()
+      service.dispose()
+
+      expect(await Promise.race([outcome, wait(100).then(() => "timeout")])).toContain("disposed")
+      expect(value.healthPollTimer).toBeNull()
+      expect(service.getConnectionState()).toBe("disconnected")
+    } finally {
+      service.dispose()
+      globalThis.fetch = original
+    }
+  })
+
   it("waits through an initial SSE fetch failure until the stream opens", async () => {
     const original = globalThis.fetch
     const chunk = new TextEncoder().encode(

@@ -216,6 +216,24 @@ describe("自定义 Provider 配置热更新", () => {
     }),
   )
 
+  it.live("首次全局配置解析失败后修复文件无需重启即可恢复 Provider", () =>
+    Effect.gen(function* () {
+      const global = yield* tmpdirScoped()
+      const workspace = yield* tmpdirScoped({ config: { formatter: false, lsp: false } })
+      ;(Global.Path as { config: string }).config = global
+      const file = path.join(global, "kilo.jsonc")
+      yield* Effect.promise(() => Bun.write(file, "{ invalid"))
+
+      expect((yield* providers(workspace))[id]).toBeUndefined()
+
+      yield* Effect.promise(() =>
+        Bun.write(file, JSON.stringify(config({ models: { "gpt-5.6-sol": { name: "GPT 5.6 Sol" } } }))),
+      )
+
+      expect((yield* model(workspace, "gpt-5.6-sol")).name).toBe("GPT 5.6 Sol")
+    }),
+  )
+
   it.live("项目配置更新后刷新当前工作区 Provider", () =>
     Effect.gen(function* () {
       const global = yield* tmpdirScoped()

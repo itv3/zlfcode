@@ -64,8 +64,11 @@ export class KiloConnectionService {
   private state: ConnectionState = "disconnected"
   private error: Error | null = null
   private connectPromise: Promise<void> | null = null
+  private connectCancel: ((error: Error) => void) | null = null
+  private recoveryPromise: Promise<void> | null = null
   private healthPollTimer: ReturnType<typeof setInterval> | null = null
   private healthFailures = 0
+  private disposed = false
   private remoteService: import("../RemoteStatusService").RemoteStatusService | null = null
 
   private readonly eventListeners: Set<SSEEventListener> = new Set()
@@ -151,7 +154,17 @@ export class KiloConnectionService {
    * Lazily start server + SSE. Multiple callers share the same promise.
    */
   async connect(workspaceDir: string): Promise<void> {
+    if (this.disposed) throw new Error("Connection service has been disposed.")
     this.trackDirectory(workspaceDir)
+    if (this.recoveryPromise) {
+      return this.recoveryPromise
+    }
+    return this.startConnection(workspaceDir)
+  }
+
+  /** 建立连接并复用同一轮启动，避免多个调用方重复创建 SDK 与 SSE。 */
+  private async startConnection(workspaceDir: string): Promise<void> {
+    if (this.disposed) throw new Error("Connection service has been disposed.")
     if (this.connectPromise) {
       return this.connectPromise
     }
@@ -167,7 +180,8 @@ export class KiloConnectionService {
       await this.connectPromise
     } catch (error) {
       // If doConnect() fails before SSE can emit a state transition, avoid leaving consumers stuck in "connecting".
-      this.setState("error", this.error ?? (error instanceof Error ? error : new Error(String(error))))
+      if (!this.disposed)
+        this.setState("error", this.error ?? (error instanceof Error ? error : new Error(String(error))))
       throw error
     } finally {
       this.connectPromise = null
@@ -691,6 +705,8 @@ export class KiloConnectionService {
    * Clean up everything: kill server, close SSE, clear listeners.
    */
   dispose(): void {
+    this.disposed = true
+    this.cancelConnection(new Error("Connection service has been disposed."))
     this.stopHealthPoll()
     this.sseClient?.dispose()
     this.serverManager.dispose()
@@ -733,40 +749,52 @@ export class KiloConnectionService {
     }
   }
 
-  /**
-   * Start polling GET /global/health every 10 seconds.
-   * Provides a second detection channel for server death independent of the SSE heartbeat.
-   * If the health check fails while we believe we are connected, the SSE client is
-   * disconnected so its reconnect loop kicks in immediately.
-   */
+  /** 在清理 SSE 处理器前同步结束仍在等待首个事件的连接。 */
+  private cancelConnection(error: Error): void {
+    const cancel = this.connectCancel
+    this.connectCancel = null
+    cancel?.(error)
+  }
+
+  /** 每 10 秒探测一次当前后端；SSE 重连期间仍继续探测 HTTP 健康状态。 */
   private startHealthPoll(baseUrl: string, password: string): void {
     this.stopHealthPoll()
 
-    this.healthPollTimer = setInterval(async () => {
-      if (this.state !== "connected") {
-        return
-      }
-      const healthy = await this.checkHealth(baseUrl, password)
-      if (healthy) {
-        this.healthFailures = 0
-        return
-      }
-      if (!healthy && this.state === "connected") {
-        this.healthFailures += 1
-        console.warn("[Kilo New] ConnectionService: CLI backend health check failed", {
-          failures: this.healthFailures,
-        })
-        if (this.healthFailures >= HEALTH_FAILURE_LIMIT && this.serverManager.forgetSharedServer()) {
-          console.warn("[Kilo New] ConnectionService: shared CLI backend is unavailable; reconnecting")
-          this.reconnectSharedServer()
-          return
-        }
-        this.sseClient?.reconnect()
-      }
+    this.healthPollTimer = setInterval(() => {
+      void this.pollHealth(baseUrl, password)
     }, HEALTH_POLL_INTERVAL_MS)
 
     // Don't keep the extension host alive just for the health poll
     this.healthPollTimer.unref?.()
+  }
+
+  /**
+   * 只探测创建本轮定时器的连接。HTTP 仍健康时让 SSE 自带的重连循环继续工作；
+   * 连续失败才释放旧实例并重建，避免把短暂 SSE 中断误判为进程死亡。
+   */
+  private async pollHealth(baseUrl: string, password: string): Promise<void> {
+    const config = this.config
+    const client = this.client
+    const sse = this.sseClient
+    if (!config || !client || !sse || config.baseUrl !== baseUrl || config.password !== password) return
+
+    const healthy = await this.checkHealth(baseUrl, password)
+    if (this.config !== config || this.client !== client || this.sseClient !== sse) return
+    if (healthy) {
+      this.healthFailures = 0
+      return
+    }
+
+    this.healthFailures += 1
+    console.warn("[Kilo New] ConnectionService: CLI backend health check failed", {
+      failures: this.healthFailures,
+    })
+    if (this.healthFailures >= HEALTH_FAILURE_LIMIT) {
+      console.warn("[Kilo New] ConnectionService: CLI backend is unavailable; reconnecting")
+      void this.recover(new Error("CLI backend is unavailable. Reconnecting automatically."))
+      return
+    }
+    sse.reconnect()
   }
 
   private stopHealthPoll(): void {
@@ -777,33 +805,52 @@ export class KiloConnectionService {
   }
 
   private async checkHealth(baseUrl: string, password: string): Promise<boolean> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 3000)
     try {
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 3000)
       const res = await fetch(`${baseUrl}/global/health`, {
         headers: { Authorization: `Basic ${Buffer.from(`kilo:${password}`).toString("base64")}` },
         signal: controller.signal,
       })
-      clearTimeout(timer)
       return res.ok
     } catch {
       return false
+    } finally {
+      clearTimeout(timer)
     }
   }
 
-  private reconnectSharedServer(): void {
+  /** 单飞恢复当前后端；所有并发调用方等待同一轮 Server、SDK 与 SSE 重建。 */
+  private recover(reason: Error): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    if (this.recoveryPromise) return this.recoveryPromise
+
     const root = this.currentDirectory ?? this.rootDirectory ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
-    this.resetConnection()
-    if (!root) {
-      this.setState("error", new Error("Shared CLI backend disconnected and no workspace folder is available."))
-      return
-    }
-    void this.connect(root).catch((error) => {
-      this.setState("error", error instanceof Error ? error : new Error(String(error)))
+    const task = Promise.resolve().then(async () => {
+      if (this.disposed) return
+      const pending = this.connectPromise
+      this.serverManager.forgetServer()
+      this.resetConnection()
+      if (pending) await pending.catch(() => undefined)
+      if (this.disposed) return
+      if (!root) throw new Error("CLI backend disconnected and no workspace folder is available.")
+      await this.startConnection(root)
     })
+    const done = task
+      .catch((error) => {
+        if (this.disposed) return
+        this.setState("error", error instanceof Error ? error : new Error(String(error)))
+      })
+      .finally(() => {
+        if (this.recoveryPromise === done) this.recoveryPromise = null
+      })
+    this.recoveryPromise = done
+    this.setState("error", reason)
+    return done
   }
 
   private resetConnection(): void {
+    this.cancelConnection(new Error("Connection attempt was reset."))
     this.stopHealthPoll()
     const sse = this.sseClient
     this.sseClient = null
@@ -819,10 +866,8 @@ export class KiloConnectionService {
 
   private handleServerExit(code: number | null): void {
     console.warn("[Kilo New] ConnectionService: CLI background process exited:", code)
-    this.resetConnection()
-    this.setState(
-      "error",
-      new Error(`CLI background process exited with code ${code ?? "unknown"}. Retry to reconnect.`),
+    void this.recover(
+      new Error(`CLI background process exited with code ${code ?? "unknown"}. Reconnecting automatically.`),
     )
   }
 
@@ -831,6 +876,10 @@ export class KiloConnectionService {
     this.resetConnection()
 
     const server = await this.serverManager.getServer()
+    if (this.disposed) {
+      this.serverManager.dispose()
+      throw new Error("Connection service has been disposed.")
+    }
     this.info = { port: server.port }
 
     const config: ServerConfig = {
@@ -861,6 +910,20 @@ export class KiloConnectionService {
       rejectConnected = reject
     })
 
+    const cancel = (error: Error) => {
+      rejectConnected?.(error)
+      resolveConnected = null
+      rejectConnected = null
+      if (this.connectCancel === cancel) this.connectCancel = null
+    }
+    const ready = () => {
+      resolveConnected?.()
+      resolveConnected = null
+      rejectConnected = null
+      if (this.connectCancel === cancel) this.connectCancel = null
+    }
+    this.connectCancel = cancel
+
     let didConnect = false
 
     // Wire SSE events → broadcast to all registered listeners
@@ -882,9 +945,7 @@ export class KiloConnectionService {
     sse.onStateChange((sseState) => {
       if (this.sseClient !== sse) {
         if (!didConnect && sseState === "disconnected") {
-          rejectConnected?.(new Error(`SSE connection ended in state: ${sseState}`))
-          resolveConnected = null
-          rejectConnected = null
+          cancel(new Error(`SSE connection ended in state: ${sseState}`))
         }
         return
       }
@@ -893,22 +954,24 @@ export class KiloConnectionService {
 
       if (sseState === "connected") {
         didConnect = true
-        resolveConnected?.()
-        resolveConnected = null
-        rejectConnected = null
+        ready()
         return
       }
 
       if (!didConnect && sseState === "disconnected") {
-        rejectConnected?.(new Error(`SSE connection ended in state: ${sseState}`))
-        resolveConnected = null
-        rejectConnected = null
+        cancel(new Error(`SSE connection ended in state: ${sseState}`))
       }
     })
 
     sse.connect()
 
     await connectedPromise
+
+    if (this.disposed || this.client !== client || this.sseClient !== sse) {
+      sse.dispose()
+      if (this.disposed) this.serverManager.dispose()
+      throw new Error(this.disposed ? "Connection service has been disposed." : "Connection attempt was superseded.")
+    }
 
     // Start the independent health poll once we are confirmed connected.
     this.startHealthPoll(config.baseUrl, config.password)

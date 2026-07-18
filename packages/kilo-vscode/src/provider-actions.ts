@@ -182,13 +182,13 @@ function envName(value: unknown) {
   return parsed?.success ? parsed.data : undefined
 }
 
-async function fetchProviderList(client: KiloClient, dir: string, mode: ProviderFetchMode) {
+async function fetchProviderList(client: KiloClient, dir: string, mode: ProviderFetchMode, signal?: AbortSignal) {
   if (mode === "catalog") {
-    const { data } = await client.provider.list({ directory: dir }, { throwOnError: true })
+    const { data } = await client.provider.list({ directory: dir }, { throwOnError: true, signal })
     return data
   }
 
-  const { data } = await client.config.providers({ directory: dir }, { throwOnError: true })
+  const { data } = await client.config.providers({ directory: dir }, { throwOnError: true, signal })
   const all = data.providers
   return {
     all,
@@ -244,28 +244,33 @@ function trimCatalogModels<T extends { id: string; models?: Record<string, unkno
 }
 
 /** 拉取 provider 可用性和认证状态,但不把已保存凭据暴露给 webview。 */
-export async function fetchProviderData(client: KiloClient, dir: string, mode: ProviderFetchMode = "connected") {
+export async function fetchProviderData(
+  client: KiloClient,
+  dir: string,
+  mode: ProviderFetchMode = "connected",
+  signal?: AbortSignal,
+) {
   const configRequest =
     mode === "connected" && typeof client.config.get === "function"
       ? client.config
-          .get({ directory: dir }, { throwOnError: true })
+          .get({ directory: dir }, { throwOnError: true, signal })
           .then((r) => r.data ?? undefined)
           .catch(() => undefined)
       : Promise.resolve(undefined)
   const authRequest =
     typeof client.provider.auth === "function"
       ? client.provider
-          .auth({ directory: dir }, { throwOnError: true })
+          .auth({ directory: dir }, { throwOnError: true, signal })
           .then((r) => r.data ?? {})
           .catch(() => ({}))
       : Promise.resolve({})
   const kiloRequest = client.kilo
-    .authStatus({ directory: dir }, { throwOnError: true })
+    .authStatus({ directory: dir }, { throwOnError: true, signal })
     .then((r) => (r.data?.authenticated ? (r.data.type ?? null) : null))
     .catch(() => null)
 
   const [raw, config, authMethods, kiloAuth] = await Promise.all([
-    fetchProviderList(client, dir, mode),
+    fetchProviderList(client, dir, mode, signal),
     configRequest,
     authRequest,
     kiloRequest,

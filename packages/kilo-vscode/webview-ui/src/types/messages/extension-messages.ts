@@ -348,6 +348,7 @@ export interface ImageModelsLoadedMessage {
 
 export interface ProvidersLoadedMessage {
   type: "providersLoaded"
+  mode: "connected" | "catalog"
   revision: number
   providers: Record<string, Provider>
   connected: string[]

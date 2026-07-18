@@ -674,7 +674,7 @@ export const SessionProvider: ParentComponent = (props) => {
   }
 
   const unsubKiloModel = vscode.onMessage((message: ExtensionMessage) => {
-    if (message.type === "providersLoaded") {
+    if (message.type === "providersLoaded" && message.mode === "connected") {
       setCatalog((value) => value + 1)
       return
     }

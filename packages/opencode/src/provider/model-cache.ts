@@ -6,6 +6,7 @@ import { Config } from "../config/config"
 import { Auth } from "../auth"
 import type { Provider } from "@opencode-ai/core/models-dev"
 import * as Log from "@opencode-ai/core/util/log"
+import * as ModelsRefresh from "@opencode-ai/core/kilocode/models-refresh"
 
 type Models = Provider["models"]
 type KiloOptions = NonNullable<Parameters<typeof fetchKiloModels>[0]>
@@ -206,8 +207,14 @@ export const layer: Layer.Layer<
       result: Result,
     ) {
       const now = yield* Clock.currentTimeMillis
-      return yield* Effect.sync(() => {
-        if ((versions.get(providerID) ?? 0) !== version) return result.models
+      const out = yield* Effect.sync(() => {
+        if ((versions.get(providerID) ?? 0) !== version) return { models: result.models, recovered: false }
+        const previous = active.get(providerID)?.view.models
+        const failed = failures.has(providerID)
+        const recovered =
+          !result.error &&
+          Object.keys(result.models).length > 0 &&
+          (failed || (previous !== undefined && Object.keys(previous).length === 0))
         if (result.error) {
           failures.set(providerID, result.error)
           log.warn("model fetch error", { providerID, error: result.error })
@@ -218,8 +225,10 @@ export const layer: Layer.Layer<
         entry.view.timestamp = now
         active.set(providerID, entry)
         log.info("models fetched and cached", { providerID, count: Object.keys(result.models).length })
-        return result.models
+        return { models: result.models, recovered }
       })
+      if (out.recovered) yield* ModelsRefresh.notify()
+      return out.models
     })
     const get = Effect.fn("ModelCache.get")(function* (providerID: string) {
       const entry = active.get(providerID)

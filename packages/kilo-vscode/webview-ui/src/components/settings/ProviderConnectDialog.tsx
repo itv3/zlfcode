@@ -67,7 +67,7 @@ const ProviderConnectDialog: Component<ProviderConnectDialogProps> = (props) => 
 
   const [state, setState] = createStore<ViewState>({})
 
-  const item = createMemo(() => provider.providers()[props.providerID])
+  const item = createMemo(() => provider.catalogProviders()[props.providerID])
   const name = () => item()?.name ?? props.providerID
   const methods = createMemo<ProviderAuthMethod[]>(() => {
     const list =

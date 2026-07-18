@@ -498,7 +498,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
 
   function derive(item: DefaultSuggestion | undefined) {
     const pids = [form.providerID.trim(), props.existing?.providerID].filter(Boolean) as string[]
-    return resolveSuggestion(provider.providers(), form.npm, item, 5, {
+    return resolveSuggestion(provider.catalogProviders(), form.npm, item, 5, {
       excludeProviders: pids,
     })
   }
@@ -520,7 +520,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
 
   function fill(i: number, id: string) {
     setForm("models", i, "id", id)
-    const direct = defaultsForModel(provider.providers(), form.npm, id)
+    const direct = defaultsForModel(provider.catalogProviders(), form.npm, id)
     if (hasDefaults(direct)) {
       apply(i, direct)
       setSuggestion(undefined)
@@ -546,7 +546,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   }
 
   function defaults(id: string) {
-    return defaultsForModel(provider.providers(), form.npm, id)
+    return defaultsForModel(provider.catalogProviders(), form.npm, id)
   }
 
   function variantNames(model: ModelEntry) {
@@ -708,7 +708,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
           reasoning: m.reasoning ?? false,
           variants: [],
         },
-        defaultsForModel(provider.providers(), form.npm, m.id),
+        defaultsForModel(provider.catalogProviders(), form.npm, m.id),
       )
     const start = empty ? 0 : form.models.length
     const merged = empty ? toAdd.map(entry) : [...form.models, ...toAdd.map(entry)]
@@ -829,7 +829,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
       t: language.t,
       editing: editing(),
       disabledProviders: config().disabled_providers ?? [],
-      existingProviderIDs: new Set(Object.keys(provider.providers())),
+      existingProviderIDs: new Set(Object.keys(provider.catalogProviders())),
       existingEnv: props.existing?.config?.env,
     })
     setErrors(reconcile(output.errors))

@@ -156,6 +156,7 @@ import {
 } from "./provider-actions"
 import type { ProviderFetchMode, StoredProviderKey } from "./provider-actions"
 import type { CustomProviderAuthChange, SanitizedProviderConfig } from "./shared/custom-provider"
+import { KILO_PROVIDER_ID } from "./shared/provider-model"
 import { AnacondaDesktopBridge } from "./anaconda-desktop/bridge"
 import { fetchModels, FetchModelsError } from "./shared/fetch-models"
 import { self as extensionSelf, version as extensionVersion } from "./extension-info"
@@ -211,6 +212,8 @@ const mapAgent = (a: Agent) => ({
 // message.part.* events are always session-scoped; drop them when the session is unknown.
 const SESSION_SCOPED_PART_EVENTS = new Set(["message.part.updated", "message.part.delta", "message.part.removed"])
 const isSessionScopedPartEvent = (type: string) => SESSION_SCOPED_PART_EVENTS.has(type)
+const PROVIDER_FETCH_TIMEOUT_MS = 15_000
+const PROVIDER_RETRY_DELAYS = [1_000, 3_000, 10_000, 30_000] as const
 
 type SyncPayload = Extract<GlobalEvent["payload"], { type: "sync" }>
 type RawSyncPayload = {
@@ -334,10 +337,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private isWebviewReady = false
   private readonly extensionVersion: string
   private cachedProvidersMessage: unknown = null
-  /** Coalesce provider refreshes — at most one follow-up rerun when a request lands mid-flight. */
+  /** Provider 拉取始终串行执行；不同模式分别排队，connected 优先。 */
   private providersRefresh: Promise<void> | null = null
-  private providersQueued = false
-  private providersQueuedMode: ProviderFetchMode | null = null
+  private providersMode: ProviderFetchMode | null = null
+  private readonly providersQueued = new Set<ProviderFetchMode>()
+  private providersAbort: AbortController | null = null
+  private providersRetry: ReturnType<typeof setTimeout> | null = null
+  private providersRetryAttempt = 0
   private providersGeneration = 0
   private sandboxRevision = 0
   private cachedAgentsMessage: unknown = null
@@ -1601,25 +1607,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       })
 
       // 共享 revision 会先失效旧拉取和缓存，再把精确变更同步到其他 Webview。
-      this.unsubscribeProvidersChange = this.connectionService.onProvidersChanged((source, revision, message) => {
-        const change = message && typeof message === "object" && "type" in message ? message : undefined
-        const exact =
-          (change?.type === "providerConnected" && "provider" in change && !!change.provider) ||
-          (change?.type === "providerDisconnected" && "removed" in change && change.removed === true)
-        this.cachedProvidersMessage = null
-        this.providersGeneration += 1
-        if (this.providersRefresh && !exact) {
-          this.providersQueued = true
-          this.providersQueuedMode ??= "connected"
-        }
-        if (change?.type === "providerDisconnected" && "providerID" in change && typeof change.providerID === "string")
-          this.connectionService.setProviderKey?.(change.providerID)
-        if (source !== this.instanceId && change) this.postMessage({ ...change, revision })
-        if (source === this.instanceId || exact || this.connectionState !== "connected") return
-        void this.fetchAndSendProviders().catch((error) =>
-          console.error("[Kilo New] fetchAndSendProviders after provider broadcast failed:", error),
-        )
-      })
+      this.unsubscribeProvidersChange = this.connectionService.onProvidersChanged((source, revision, message) =>
+        this.handleProvidersChange(source, revision, message),
+      )
 
       // Subscribe to model-selector expand/collapse broadcast from other KiloProvider instances
       this.unsubscribeModelSelectorExpanded = this.connectionService.onModelSelectorExpandedChanged((value) => {
@@ -2161,49 +2151,131 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.connectionService.setProviderKey?.(id, stored)
   }
 
-  /** Fetch providers and send to webview. Coalesced: at most one in-flight + one queued. */
-  private async fetchAndSendProviders(mode: ProviderFetchMode = "connected"): Promise<void> {
-    const next = ++this.providersGeneration
+  /** Provider 变更会取消失效请求，并保证随后取得 connected 权威快照。 */
+  private handleProvidersChange(source: string | undefined, revision: number, message?: unknown): void {
+    const change = message && typeof message === "object" && "type" in message ? message : undefined
+    const exact =
+      (change?.type === "providerConnected" && "provider" in change && !!change.provider) ||
+      (change?.type === "providerDisconnected" && "removed" in change && change.removed === true)
+    const retrying = this.providersRetry !== null
+    const refreshing = this.providersRefresh !== null
+    this.clearProviderRetry()
+    this.cachedProvidersMessage = null
+    this.providersGeneration += 1
     if (this.providersRefresh) {
-      this.providersQueued = true
-      this.providersQueuedMode = this.providersQueuedMode === "catalog" || mode === "catalog" ? "catalog" : "connected"
+      if (this.providersMode) this.queueProviderFetch(this.providersMode)
+      this.queueProviderFetch("connected")
+      this.providersAbort?.abort()
+    }
+    if (change?.type === "providerDisconnected" && "providerID" in change && typeof change.providerID === "string")
+      this.connectionService.setProviderKey?.(change.providerID)
+    if (source !== this.instanceId && change) this.postMessage({ ...change, revision })
+    const fetch =
+      this.connectionState === "connected" && !refreshing && (retrying || (source !== this.instanceId && !exact))
+    if (!fetch) return
+    void this.fetchAndSendProviders().catch((error) =>
+      console.error("[Kilo New] fetchAndSendProviders after provider broadcast failed:", error),
+    )
+  }
+
+  /** Set 会合并重复请求，确保慢请求结束后最多补拉每种模式一次。 */
+  private queueProviderFetch(mode: ProviderFetchMode): void {
+    this.providersQueued.add(mode)
+  }
+
+  /** connected 先恢复聊天状态，catalog 随后再更新设置目录。 */
+  private takeProviderFetch(): ProviderFetchMode | null {
+    if (this.providersQueued.delete("connected")) return "connected"
+    if (this.providersQueued.delete("catalog")) return "catalog"
+    return null
+  }
+
+  /** 配置未知时默认 Kilo 应存在；只有显式白名单或禁用项才能排除。 */
+  private expectsKiloProvider(): boolean {
+    const message = this.cachedConfigMessage
+    if (!message || typeof message !== "object" || !("config" in message)) return true
+    const config = (message as { config?: Config }).config
+    if (config?.disabled_providers?.includes(KILO_PROVIDER_ID)) return false
+    if (config?.enabled_providers && !config.enabled_providers.includes(KILO_PROVIDER_ID)) return false
+    return true
+  }
+
+  /** 单个封顶退避计时器负责失败和缺少 Kilo 时的后台自愈。 */
+  private scheduleProviderRetry(): void {
+    if (this.providersRetry || this.connectionState !== "connected" || !this.webview) return
+    const index = Math.min(this.providersRetryAttempt, PROVIDER_RETRY_DELAYS.length - 1)
+    const delay = PROVIDER_RETRY_DELAYS[index]
+    this.providersRetryAttempt = Math.min(this.providersRetryAttempt + 1, PROVIDER_RETRY_DELAYS.length - 1)
+    this.providersRetry = setTimeout(() => {
+      this.providersRetry = null
+      if (this.connectionState !== "connected") return
+      void this.fetchAndSendProviders("connected").catch((error) =>
+        console.error("[Kilo New] Provider retry failed:", error),
+      )
+    }, delay)
+  }
+
+  private clearProviderRetry(): void {
+    if (this.providersRetry) clearTimeout(this.providersRetry)
+    this.providersRetry = null
+    this.providersRetryAttempt = 0
+  }
+
+  /** 串行拉取 Provider；connected 与 catalog 均不会丢失后续请求。 */
+  private async fetchAndSendProviders(mode: ProviderFetchMode = "connected"): Promise<void> {
+    if (this.providersRefresh) {
+      this.queueProviderFetch(mode)
       await this.providersRefresh
       return
     }
+    const next = ++this.providersGeneration
     const task = (async () => {
       let generation = next
       let current = mode
       let revision = this.connectionService.getProviderRevision?.() ?? 0
+      const advance = () => {
+        const queued = this.takeProviderFetch()
+        if (!queued) return false
+        generation = this.providersGeneration
+        current = queued
+        revision = this.connectionService.getProviderRevision?.() ?? 0
+        return true
+      }
       while (true) {
-        this.providersQueued = false
-        this.providersQueuedMode = null
+        this.providersMode = current
         const client = this.client
         if (!client) {
-          if (this.cachedProvidersMessage && generation === this.providersGeneration)
+          if (current === "connected" && this.cachedProvidersMessage && generation === this.providersGeneration)
             this.postMessage(this.cachedProvidersMessage)
           return
         }
+        const ctrl = new AbortController()
+        const timer = setTimeout(() => ctrl.abort(), PROVIDER_FETCH_TIMEOUT_MS)
+        this.providersAbort = ctrl
+        const clear = () => {
+          clearTimeout(timer)
+          if (this.providersAbort === ctrl) this.providersAbort = null
+        }
+        const stale = () =>
+          generation !== this.providersGeneration ||
+          revision !== (this.connectionService.getProviderRevision?.() ?? 0) ||
+          client !== this.client
         try {
           const { response, authMethods, authStates, storedKeys } = await fetchProviderData(
             client,
             this.getWorkspaceDirectory(),
             current,
-          )
-          if (
-            generation !== this.providersGeneration ||
-            revision !== (this.connectionService.getProviderRevision?.() ?? 0) ||
-            client !== this.client
-          ) {
-            if (!this.providersQueued) return
-            generation = this.providersGeneration
-            current = this.providersQueuedMode ?? "connected"
-            revision = this.connectionService.getProviderRevision?.() ?? 0
+            ctrl.signal,
+          ).finally(clear)
+          if (stale()) {
+            if (!advance()) return
             continue
           }
           this.connectionService.replaceProviderKeys?.(storedKeys)
           const settings = vscode.workspace.getConfiguration("kilo-code.new.model")
           const message = {
             type: "providersLoaded",
+            mode: current,
             revision,
             providers: indexProvidersById(response.all),
             connected: response.connected,
@@ -2216,29 +2288,31 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             authMethods,
             authStates,
           }
-          this.cachedProvidersMessage = message
+          if (current === "connected") this.cachedProvidersMessage = message
           this.postMessage(message)
+          if (current === "connected") {
+            const missing =
+              this.expectsKiloProvider() && !response.all.some((provider) => provider.id === KILO_PROVIDER_ID)
+            if (missing) this.scheduleProviderRetry()
+            if (!missing) this.clearProviderRetry()
+          }
         } catch (error) {
-          if (
-            generation !== this.providersGeneration ||
-            revision !== (this.connectionService.getProviderRevision?.() ?? 0)
-          ) {
-            if (!this.providersQueued) return
-            generation = this.providersGeneration
-            current = this.providersQueuedMode ?? "connected"
-            revision = this.connectionService.getProviderRevision?.() ?? 0
+          clear()
+          if (stale()) {
+            if (!advance()) return
             continue
           }
           console.error("[Kilo New] KiloProvider: Failed to fetch providers:", error)
+          if (current === "connected") this.scheduleProviderRetry()
         }
-        if (!this.providersQueued) return
-        generation = this.providersGeneration
-        current = this.providersQueuedMode ?? "connected"
-        revision = this.connectionService.getProviderRevision?.() ?? 0
+        if (!advance()) return
       }
     })()
     const done = task.finally(() => {
-      if (this.providersRefresh === done) this.providersRefresh = null
+      if (this.providersRefresh !== done) return
+      this.providersRefresh = null
+      this.providersMode = null
+      this.providersAbort = null
     })
     this.providersRefresh = done
     await done
@@ -4503,6 +4577,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
    * Does NOT kill the server — that's the connection service's job.
    */
   dispose(): void {
+    this.providersGeneration += 1
+    this.providersQueued.clear()
+    this.providersAbort?.abort()
+    this.clearProviderRetry()
     this.unsubscribeRemote?.()
     this.focusSession()
     this.statsPoller?.stop()

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import { readFileSync } from "node:fs"
 import path from "node:path"
 import type { reconcile } from "../../webview-ui/src/context/provider"
 
@@ -6,21 +7,36 @@ const webview = path.resolve(import.meta.dir, "../../webview-ui")
 const field: keyof ReturnType<typeof reconcile> = "providers"
 
 const script = `
-  const { applyProviderMessage, initialProviderState, reconcile } = await import("./src/context/provider.tsx")
+  const {
+    applyProviderMessage,
+    createProviderRetry,
+    initialProviderState,
+    mergeProviderCatalog,
+    reconcile,
+  } = await import("./src/context/provider.tsx")
 
   const provider = (id, name, models) => ({
     id,
     name,
     models: Object.fromEntries(models.map((model) => [model, { id: model, name: model }])),
   })
-  const loaded = (revision, providers, connected, authStates = {}, defaults = {}) => ({
+  const loaded = (
+    revision,
+    providers,
+    connected,
+    authStates = {},
+    defaults = {},
+    mode = "connected",
+    authMethods = {},
+  ) => ({
     type: "providersLoaded",
+    mode,
     revision,
     providers,
     connected,
     defaults,
     defaultSelection: { providerID: "kilo", modelID: "kilo-auto/free" },
-    authMethods: {},
+    authMethods,
     authStates,
   })
   const fail = (message) => {
@@ -35,6 +51,45 @@ const script = `
   }
   if (added.connected.join(",") !== "13") fail("连接列表没有去重")
   if (Object.keys(added.optimistic).length !== 0) fail("Provider 乐观状态没有清空")
+
+  const ignored = applyProviderMessage(
+    added,
+    loaded(
+      2,
+      { "14": provider("14", "目录 Provider", ["catalog-model"]) },
+      [],
+      { "14": "oauth" },
+      {},
+      "catalog",
+      { "14": [{ type: "oauth", label: "OAuth" }] },
+    ),
+  )
+  if (ignored.providers !== added.providers || ignored.connected !== added.connected) {
+    fail("catalog 快照覆盖了 connected 权威状态")
+  }
+  if (ignored.authMethods["14"]?.[0]?.type !== "oauth" || ignored.authStates["14"] !== "oauth") {
+    fail("catalog 快照没有补充认证元数据")
+  }
+  const preserved = applyProviderMessage(
+    ignored,
+    loaded(3, { "14": provider("14", "目录 Provider", ["catalog-model"]) }, [], {}, {}, "catalog"),
+  )
+  if (preserved.authMethods["14"]?.[0]?.type !== "oauth" || preserved.authStates["14"] !== "oauth") {
+    fail("catalog 空认证结果清除了已有认证元数据")
+  }
+  const replaced = applyProviderMessage(
+    preserved,
+    loaded(4, added.providers, added.connected, {}, {}, "connected", {}),
+  )
+  if (Object.keys(replaced.authMethods).length !== 0 || Object.keys(replaced.authStates).length !== 0) {
+    fail("connected 权威快照没有替换认证元数据")
+  }
+  const catalog = mergeProviderCatalog(added.providers, {
+    "13": provider("13", "目录旧 Provider", ["catalog-model"]),
+    "14": provider("14", "目录 Provider", ["catalog-model"]),
+  })
+  if (catalog["13"].name !== "Provider 13") fail("catalog 覆盖了同 ID 的 connected Provider")
+  if (!catalog["14"]) fail("catalog 没有补充未连接 Provider")
 
   const changed = reconcile(
     loaded(2, { "13": provider("13", "Updated Provider", ["gpt-5.6-sol"]) }, ["13"]),
@@ -105,6 +160,30 @@ const script = `
     loaded(14, { "13": provider("13", "迟到删除前 Provider", ["gpt-5.6-sol"]) }, ["13"], { "13": "api" }),
   )
   if (state.providers["13"] !== undefined) fail("迟到快照恢复了已删除 Provider")
+
+  const timers = []
+  let requests = 0
+  const retry = createProviderRetry(
+    () => requests++,
+    (run, delay) => {
+      const timer = { run, delay, active: true }
+      timers.push(timer)
+      return timer
+    },
+    (timer) => {
+      timer.active = false
+    },
+  )
+  retry.refresh()
+  if (requests !== 1 || timers[0].delay !== 3000) fail("首次 Provider 请求或退避时间不正确")
+  retry.loaded("catalog")
+  if (!timers[0].active) fail("catalog 快照错误停止了 connected 重试")
+  timers[0].active = false
+  timers[0].run()
+  if (requests !== 2 || timers[1].delay !== 10000) fail("Provider 重试没有按退避继续")
+  retry.loaded("connected")
+  if (timers[1].active) fail("connected 权威快照没有取消重试")
+  retry.dispose()
 `
 
 describe("Provider 消息合并", () => {
@@ -118,5 +197,10 @@ describe("Provider 消息合并", () => {
     const output = result.stdout.toString() + result.stderr.toString()
 
     expect(result.exitCode, output).toBe(0)
+  })
+
+  it("只有 connected 快照能完成待处理的 Kilo 模型选择", () => {
+    const source = readFileSync(path.resolve(webview, "src/context/session.tsx"), "utf8")
+    expect(source).toContain('message.type === "providersLoaded" && message.mode === "connected"')
   })
 })

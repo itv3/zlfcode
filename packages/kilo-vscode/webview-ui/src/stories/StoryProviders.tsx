@@ -98,6 +98,7 @@ const MOCK_MODELS = flattenModels(MOCK_PROVIDERS as any)
 const MockProviderProvider: ParentComponent<{ kiloAuth?: boolean }> = (props) => {
   const value = {
     providers: () => MOCK_PROVIDERS as any,
+    catalogProviders: () => MOCK_PROVIDERS as any,
     connected: () => ["kilo"],
     defaults: () => ({}),
     defaultSelection: () => ({ providerID: "kilo", modelID: "anthropic/claude-sonnet-4-6" }),

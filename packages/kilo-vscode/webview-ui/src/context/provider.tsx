@@ -1,8 +1,4 @@
-/**
- * Provider/model context
- * Manages available providers, models, and the global default selection.
- * Selection is now per-session — see session.tsx.
- */
+/** Provider/模型上下文：管理可用模型、连接状态和全局默认选择。 */
 
 import { createContext, useContext, createSignal, createMemo, onCleanup } from "solid-js"
 import type { ParentComponent, Accessor } from "solid-js"
@@ -30,6 +26,53 @@ type Change = Extract<
   ExtensionMessage,
   { type: "providersLoaded" | "providerConnected" | "providerDisconnected" }
 >
+type ProviderMode = Loaded["mode"]
+type Timer = ReturnType<typeof setTimeout>
+type Schedule = (run: () => void, delay: number) => Timer
+
+const PROVIDER_RETRY_DELAYS = [3_000, 10_000, 30_000] as const
+
+/** 在 connected 权威快照到达前，以单个定时器持续请求，避免启动失败后永久空白。 */
+export function createProviderRetry(
+  post: () => void,
+  schedule: Schedule = (run, delay) => setTimeout(run, delay),
+  cancel: (timer: Timer) => void = (timer) => clearTimeout(timer),
+) {
+  let timer: Timer | undefined
+  let attempt = 0
+  let done = false
+
+  const arm = () => {
+    if (done || timer !== undefined) return
+    const delay = PROVIDER_RETRY_DELAYS[Math.min(attempt, PROVIDER_RETRY_DELAYS.length - 1)]
+    timer = schedule(() => {
+      timer = undefined
+      attempt += 1
+      post()
+      arm()
+    }, delay)
+  }
+  const refresh = () => {
+    if (done) return
+    if (timer !== undefined) cancel(timer)
+    timer = undefined
+    post()
+    arm()
+  }
+  const loaded = (mode: ProviderMode) => {
+    if (mode !== "connected" || done) return
+    done = true
+    if (timer !== undefined) cancel(timer)
+    timer = undefined
+  }
+  const dispose = () => {
+    done = true
+    if (timer !== undefined) cancel(timer)
+    timer = undefined
+  }
+
+  return { refresh, loaded, dispose }
+}
 
 export interface ProviderState {
   revision: number
@@ -92,6 +135,13 @@ function applyDefault(defaults: Record<string, string>, id: string, provider: Pr
 export function applyProviderMessage(state: ProviderState, message: Change): ProviderState {
   if (message.revision < state.revision) return state
   if (message.type === "providersLoaded") {
+    if (message.mode !== "connected") {
+      return {
+        ...state,
+        authMethods: { ...state.authMethods, ...message.authMethods },
+        authStates: { ...state.authStates, ...message.authStates },
+      }
+    }
     return {
       revision: message.revision,
       providers: message.providers,
@@ -145,8 +195,17 @@ export function reconcile(message: Loaded) {
   return applyProviderMessage(initialProviderState(), message)
 }
 
+/** 设置目录可补充未连接项，但 connected 权威项始终覆盖同 ID 的目录数据。 */
+export function mergeProviderCatalog(
+  providers: Record<string, Provider>,
+  catalog: Record<string, Provider>,
+): Record<string, Provider> {
+  return { ...catalog, ...providers }
+}
+
 interface ProviderContextValue {
   providers: Accessor<Record<string, Provider>>
+  catalogProviders: Accessor<Record<string, Provider>>
   connected: Accessor<string[]>
   defaults: Accessor<Record<string, string>>
   defaultSelection: Accessor<ModelSelection>
@@ -165,11 +224,14 @@ export const ProviderProvider: ParentComponent = (props) => {
 
   let state = initialProviderState()
   const [providers, setProviders] = createSignal(state.providers)
+  const [catalog, setCatalog] = createSignal<Record<string, Provider>>({})
   const [connected, setConnected] = createSignal(state.connected)
   const [defaults, setDefaults] = createSignal(state.defaults)
   const [defaultSelection, setDefaultSelection] = createSignal(state.defaultSelection)
   const [authMethods, setAuthMethods] = createSignal(state.authMethods)
   const [authStates, setAuthStates] = createSignal(state.authStates)
+  const catalogProviders = createMemo(() => mergeProviderCatalog(providers(), catalog()))
+  let catalogRevision = 0
 
   const models = createMemo<EnrichedModel[]>(() => flattenModels(providers()))
   const visibleModels = createMemo<EnrichedModel[]>(() => filterModels(models(), connected()))
@@ -182,8 +244,9 @@ export const ProviderProvider: ParentComponent = (props) => {
     return isValid(providers(), connected(), selection)
   }
 
-  // Register handler immediately (not in onMount) so we never miss
-  // a providersLoaded message that arrives before the DOM mount.
+  const retry = createProviderRetry(() => vscode.postMessage({ type: "requestProviders", mode: "connected" }))
+
+  // 立即注册处理器，避免 DOM 挂载前到达的 Provider 消息丢失。
   const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
     if (
       message.type !== "providerConnected" &&
@@ -191,45 +254,54 @@ export const ProviderProvider: ParentComponent = (props) => {
       message.type !== "providersLoaded"
     )
       return
+    if (message.type === "providersLoaded" && message.mode === "catalog") {
+      if (message.revision < state.revision || message.revision < catalogRevision) return
+      catalogRevision = message.revision
+      state = applyProviderMessage(state, message)
+      setCatalog(message.providers)
+      setAuthMethods(state.authMethods)
+      setAuthStates(state.authStates)
+      retry.loaded(message.mode)
+      return
+    }
     const next = applyProviderMessage(state, message)
     if (next === state) return
     state = next
+    catalogRevision = Math.max(catalogRevision, message.revision)
+    if (message.type === "providerConnected" && message.provider) {
+      const provider = message.provider
+      setCatalog((value) => ({ ...value, [message.providerID]: provider }))
+    }
+    if (message.type === "providerDisconnected" && message.removed) {
+      setCatalog((value) => without(value, message.providerID))
+    }
     setProviders(state.providers)
     setConnected(state.connected)
     setDefaults(state.defaults)
     setDefaultSelection(state.defaultSelection)
     setAuthMethods(state.authMethods)
     setAuthStates(state.authStates)
+    if (message.type === "providersLoaded") retry.loaded(message.mode)
   })
 
   onCleanup(unsubscribe)
 
-  // Request providers immediately; if the extension's httpClient is not yet ready,
-  // extensionDataReady will fire once initialization completes and we retry once.
-  vscode.postMessage({ type: "requestProviders" })
-
-  const fallback = setTimeout(() => {
-    if (Object.keys(providers()).length === 0) {
-      vscode.postMessage({ type: "requestProviders" })
-    }
-  }, 3000)
+  retry.refresh()
 
   const unsubReady = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type !== "extensionDataReady") return
     unsubReady()
-    clearTimeout(fallback)
-    if (Object.keys(providers()).length === 0) {
-      vscode.postMessage({ type: "requestProviders" })
-    }
+    retry.refresh()
   })
 
   onCleanup(() => {
     unsubReady()
-    clearTimeout(fallback)
+    retry.dispose()
   })
 
   const value: ProviderContextValue = {
     providers,
+    catalogProviders,
     connected,
     defaults,
     defaultSelection,

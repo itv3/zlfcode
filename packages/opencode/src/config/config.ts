@@ -620,6 +620,7 @@ export const layer = Layer.effect(
       // kilocode_change start
       yield* Effect.promise(() => KilocodeConfig.migrateBashPermission())
       const before = yield* KilocodeGlobalConfigStamp.read(fs, Global.Path.config)
+      globalStamp = before
       // kilocode_change end
       let result: Info = {}
       // Seed the default global config with the schema for editor completion, but avoid writing when the user
@@ -686,6 +687,7 @@ export const layer = Layer.effect(
     const refreshGlobal = Effect.fnUntraced(function* () {
       const stamp = yield* KilocodeGlobalConfigStamp.read(fs, Global.Path.config)
       if (!globalStamp || stamp === globalStamp) return false
+      globalStamp = stamp
       yield* invalidateGlobal
       return true
     })

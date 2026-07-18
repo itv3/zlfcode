@@ -5,10 +5,11 @@
 //   3. Clear removes failure state.
 
 import { beforeEach, expect } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Ref } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import type { ModelsDev } from "@opencode-ai/core/models-dev"
 import * as Log from "@opencode-ai/core/util/log"
+import * as ModelsRefresh from "@opencode-ai/core/kilocode/models-refresh"
 
 Log.init({ print: false })
 
@@ -127,6 +128,8 @@ it.live("clear removes failure state", () =>
 it.live("failure state is cleared when subsequent refresh succeeds", () =>
   Effect.gen(function* () {
     result = { models: {}, error: { kind: "unauthorized", status: 401 } }
+    const events = yield* Ref.make(0)
+    yield* ModelsRefresh.watch(() => Ref.update(events, (count) => count + 1))
     yield* ModelCache.Service.use((cache) =>
       Effect.gen(function* () {
         yield* cache.fetch("kilo")
@@ -149,6 +152,39 @@ it.live("failure state is cleared when subsequent refresh succeeds", () =>
         yield* cache.refresh("kilo")
         expect(yield* cache.failedProviders()).not.toContain("kilo")
         expect(yield* cache.getFailure("kilo")).toBeUndefined()
+        expect(yield* Ref.get(events)).toBe(1)
+      }),
+    ).pipe(Effect.provide(layer()))
+  }),
+)
+
+it.live("empty model state notifies providers when refresh recovers", () =>
+  Effect.gen(function* () {
+    const events = yield* Ref.make(0)
+    yield* ModelsRefresh.watch(() => Ref.update(events, (count) => count + 1))
+    yield* ModelCache.Service.use((cache) =>
+      Effect.gen(function* () {
+        yield* cache.fetch("kilo")
+        result = {
+          models: {
+            "kilo-auto/free": {
+              id: "kilo-auto/free",
+              name: "Kilo Auto Free",
+              attachment: true,
+              reasoning: true,
+              release_date: "",
+              temperature: true,
+              tool_call: true,
+              cost: { input: 0, output: 0 },
+              limit: { context: 128000, output: 4096 },
+            },
+          },
+        }
+
+        yield* cache.refresh("kilo")
+
+        expect(yield* Ref.get(events)).toBe(1)
+        expect(yield* cache.get("kilo")).toHaveProperty("kilo-auto/free")
       }),
     ).pipe(Effect.provide(layer()))
   }),
