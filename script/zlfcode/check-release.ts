@@ -1,3 +1,4 @@
+// kilocode_change - new file
 import { Glob } from "bun"
 import { join } from "node:path"
 

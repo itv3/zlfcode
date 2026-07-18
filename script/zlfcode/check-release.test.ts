@@ -1,3 +1,4 @@
+// kilocode_change - new file
 import { afterEach, expect, test } from "bun:test"
 import { mkdtemp, mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
