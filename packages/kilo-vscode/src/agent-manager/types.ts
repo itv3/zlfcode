@@ -374,6 +374,7 @@ interface CloseSessionIn {
 interface PersistSessionIn {
   type: "agentManager.persistSession"
   sessionId: string
+  draftID?: string
 }
 
 /** Remove a non-worktree session from agent-manager.json. */
@@ -563,6 +564,11 @@ interface OpenPRIn {
 interface OpenSessionsIn {
   type: "agentManager.openSessions"
   sessionIDs: string[]
+}
+
+interface VisibleSessionIn {
+  type: "agentManager.visibleSession"
+  sessionID: string | null
 }
 
 interface OpenFileIn {
@@ -810,6 +816,7 @@ export type AgentManagerInMessage =
   | RefreshPRIn
   | OpenPRIn
   | OpenSessionsIn
+  | VisibleSessionIn
   | OpenFileIn
   | GenericOpenFileIn
   | PreviewImageIn

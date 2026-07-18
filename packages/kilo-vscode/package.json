@@ -2,7 +2,7 @@
   "name": "zlfcode",
   "displayName": "ZLF Code",
   "description": "ZLF Code 是面向内部使用的 AI coding agent，重点增强自定义提供商：支持 OpenAI / Anthropic / Gemini API 类型、模型自动发现、图像与推理能力、高级 token 参数和成本配置。",
-  "version": "7.4.508",
+  "version": "7.4.1101",
   "icon": "assets/icons/zlfcode.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -196,12 +196,12 @@
       {
         "command": "kilo-code.new.showMemory",
         "title": "Show Project Memory",
-        "category": "Kilo Code"
+        "category": "ZLF Code"
       },
       {
         "command": "kilo-code.new.toggleMemory",
         "title": "Toggle Project Memory",
-        "category": "Kilo Code"
+        "category": "ZLF Code"
       },
       {
         "command": "kilo-code.new.autocomplete.generateSuggestions",
@@ -404,6 +404,11 @@
       {
         "command": "kilo-code.new.focusChatInput",
         "title": "Focus Chat Input",
+        "category": "ZLF Code"
+      },
+      {
+        "command": "kilo-code.new.toggleChatSearch",
+        "title": "Toggle Chat Search",
         "category": "ZLF Code"
       },
       {
@@ -881,7 +886,7 @@
         "kilo-code.new.languageCommitMessage": {
           "type": "string",
           "default": "sync",
-          "description": "Language used for AI-generated commit messages. Choose 'sync' to follow the Kilo Code UI language, or select a specific language.",
+          "description": "Language used for AI-generated commit messages. Choose 'sync' to follow the ZLF Code UI language, or select a specific language.",
           "enum": [
             "sync",
             "en",

@@ -3,7 +3,7 @@ import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Fiber, Layer } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Global } from "@opencode-ai/core/global"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { Auth } from "../../src/auth"
@@ -12,19 +12,20 @@ import { Env } from "../../src/env"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { Plugin } from "../../src/plugin"
 import { Provider } from "../../src/provider/provider"
-import { ModelID, ProviderID } from "../../src/provider/schema"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@opencode-ai/core/provider"
 import * as ProviderReady from "../../src/kilocode/provider/ready"
 import { disposeAllInstances, provideInstanceEffect, testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 const root = Global.Path.config
 const auth = process.env.KILO_AUTH_CONTENT
-const id = ProviderID.make("13")
-const other = ProviderID.make("14")
+const id = ProviderV2.ID.make("13")
+const other = ProviderV2.ID.make("14")
 
 const deps = Layer.mergeAll(
   CrossSpawnSpawner.defaultLayer,
-  AppFileSystem.defaultLayer,
+  FSUtil.defaultLayer,
   Env.defaultLayer,
   Config.defaultLayer,
   Auth.defaultLayer,
@@ -61,7 +62,7 @@ const project = (dir: string, value: Config.Info) =>
   Config.Service.use((service) => service.update(value)).pipe(provideInstanceEffect(dir))
 
 const model = (dir: string, value: string) =>
-  Provider.Service.use((provider) => provider.getModel(id, ModelID.make(value))).pipe(provideInstanceEffect(dir))
+  Provider.Service.use((provider) => provider.getModel(id, ModelV2.ID.make(value))).pipe(provideInstanceEffect(dir))
 
 const provider = (dir: string) =>
   Provider.Service.use((service) => service.getProvider(id)).pipe(provideInstanceEffect(dir))
@@ -69,13 +70,13 @@ const provider = (dir: string) =>
 const providers = (dir: string) =>
   Provider.Service.use((service) => service.list()).pipe(provideInstanceEffect(dir))
 
-const language = (dir: string, providerID: ProviderID, modelID: string) =>
+const language = (dir: string, providerID: ProviderV2.ID, modelID: string) =>
   Provider.Service.use((service) =>
-    service.getModel(providerID, ModelID.make(modelID)).pipe(Effect.flatMap(service.getLanguage)),
+    service.getModel(providerID, ModelV2.ID.make(modelID)).pipe(Effect.flatMap(service.getLanguage)),
   ).pipe(provideInstanceEffect(dir))
 
 const ready = (dir: string, models: string[]) =>
-  ProviderReady.check({ providerID: id, modelIDs: models.map((model) => ModelID.make(model)) }).pipe(
+  ProviderReady.check({ providerID: id, modelIDs: models.map((model) => ModelV2.ID.make(model)) }).pipe(
     provideInstanceEffect(dir),
   )
 

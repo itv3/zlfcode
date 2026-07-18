@@ -1,4 +1,5 @@
-import { ModelID, ProviderID } from "@/provider/schema"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@opencode-ai/core/provider"
 import { described } from "@/server/routes/instance/httpapi/groups/metadata"
 import { Authorization } from "@/server/routes/instance/httpapi/middleware/authorization"
 import { InstanceContextMiddleware } from "@/server/routes/instance/httpapi/middleware/instance-context"
@@ -10,14 +11,14 @@ import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 
 export const ProviderReadyPayload = Schema.Struct({
-  providerID: ProviderID,
-  modelIDs: Schema.Array(ModelID),
+  providerID: ProviderV2.ID,
+  modelIDs: Schema.Array(ModelV2.ID),
 })
 
 const ProviderReadyResponse = Schema.Struct({
   ready: Schema.Boolean,
-  missing: Schema.Array(ModelID),
-  unexpected: Schema.Array(ModelID),
+  missing: Schema.Array(ModelV2.ID),
+  unexpected: Schema.Array(ModelV2.ID),
 })
 
 export const ProviderReadyApi = HttpApi.make("provider-ready")

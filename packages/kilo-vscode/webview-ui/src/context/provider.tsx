@@ -22,10 +22,7 @@ import { KILO_AUTO } from "../../../src/shared/provider-model"
 
 export type EnrichedModel = ProviderModel & { providerID: string; providerName: string }
 type Loaded = Extract<ExtensionMessage, { type: "providersLoaded" }>
-type Change = Extract<
-  ExtensionMessage,
-  { type: "providersLoaded" | "providerConnected" | "providerDisconnected" }
->
+type Change = Extract<ExtensionMessage, { type: "providersLoaded" | "providerConnected" | "providerDisconnected" }>
 type ProviderMode = Loaded["mode"]
 type Timer = ReturnType<typeof setTimeout>
 type Schedule = (run: () => void, delay: number) => Timer
@@ -160,9 +157,7 @@ export function applyProviderMessage(state: ProviderState, message: Change): Pro
     return {
       ...state,
       revision: message.revision,
-      providers: message.provider
-        ? { ...state.providers, [message.providerID]: message.provider }
-        : state.providers,
+      providers: message.provider ? { ...state.providers, [message.providerID]: message.provider } : state.providers,
       connected: state.connected.includes(message.providerID)
         ? state.connected
         : [...state.connected, message.providerID],

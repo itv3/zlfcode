@@ -1,17 +1,18 @@
 import type { Auth } from "@/auth"
 import type { Config } from "@/config/config"
-import type { ConfigProvider } from "@/config/provider"
 import { orderedVariants, patchConfigModel } from "@/kilocode/provider/provider"
 import type { Info, Model } from "@/provider/provider"
 import * as ProviderTransform from "@/provider/transform"
-import { ModelID, ProviderID } from "@/provider/schema"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@opencode-ai/core/provider"
+import type { ConfigProviderV1 } from "@opencode-ai/core/v1/config/provider"
 import { Effect } from "effect"
 import { isDeepEqual, mapValues, mergeDeep } from "remeda"
 
-type Entry = ConfigProvider.Info | null | undefined
+type Entry = ConfigProviderV1.Info | null | undefined
 
 export type BuildInput = {
-  id: ProviderID
+  id: ProviderV2.ID
   config: Entry
   base?: Info
   key?: string
@@ -21,18 +22,18 @@ export type BuildInput = {
 type Runtime<Model, SDK, Loader, Vars> = {
   config: Config.Info
   models: Map<string, Model>
-  providers: Record<ProviderID, Info>
-  catalog: Record<ProviderID, Info>
+  providers: Record<ProviderV2.ID, Info>
+  catalog: Record<ProviderV2.ID, Info>
   sdk: Map<string, SDK>
   modelLoaders: Record<string, Loader>
   varsLoaders: Record<string, Vars>
-  version: Map<ProviderID, number>
+  version: Map<ProviderV2.ID, number>
 }
 
 export type RefreshInput<Model, SDK, Loader, Vars> = {
   config: Config.Info
   state: Runtime<Model, SDK, Loader, Vars>
-  auth: (id: ProviderID) => Effect.Effect<Auth.Info | undefined>
+  auth: (id: ProviderV2.ID) => Effect.Effect<Auth.Info | undefined>
   env: Effect.Effect<Record<string, string | undefined>>
   experimental: boolean
 }
@@ -49,7 +50,7 @@ export function diff(before: Config.Info, after: Config.Info) {
   const ids = new Set([...Object.keys(before.provider ?? {}), ...Object.keys(after.provider ?? {})])
   return [...ids]
     .filter((id) => !isDeepEqual(before.provider?.[id], after.provider?.[id]))
-    .map((id) => ProviderID.make(id))
+    .map((id) => ProviderV2.ID.make(id))
 }
 
 /**
@@ -83,7 +84,7 @@ export function build(input: BuildInput): Info | undefined {
       return existing?.name ?? modelID
     })()
     const model: Model = {
-      id: ModelID.make(modelID),
+      id: ModelV2.ID.make(modelID),
       api: {
         id: apiID,
         npm: apiNpm,

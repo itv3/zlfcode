@@ -35,6 +35,7 @@ import { LanguageContext } from "../context/language"
 import { IndexingProvider } from "../context/indexing"
 import { KiloEmbeddingModelsProvider } from "../context/kilo-embedding-models"
 import { MemoryProvider } from "../context/memory"
+import { TranscriptSearchProvider } from "../context/transcript-search"
 import { dict as uiEn } from "@kilocode/kilo-ui/i18n/en"
 import { dict as appEn } from "../i18n/en"
 import { dict as amEn } from "../../agent-manager/i18n/en"
@@ -455,11 +456,13 @@ export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
                                       <CodeComponentProvider component={Code}>
                                         <FileComponentProvider component={File}>
                                           <MarkedProvider>
-                                            {props.noPadding ? (
-                                              props.children
-                                            ) : (
-                                              <div style={{ padding: "12px" }}>{props.children}</div>
-                                            )}
+                                            <TranscriptSearchProvider>
+                                              {props.noPadding ? (
+                                                props.children
+                                              ) : (
+                                                <div style={{ padding: "12px" }}>{props.children}</div>
+                                              )}
+                                            </TranscriptSearchProvider>
                                           </MarkedProvider>
                                         </FileComponentProvider>
                                       </CodeComponentProvider>

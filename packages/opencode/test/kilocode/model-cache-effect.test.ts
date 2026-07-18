@@ -1,12 +1,12 @@
 // kilocode_change - new file
 import { expect } from "bun:test"
-import { Deferred, Effect, Fiber, Layer, Ref } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer, Option, Ref } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http"
 import { Auth } from "../../src/auth"
 import { ModelCache } from "../../src/provider/model-cache"
 import { TestConfig } from "../fixture/config"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 
 type Hit = { readonly url: string }
 
@@ -26,6 +26,7 @@ function layer(
     readonly count?: number
     readonly fail?: number
   },
+  fail?: number,
 ) {
   const http = HttpClient.make((request) =>
     Effect.gen(function* () {
@@ -43,7 +44,7 @@ function layer(
         )
       return HttpClientResponse.fromWeb(
         request,
-        Response.json({ data: [{ id: `apertis-${count}`, owned_by: "apertis" }] }),
+        Response.json(count === fail ? null : { data: [{ id: `apertis-${count}`, owned_by: "apertis" }] }),
       )
     }),
   )
@@ -182,6 +183,96 @@ it.effect("后台刷新失败后允许下一次读取重试", () =>
   }),
 )
 
+it.live("retries after a failed refresh", () =>
+  Effect.gen(function* () {
+    const hits = yield* Ref.make<Hit[]>([])
+    const out = yield* ModelCache.Service.use((cache) =>
+      Effect.gen(function* () {
+        const failed = yield* cache.fetch("apertis", { apiKey: "test-key" }).pipe(Effect.exit)
+        const models = yield* cache.fetch("apertis", { apiKey: "test-key" })
+        return { failed, models }
+      }),
+    ).pipe(Effect.provide(layer(hits, TestConfig.layer(), auth, undefined, 1)))
+
+    expect(Exit.isFailure(out.failed)).toBe(true)
+    expect(Object.keys(out.models)).toEqual(["apertis-2"])
+    expect((yield* Ref.get(hits)).length).toBe(2)
+  }),
+)
+
+it.live("keeps a shared refresh alive when one waiter times out", () =>
+  Effect.gen(function* () {
+    const hits = yield* Ref.make<Hit[]>([])
+    const started = yield* Deferred.make<void>()
+    const wait = yield* Deferred.make<void>()
+    const out = yield* ModelCache.Service.use((cache) =>
+      Effect.gen(function* () {
+        const first = yield* cache
+          .fetch("apertis", { apiKey: "test-key" })
+          .pipe(Effect.timeoutOption("10 millis"), Effect.forkChild)
+        yield* Deferred.await(started)
+        const second = yield* cache.fetch("apertis", { apiKey: "test-key" }).pipe(Effect.forkChild)
+        expect(Option.isNone(yield* Fiber.join(first))).toBe(true)
+        yield* Deferred.succeed(wait, undefined)
+        const models = yield* Fiber.join(second)
+        return { models, cached: yield* cache.get("apertis") }
+      }),
+    ).pipe(Effect.provide(layer(hits, TestConfig.layer(), auth, { started, wait })))
+
+    expect(Object.keys(out.models)).toEqual(["apertis-1"])
+    expect(out.cached).toEqual(out.models)
+    expect((yield* Ref.get(hits)).length).toBe(1)
+  }),
+)
+
+it.live("commits a refresh after its only waiter times out", () =>
+  Effect.gen(function* () {
+    const hits = yield* Ref.make<Hit[]>([])
+    const started = yield* Deferred.make<void>()
+    const wait = yield* Deferred.make<void>()
+    const cached = yield* ModelCache.Service.use((cache) =>
+      Effect.gen(function* () {
+        const caller = yield* cache
+          .fetch("apertis", { apiKey: "test-key" })
+          .pipe(Effect.timeoutOption("10 millis"), Effect.forkChild)
+        yield* Deferred.await(started)
+        expect(Option.isNone(yield* Fiber.join(caller))).toBe(true)
+        yield* Deferred.succeed(wait, undefined)
+        return yield* pollWithTimeout(
+          cache.get("apertis"),
+          "service-owned refresh did not commit after its waiter timed out",
+        )
+      }),
+    ).pipe(Effect.provide(layer(hits, TestConfig.layer(), auth, { started, wait })))
+
+    expect(Object.keys(cached)).toEqual(["apertis-1"])
+    expect((yield* Ref.get(hits)).length).toBe(1)
+  }),
+)
+
+it.live("deduplicates overlapping refresh calls", () =>
+  Effect.gen(function* () {
+    const hits = yield* Ref.make<Hit[]>([])
+    const started = yield* Deferred.make<void>()
+    const wait = yield* Deferred.make<void>()
+    const out = yield* ModelCache.Service.use((cache) =>
+      Effect.gen(function* () {
+        yield* cache.fetch("apertis", { apiKey: "test-key" })
+        const first = yield* cache.refresh("apertis", { apiKey: "test-key" }).pipe(Effect.forkChild)
+        yield* Deferred.await(started)
+        const second = yield* cache.refresh("apertis", { apiKey: "test-key" }).pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        yield* Deferred.succeed(wait, undefined)
+        return { first: yield* Fiber.join(first), second: yield* Fiber.join(second) }
+      }),
+    ).pipe(Effect.provide(layer(hits, TestConfig.layer(), auth, { started, wait, count: 2 })))
+
+    expect(Object.keys(out.first)).toEqual(["apertis-2"])
+    expect(out.second).toEqual(out.first)
+    expect((yield* Ref.get(hits)).length).toBe(2)
+  }),
+)
+
 it.live("keeps concurrent request options isolated", () =>
   Effect.gen(function* () {
     const hits = yield* Ref.make<Hit[]>([])
@@ -234,6 +325,34 @@ it.live("does not let an older fetch override a newer refresh", () =>
 
     expect(models.current).toEqual(models.fresh)
     expect(Object.keys(models.current ?? {})).toEqual(["apertis-2"])
+  }),
+)
+
+it.live("promotes a cached result after a newer option load fails", () =>
+  Effect.gen(function* () {
+    const hits = yield* Ref.make<Hit[]>([])
+    const started = yield* Deferred.make<void>()
+    const wait = yield* Deferred.make<void>()
+    const out = yield* ModelCache.Service.use((cache) =>
+      Effect.gen(function* () {
+        const first = yield* cache
+          .fetch("apertis", { apiKey: "first", baseURL: "https://first.test/v1" })
+          .pipe(Effect.forkChild)
+        yield* Deferred.await(started)
+        const failed = yield* cache
+          .fetch("apertis", { apiKey: "second", baseURL: "https://second.test/v1" })
+          .pipe(Effect.exit)
+        yield* Deferred.succeed(wait, undefined)
+        yield* Fiber.join(first)
+        const models = yield* cache.fetch("apertis", { apiKey: "first", baseURL: "https://first.test/v1" })
+        return { failed, models, current: yield* cache.get("apertis") }
+      }),
+    ).pipe(Effect.provide(layer(hits, TestConfig.layer(), auth, { started, wait }, 2)))
+
+    expect(Exit.isFailure(out.failed)).toBe(true)
+    expect(Object.keys(out.models)).toEqual(["apertis-1"])
+    expect(out.current).toEqual(out.models)
+    expect((yield* Ref.get(hits)).length).toBe(2)
   }),
 )
 

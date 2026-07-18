@@ -1,9 +1,9 @@
 import { Effect } from "effect"
-import { Server } from "../../server/server"
 import { effectCmd } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { KiloShutdown } from "@/kilocode/cli/shutdown" // kilocode_change
+import { startParentWatchdog } from "../../kilocode/parent-watchdog" // kilocode_change
 
 export const ServeCommand = effectCmd({
   command: "serve",
@@ -13,6 +13,7 @@ export const ServeCommand = effectCmd({
   // need for an ambient project InstanceContext at startup.
   instance: false, // kilocode_change
   handler: Effect.fn("Cli.serve")(function* (args) {
+    const { Server } = yield* Effect.promise(() => import("../../server/server"))
     if (!Flag.KILO_SERVER_PASSWORD) {
       console.log("Warning: KILO_SERVER_PASSWORD is not set; server is unsecured.")
     }
@@ -29,7 +30,10 @@ export const ServeCommand = effectCmd({
 
     // kilocode_change start - graceful signal shutdown
     // yield* Effect.never
-    yield* Effect.promise(() => KiloShutdown.waitForServer(server))
+    const stopWatchdog = startParentWatchdog(() => process.kill(process.pid, "SIGTERM"))
+    yield* Effect.promise(() => KiloShutdown.waitForServer(server)).pipe(
+      Effect.ensuring(Effect.sync(stopWatchdog)),
+    )
     // kilocode_change end
   }),
 })

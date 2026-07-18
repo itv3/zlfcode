@@ -106,7 +106,7 @@ describe("Kilo provider transform variants", () => {
     expect(Object.keys(result)).toEqual(["none", "low", "medium", "high", "xhigh", "max"])
     expect(result.max).toEqual({
       reasoningEffort: "max",
-      reasoningSummary: "auto",
+      reasoningSummary: "detailed",
       include: ["reasoning.encrypted_content"],
     })
   })

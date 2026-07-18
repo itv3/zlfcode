@@ -1,6 +1,6 @@
 import { Config } from "@/config/config"
 import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
-import { Bus } from "@/bus"
+import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
 import { disconnect } from "@/kilocode/server/sse" // kilocode_change
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
@@ -46,11 +46,11 @@ function eventResponse(request: HttpServerRequest.HttpServerRequest) {
   })
   const heartbeat = Stream.tick("10 seconds").pipe(
     Stream.drop(1),
-    Stream.map(() => ({ payload: { id: Bus.createID(), type: "server.heartbeat", properties: {} } })),
+    Stream.map(() => ({ payload: { id: EventV2.ID.create(), type: "server.heartbeat", properties: {} } })),
   )
 
   return HttpServerResponse.stream(
-    Stream.make({ payload: { id: Bus.createID(), type: "server.connected", properties: {} } }).pipe(
+    Stream.make({ payload: { id: EventV2.ID.create(), type: "server.connected", properties: {} } }).pipe(
       Stream.concat(events.pipe(Stream.merge(heartbeat, { haltStrategy: "left" }))),
       Stream.map(eventData),
       Stream.pipeThroughChannel(Sse.encode()),

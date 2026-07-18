@@ -146,10 +146,7 @@ function publicCustomProvider(id: string, config: SanitizedProviderConfig) {
   }
 }
 
-type PublicAuthChange =
-  | { mode: "preserve" }
-  | { mode: "set"; state: AuthState }
-  | { mode: "clear" }
+type PublicAuthChange = { mode: "preserve" } | { mode: "set"; state: AuthState } | { mode: "clear" }
 
 export type ProviderChangeMessage =
   | {

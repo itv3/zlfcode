@@ -1,4 +1,5 @@
 import { ModelCache } from "@/provider/model-cache"
+import { KiloViewers } from "@/kilocode/presence/service" // kilocode_change
 import * as ModelsRefresh from "@opencode-ai/core/kilocode/models-refresh"
 import * as Log from "@opencode-ai/core/util/log"
 import { Duration, Effect } from "effect"
@@ -28,6 +29,13 @@ export const disposeAllInstancesAfterProviderAuthCallback = Effect.fn(
   }
   yield* work
 })
+
+// kilocode_change start - drop the old presence socket; callers invoke this for the "kilo" provider only
+export const invalidatePresence = Effect.fn("KiloServer.invalidatePresence")(function* () {
+  const viewers = yield* KiloViewers.Service
+  yield* viewers.invalidateAuth()
+})
+// kilocode_change end
 
 export const invalidateAfterProviderAuthChange = Effect.fn("KiloServer.invalidateAfterProviderAuthChange")(function* (
   providerID: string,
