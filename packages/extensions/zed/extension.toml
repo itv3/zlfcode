@@ -3,7 +3,7 @@ name = "Kilo"
 description = "The open source coding agent."
 # kilocode_change start
 # 同步 ZLF Code 发布版本。
-version = "7.4.1601"
+version = "7.4.1602"
 # kilocode_change end
 schema_version = 1
 authors = ["Anomaly"]
@@ -16,7 +16,7 @@ icon = "./icons/opencode.svg"
 [agent_servers.opencode.targets.darwin-aarch64]
 # kilocode_change start
 # 同步 Kilo 发布产物地址。
-archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1601/opencode-darwin-arm64.zip"
+archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1602/opencode-darwin-arm64.zip"
 # kilocode_change end
 cmd = "./opencode"
 args = ["acp"]
@@ -24,7 +24,7 @@ args = ["acp"]
 [agent_servers.opencode.targets.darwin-x86_64]
 # kilocode_change start
 # 同步 Kilo 发布产物地址。
-archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1601/opencode-darwin-x64.zip"
+archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1602/opencode-darwin-x64.zip"
 # kilocode_change end
 cmd = "./opencode"
 args = ["acp"]
@@ -32,7 +32,7 @@ args = ["acp"]
 [agent_servers.opencode.targets.linux-aarch64]
 # kilocode_change start
 # 同步 Kilo 发布产物地址。
-archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1601/opencode-linux-arm64.tar.gz"
+archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1602/opencode-linux-arm64.tar.gz"
 # kilocode_change end
 cmd = "./opencode"
 args = ["acp"]
@@ -40,7 +40,7 @@ args = ["acp"]
 [agent_servers.opencode.targets.linux-x86_64]
 # kilocode_change start
 # 同步 Kilo 发布产物地址。
-archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1601/opencode-linux-x64.tar.gz"
+archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1602/opencode-linux-x64.tar.gz"
 # kilocode_change end
 cmd = "./opencode"
 args = ["acp"]
@@ -48,7 +48,7 @@ args = ["acp"]
 [agent_servers.opencode.targets.windows-x86_64]
 # kilocode_change start
 # 同步 Kilo 发布产物地址。
-archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1601/opencode-windows-x64.zip"
+archive = "https://github.com/Kilo-Org/kilocode/releases/download/v7.4.1602/opencode-windows-x64.zip"
 # kilocode_change end
 cmd = "./opencode.exe"
 args = ["acp"]
