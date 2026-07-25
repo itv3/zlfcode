@@ -191,6 +191,11 @@ interface SessionForkedMessage {
   worktreeId?: string
 }
 
+interface SessionClosedMessage {
+  type: "agentManager.sessionClosed"
+  sessionId: string
+}
+
 interface MultiVersionProgressMessage {
   type: "agentManager.multiVersionProgress"
   status: "creating" | "done"
@@ -308,6 +313,7 @@ export type AgentManagerOutMessage =
   | ErrorOutMessage
   | SessionAddedMessage
   | SessionForkedMessage
+  | SessionClosedMessage
   | MultiVersionProgressMessage
   | SetSessionModelMessage
   | SendInitialMessage
@@ -440,7 +446,7 @@ interface CreateMultiVersionIn {
   files?: MessageFileIn[]
   baseBranch?: string
   branchName?: string
-  modelAllocations?: Array<{ providerID: string; modelID: string; count: number }>
+  modelAllocations?: Array<{ providerID: string; modelID: string; count: number; variant?: string }>
   /** When set, reconcile each created session's sandbox override to this state. */
   sandbox?: boolean
 }

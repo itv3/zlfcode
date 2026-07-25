@@ -31,6 +31,7 @@ const strict = process.argv.includes("--strict") || process.env.KILO_STRICT_CLI_
 
 const kiloVscodeDir = join(import.meta.dir, "..")
 const packagesDir = join(kiloVscodeDir, "..")
+const repoDir = join(packagesDir, "..")
 const opencodeDir = join(packagesDir, "opencode")
 const coreDir = join(packagesDir, "core")
 const gatewayDir = join(packagesDir, "kilo-gateway")
@@ -160,20 +161,20 @@ async function ensureBuiltBinary(): Promise<string> {
     `No prebuilt binary found under ${relative(kiloVscodeDir, join(opencodeDir, "dist"))} - attempting build via bun.`,
   )
 
-  const bunPath = Bun.which("bun")
-  if (!bunPath) {
+  if (!Bun.which("bun")) {
     throw new Error(
       `Bun is required to build the CLI binary, but was not found on PATH. ` +
         `Install bun, or build the CLI separately in ${opencodeDir} and re-run.`,
     )
   }
 
-  // Ensure dependencies are installed before building.
+  // Use the repository-pinned Bun version throughout. Newer canaries can fail compilation
+  // and must not cause packaged snapshots to fall back to the browser-mode source wrapper.
+  const pkg = await Bun.file(join(repoDir, "package.json")).json()
+  const bun = String(pkg.packageManager)
   log("Installing dependencies in opencode package...")
-  await $`bun install --frozen-lockfile`.cwd(opencodeDir)
-
-  // Build using the opencode package script.
-  await $`bun run build --single`.cwd(opencodeDir)
+  await $`bunx ${bun} install --frozen-lockfile`.cwd(opencodeDir)
+  await $`bunx ${bun} run build --single --skip-install`.cwd(opencodeDir)
 
   const built = await findKiloBinaryInOpencodeDist()
   if (!built) {
@@ -215,7 +216,7 @@ async function writeSourceWrapper() {
       "#!/usr/bin/env bash",
       "set -euo pipefail",
       `cd ${JSON.stringify(opencodeDir)}`,
-      `exec ${JSON.stringify(bun)} --conditions=browser src/index.ts "$@"`,
+      `exec ${JSON.stringify(bun)} --conditions=node src/index.ts "$@"`,
       "",
     ].join("\n"),
   )
@@ -266,7 +267,7 @@ async function main() {
   }
 
   const sourceBinPath = await ensureBuiltBinary().catch(async (err) => {
-    if (strict) throw err
+    if (strict || forceRebuild) throw err
     await writeSourceWrapper()
     log(`Wrapper fallback reason: ${err instanceof Error ? err.message : String(err)}`)
     return null

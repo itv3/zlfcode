@@ -2,7 +2,7 @@
   "name": "zlfcode",
   "displayName": "ZLF Code",
   "description": "ZLF Code 是面向内部使用的 AI coding agent，重点增强自定义提供商：支持 OpenAI / Anthropic / Gemini API 类型、模型自动发现、图像与推理能力、高级 token 参数和成本配置。",
-  "version": "7.4.1101",
+  "version": "7.4.1601",
   "icon": "assets/icons/zlfcode.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -289,6 +289,11 @@
       },
       {
         "command": "kilo-code.new.agentManager.newWorktree",
+        "title": "Agent Manager: Configure New Worktree",
+        "category": "Kilo Code"
+      },
+      {
+        "command": "kilo-code.new.agentManager.quickWorktree",
         "title": "Agent Manager: New Worktree",
         "category": "ZLF Code"
       },
@@ -309,7 +314,7 @@
       },
       {
         "command": "kilo-code.new.agentManager.advancedWorktree",
-        "title": "Agent Manager: Advanced New Worktree",
+        "title": "Agent Manager: Configure New Worktree",
         "category": "ZLF Code"
       },
       {
@@ -468,6 +473,10 @@
         },
         {
           "command": "kilo-code.new.sidebarTitle.kiloClawOpen",
+          "when": "false"
+        },
+        {
+          "command": "kilo-code.new.agentManager.advancedWorktree",
           "when": "false"
         },
         {
@@ -712,6 +721,12 @@
         "when": "activeWebviewPanelId == 'kilo-code.new.AgentManagerPanel'"
       },
       {
+        "command": "kilo-code.new.agentManager.quickWorktree",
+        "key": "ctrl+shift+n",
+        "mac": "cmd+shift+n",
+        "when": "activeWebviewPanelId == 'kilo-code.new.AgentManagerPanel'"
+      },
+      {
         "command": "kilo-code.new.agentManager.openWorktree",
         "key": "ctrl+shift+o",
         "mac": "cmd+shift+o",
@@ -727,12 +742,6 @@
         "command": "kilo-code.new.agentManager.closeWorktree",
         "key": "ctrl+shift+w",
         "mac": "cmd+shift+w",
-        "when": "activeWebviewPanelId == 'kilo-code.new.AgentManagerPanel'"
-      },
-      {
-        "command": "kilo-code.new.agentManager.advancedWorktree",
-        "key": "ctrl+shift+n",
-        "mac": "cmd+shift+n",
         "when": "activeWebviewPanelId == 'kilo-code.new.AgentManagerPanel'"
       },
       {
@@ -1118,6 +1127,16 @@
           "default": true,
           "description": "Show the task timeline graph in the chat header"
         },
+        "kilo-code.new.showTokenThroughput": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show tokens-per-second (prompt-processing / text-generation) badges on assistant messages and the task header"
+        },
+        "kilo-code.new.chat.shiftTabCyclesVariant": {
+          "type": "boolean",
+          "default": true,
+          "description": "Cycle through reasoning effort variants with Shift+Tab in prompt inputs. Disable to keep Shift+Tab for keyboard focus navigation."
+        },
         "kilo-code.new.agentWorkStyle": {
           "type": "string",
           "scope": "application",
@@ -1156,9 +1175,8 @@
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "bun run compile-tests && bun run compile && bun run lint",
     "check-types": "tsc --noEmit",
-    "check-types:webview": "bun script/typecheck.ts --project webview-ui/tsconfig.json",
-    "typecheck": "bun run check-types:extension && bun run check-types:webview",
-    "check-types:extension": "bun script/typecheck.ts",
+    "check-types:webview": "tsc --noEmit --project webview-ui/tsconfig.json",
+    "typecheck": "bun run check-types && bun run check-types:webview",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "knip": "knip",

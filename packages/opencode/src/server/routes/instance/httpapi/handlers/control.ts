@@ -4,12 +4,13 @@ import {
   invalidateAfterProviderAuthChange,
   invalidatePresence,
 } from "@/kilocode/server/provider-auth-lifecycle" // kilocode_change
-import * as Log from "@opencode-ai/core/util/log"
+import * as Log from "@opencode-ai/core/util/log" // kilocode_change
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { RootHttpApi } from "../api"
 import { LogInput } from "../groups/control"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { remove as removeAuth } from "@/kilocode/auth/remove" // kilocode_change
 
 export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (handlers) =>
   Effect.gen(function* () {
@@ -45,14 +46,21 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
     const authRemove = Effect.fn("ControlHttpApi.authRemove")(function* (ctx: {
       params: { providerID: ProviderV2.ID }
     }) {
-      yield* auth.remove(ctx.params.providerID).pipe(Effect.orDie)
+      yield* removeAuth(ctx.params.providerID)
       yield* invalidate(ctx.params.providerID) // kilocode_change
       return true
     })
 
     const log = Effect.fn("ControlHttpApi.log")(function* (ctx: { payload: typeof LogInput.Type }) {
-      const logger = Log.create({ service: ctx.payload.service })
-      logger[ctx.payload.level](ctx.payload.message, ctx.payload.extra)
+      const write =
+        ctx.payload.level === "debug"
+          ? Effect.logDebug
+          : ctx.payload.level === "info"
+            ? Effect.logInfo
+            : ctx.payload.level === "warn"
+              ? Effect.logWarning
+              : Effect.logError
+      yield* write(ctx.payload.message).pipe(Effect.annotateLogs(ctx.payload.extra ?? {}))
       return true
     })
 

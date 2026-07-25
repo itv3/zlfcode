@@ -24,14 +24,14 @@ const allow: Record<string, string> = {
   "cli/cmd/run/runtime.boot.ts": "direct run startup resolver runtime boundary",
   "cli/cmd/run/stream.transport.ts": "per-subscription direct run transport runtime boundary",
   "cli/cmd/run/variant.shared.ts": "direct run variant persistence runtime boundary with test filesystem injection",
-  "cli/cmd/tui/config/tui.ts": "separately tracked TUI config facade",
+  "config/tui.ts": "separately tracked TUI config facade moved by the upstream TUI extraction",
   "installation/index.ts": "existing installation facade outside #10655",
 }
 
 const testAllow: Record<string, { count: number; reason: string }> = {
+  "preload.ts": { count: 2, reason: "global test-suite AppRuntime cleanup boundary" },
   "kilocode/config-resilience.test.ts": { count: 4, reason: "existing runtime integration test" },
   "kilocode/config-validation.test.ts": { count: 2, reason: "existing runtime integration test" },
-  "kilocode/cli-shutdown.test.ts": { count: 1, reason: "mocked runtime boundary for shutdown unit tests" },
   "kilocode/plan-followup.test.ts": { count: 3, reason: "existing runtime integration test" },
   "kilocode/session-compaction-chunks.test.ts": {
     count: 2,
@@ -41,9 +41,17 @@ const testAllow: Record<string, { count: number; reason: string }> = {
     count: 2,
     reason: "disk-backed instance integration test cleanup",
   },
+  "kilocode/kilo-sessions.test.ts": {
+    count: 4,
+    reason:
+      "K1 W1: real integration test for SessionStatus→detach→heartbeat-fence; " +
+      "the test creates a session and sets its status via the global AppRuntime, " +
+      "then drives the module-level KiloSessions seams and verifies the fence.",
+  },
   "kilocode/session/platform-attribution.test.ts": { count: 2, reason: "existing runtime integration test" },
   "kilocode/session-prompt-queue.test.ts": { count: 6, reason: "prompt queue legacy instance bridge regression" },
   "server/experimental-session-list.test.ts": { count: 2, reason: "Kilo session list integration test" },
+  "kilocode/server/cloud-session-import.test.ts": { count: 5, reason: "full app cloud import transaction integration" },
   "kilocode/server/listener-runtime.test.ts": { count: 4, reason: "listener and AppRuntime integration test" },
   "tool/recall.test.ts": { count: 11, reason: "existing runtime integration test" },
 }

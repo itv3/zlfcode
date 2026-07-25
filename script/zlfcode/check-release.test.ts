@@ -19,6 +19,8 @@ test("发布批次严格映射为市场版本", () => {
 
 test("一致的实际发布文件通过校验", async () => {
   const root = await fixture()
+  await mkdir(join(root, "packages/app/dist/generated"), { recursive: true })
+  await Bun.write(join(root, "packages/app/dist/generated/package.json"), JSON.stringify({ version: "0.0.0-dev" }))
   const result = await validate(root, "zlfcode-v7.4.5-v0.07")
   expect(result.errors).toEqual([])
 })

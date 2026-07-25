@@ -6,10 +6,10 @@ ZLF Code 是面向内部使用的 AI coding agent。当前版本已接入官方 
 
 | 项 | 值 |
 |---|---|
-| 上游底座 | Kilo Code `v7.4.5` |
-| ZLF 自定义版本 | `v0.08` |
-| 发布批次 | `7.4.11-v0.01` |
-| 市场版本 | `7.4.1101` |
+| 上游底座 | Kilo Code `v7.4.16` |
+| ZLF 自定义版本 | `v0.01` |
+| 发布批次 | `7.4.16-v0.01` |
+| 市场版本 | `7.4.1601` |
 | 扩展 ID | `itv3.zlfcode` |
 | `publisher` | `itv3` |
 | `name` | `zlfcode` |
@@ -18,7 +18,7 @@ ZLF Code 是面向内部使用的 AI coding agent。当前版本已接入官方 
 | Open VSX | `https://open-vsx.org/extension/itv3/zlfcode` |
 | GitHub 仓库 | `https://github.com/itv3/zlfcode` |
 
-VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，所以市场页面显示 `7.4.1101`。GitHub tag、GitHub Release 和 VSIX 文件名使用发布批次 `7.4.11-v0.01`。发布批次 `A.B.C-v0.NN` 必须映射为市场版本 `A.B.CNN`，发布 workflow 会在构建前强制校验该映射、同步包版本、发布说明和当前版本文档。
+VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，所以市场页面显示 `7.4.1601`。GitHub tag、GitHub Release 和 VSIX 文件名使用发布批次 `7.4.16-v0.01`。发布批次 `A.B.C-v0.NN` 必须映射为市场版本 `A.B.CNN`，发布 workflow 会在构建前强制校验该映射、同步包版本、发布说明和当前版本文档。
 
 ## 维护原则
 
@@ -237,14 +237,14 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 标准发布目标平台：`darwin-arm64`、`darwin-x64`、`win32-x64`、`win32-arm64`、`linux-x64`、`linux-arm64`。
 
 ```bash
-git tag zlfcode-v7.4.11-v0.01
-git push origin zlfcode-v7.4.11-v0.01
+git tag zlfcode-v7.4.16-v0.01
+git push origin zlfcode-v7.4.16-v0.01
 ```
 
-发布前必须准备 `.github/release-notes/zlfcode-v7.4.11-v0.01.md`，并确认所有同步包版本都是 `7.4.1101`。运行以下校验可在打标签前检查版本映射、同步包、发布说明和文档：
+发布前必须准备 `.github/release-notes/zlfcode-v7.4.16-v0.01.md`，并确认所有同步包版本都是 `7.4.1601`。运行以下校验可在打标签前检查版本映射、同步包、发布说明和文档：
 
 ```bash
-bun run script/zlfcode/check-release.ts zlfcode-v7.4.11-v0.01
+bun run script/zlfcode/check-release.ts zlfcode-v7.4.16-v0.01
 ```
 
 发布前检查：
@@ -275,7 +275,7 @@ bun run prepare:cli-binary -- --force
 bun run rebuild-sdk
 bun run typecheck
 node esbuild.js --production
-./node_modules/.bin/vsce package --no-dependencies --skip-license --target darwin-arm64 -o out/zlfcode-7.4.11-v0.01-darwin-arm64.vsix
+./node_modules/.bin/vsce package --no-dependencies --skip-license --target darwin-arm64 -o out/zlfcode-7.4.16-v0.01-darwin-arm64.vsix
 ```
 
 安装到 Cursor 后验收：
@@ -283,7 +283,7 @@ node esbuild.js --production
 | 项 | 期望 |
 |---|---|
 | 扩展详情页 | 显示 `ZLF Code` 和中文 ZLF 说明。 |
-| 扩展版本 | 显示市场版本 `7.4.1101`。 |
+| 扩展版本 | 显示市场版本 `7.4.1601`。 |
 | 关于页面 | 版本信息不显示 `unknown`。 |
 | 自定义 provider | OpenAI / Anthropic / Gemini 模型发现、保存、请求头、图片能力、推理能力、默认推理强度、token limit、成本选项和候选模型预览正常；选择候选模型会覆盖自动默认参数并保留后续手动调整。 |
 | Provider 热更新 | 后端启动后给已有自定义 Provider 新增模型，保存后无需重启即可选择并发送；删除后模型立即从聊天选择器消失；重新添加后可立即发送。 |

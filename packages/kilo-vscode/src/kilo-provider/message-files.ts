@@ -20,7 +20,11 @@ const file = z
     filename: z.string().optional(),
     source: source.optional(),
   })
-  .refine((data) => Boolean(data.path) || Boolean(data.url?.startsWith("file://") || data.url?.startsWith("data:")))
+  .refine(
+    (data) =>
+      Boolean(data.path) ||
+      Boolean(data.url?.startsWith("file://") || data.url?.startsWith("data:") || data.url?.startsWith("session:")),
+  )
 
 export type MessageFile = z.infer<typeof file>
 

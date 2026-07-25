@@ -26,6 +26,7 @@ export async function validate(root: string, tag: string) {
 
   for await (const rel of glob.scan({ cwd: root, onlyFiles: true })) {
     if (rel.includes("node_modules/")) continue
+    if (rel.startsWith("dist/") || rel.includes("/dist/")) continue
     if (rel.startsWith(".") || rel.includes("/.")) continue
     if (rel.startsWith("packages/kilo-jetbrains/")) continue
 
