@@ -926,6 +926,9 @@ export const dict = {
   "provider.custom.field.apiKey.placeholder": "Optional; leave empty when using header auth",
   "provider.custom.field.apiKey.placeholder.saved": "Saved; leave empty to keep it, or enter a new key to replace it",
   "provider.custom.field.apiKey.description": "Optional. Leave empty if you manage auth via headers.",
+  "provider.custom.field.websocket.label": "Enable WebSocket",
+  "provider.custom.field.websocket.description":
+    "Requires OpenAI Responses WebSocket support. Failures fall back to HTTP using the built-in retry policy.",
   "provider.custom.models.label": "Models",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

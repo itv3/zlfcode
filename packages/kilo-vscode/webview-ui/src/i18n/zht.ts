@@ -938,6 +938,9 @@ export const dict = {
   "provider.custom.field.apiKey.placeholder": "選填，使用標頭驗證時留空",
   "provider.custom.field.apiKey.placeholder.saved": "已儲存，留空則保留；輸入新 KEY 則替換",
   "provider.custom.field.apiKey.description": "選填。如果您透過標頭管理驗證，請留空。",
+  "provider.custom.field.websocket.label": "啟用 WebSocket",
+  "provider.custom.field.websocket.description":
+    "需要服務端支援 OpenAI Responses WebSocket；失敗時依內建重試策略回退 HTTP。",
   "provider.custom.models.label": "模型",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

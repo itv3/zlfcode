@@ -112,6 +112,34 @@ describe("sanitizeCustomProviderConfig", () => {
     })
   })
 
+  it("preserves the WebSocket option for OpenAI Responses providers", () => {
+    const result = sanitizeCustomProviderConfig({
+      npm: "@ai-sdk/openai",
+      name: "Responses Provider",
+      options: {
+        baseURL: "https://example.com/v1",
+        websocket: true,
+      },
+      models: {
+        "gpt-5": { name: "GPT-5" },
+      },
+    })
+
+    expect(result).toEqual({
+      value: {
+        npm: "@ai-sdk/openai",
+        name: "Responses Provider",
+        options: {
+          baseURL: "https://example.com/v1",
+          websocket: true,
+        },
+        models: {
+          "gpt-5": { name: "GPT-5" },
+        },
+      },
+    })
+  })
+
   it("preserves model modalities and token limits", () => {
     const result = sanitizeCustomProviderConfig({
       npm: "@ai-sdk/google",
@@ -550,6 +578,15 @@ describe("withCustomProviderDeletions", () => {
     }
     const result = withCustomProviderDeletions(existing, baseNext)
     expect(result.options).toEqual({ baseURL: "https://example.com/v1", headers: null })
+  })
+
+  it("emits null when WebSocket is disabled", () => {
+    const existing = {
+      options: { baseURL: "https://example.com/v1", websocket: true },
+      models: { keep: { name: "Keep" } },
+    }
+    const result = withCustomProviderDeletions(existing, baseNext)
+    expect(result.options).toEqual({ baseURL: "https://example.com/v1", websocket: null })
   })
 
   it("emits null for individual provider headers removed from the next config", () => {

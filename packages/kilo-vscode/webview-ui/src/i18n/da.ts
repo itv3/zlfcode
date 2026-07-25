@@ -1008,6 +1008,9 @@ export const dict = {
   "provider.custom.field.apiKey.label": "API-nøgle",
   "provider.custom.field.apiKey.placeholder": "API-nøgle",
   "provider.custom.field.apiKey.description": "Valgfrit. Lad stå tom, hvis du administrerer godkendelse via headers.",
+  "provider.custom.field.websocket.label": "Aktivér WebSocket",
+  "provider.custom.field.websocket.description":
+    "Kræver understøttelse af OpenAI Responses WebSocket. Ved fejl bruges HTTP i henhold til den indbyggede genforsøgspolitik.",
   "provider.custom.models.label": "Modeller",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

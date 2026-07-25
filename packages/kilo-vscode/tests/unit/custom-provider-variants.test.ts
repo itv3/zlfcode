@@ -23,6 +23,7 @@ function save(variants: VariantEntry[]) {
     npm: "@ai-sdk/openai-compatible",
     baseURL: "https://example.com/v1",
     apiKey: "",
+    websocket: false,
     models: [
       {
         id: "gpt-5.6-sol",

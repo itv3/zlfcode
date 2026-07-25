@@ -1005,6 +1005,9 @@ export const dict = {
   "provider.custom.field.apiKey.label": "APIキー",
   "provider.custom.field.apiKey.placeholder": "APIキー",
   "provider.custom.field.apiKey.description": "任意。ヘッダーで認証を管理する場合は空のままにしてください。",
+  "provider.custom.field.websocket.label": "WebSocketを有効化",
+  "provider.custom.field.websocket.description":
+    "OpenAI Responses WebSocketへの対応が必要です。失敗した場合は、組み込みの再試行ポリシーに従ってHTTPへフォールバックします。",
   "provider.custom.models.label": "モデル",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

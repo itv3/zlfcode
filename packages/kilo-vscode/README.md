@@ -13,6 +13,7 @@
 | 功能 | 说明 |
 |---|---|
 | API 格式 | 自定义提供商支持 OpenAI / Anthropic / Gemini 三种原生格式 API。 |
+| Responses WebSocket | Provider API 选择 `OpenAI Responses` 时可单独启用 WebSocket；默认关闭，连接失败时自动回退 HTTP。 |
 | 模型自动发现 | 支持 OpenAI、Anthropic、Gemini，并自动处理 endpoint 和认证头。 |
 | 自动发现列表交互 | 默认不全选，已添加模型不再显示，删除已添加模型后会重新拉取模型列表。 |
 | 高级参数配置 | 支持配置图像输入能力、推理能力、`context token limit`、`output token limit`，以及输入、输出、缓存读取、缓存写入成本。 |

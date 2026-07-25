@@ -38,6 +38,7 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 | 功能 | 说明 |
 |---|---|
 | API 格式 | 自定义提供商支持 OpenAI / Anthropic / Gemini 三种原生格式 API。 |
+| Responses WebSocket | Provider API 选择 `OpenAI Responses` 时可为当前自定义 Provider 单独启用 WebSocket；默认关闭，连接失败时自动回退 HTTP。 |
 | 模型自动发现 | 支持 OpenAI、Anthropic、Gemini，并自动处理 endpoint 和认证头。 |
 | 自动发现交互优化 | 默认不全选，已添加模型不再显示，删除已添加模型后会重新拉取模型列表。 |
 | 高级参数配置 | 支持配置图像输入能力、推理能力、`context token limit`、`output token limit`，以及输入、输出、缓存读取、缓存写入成本。 |
@@ -57,6 +58,8 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 | `@ai-sdk/google` | `gemini` | 自动补到 `/v1beta`，发现时拼 `/models` 并使用 Gemini key。 |
 
 - 编辑已有 provider 时，webview 不接收已保存的 API key。扩展端只在 providerID、发现协议和规范化后的 `baseURL` 都匹配时，才复用已保存 key 或 `{env:VAR}`；内置 `openai` / `anthropic` / `google` provider ID 不进入这份缓存。
+- 自定义 Provider 选择 `@ai-sdk/openai` 时，API key 同一行显示“启用 WebSocket”；勾选后保存为当前 Provider 的 `options.websocket: true`，不依赖进程级 `KILO_EXPERIMENTAL_WEBSOCKETS`。
+- WebSocket 只接管带 session affinity 的流式 `/v1/responses` 请求；标题生成、非流式请求和其他 endpoint 继续使用 HTTP，连接失败时沿用内置重试与 HTTP 回退策略。内置 `openai` Provider 仍保留原有环境变量开关，避免重复注入 transport。
 - 模型卡片保存字段覆盖 `modalities`、`reasoning`、`limit.context`、`limit.output`、`cost`、`variants` 和 `options.headers`。
 - 成本字段只有勾选“成本选项”时才校验和保存；`limit.context` 与 `limit.output` 必须成对填写。
 - 删除模型、variant 或模型属性时，保存路径写入 `null` 删除哨兵，再由配置合并和 `stripNulls` 清理旧字段。
@@ -80,6 +83,7 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 | Webview UI | `CustomProviderModelCard.tsx` | 模型字段、能力、成本和 token limit 编辑。 |
 | Webview UI | `CustomProviderValidation.ts` | 保存前校验。 |
 | Webview UI | `CustomProviderVariants.ts` | reasoning variant 编辑。 |
+| `opencode` Kilo 边界 | `packages/opencode/src/kilocode/provider/openai-websocket.ts` | 将自定义 Provider 的配置开关转换为 Responses WebSocket transport。 |
 | `opencode` 触点 | `packages/opencode/src/config/provider.ts` | 删除哨兵。 |
 | `opencode` 触点 | `packages/opencode/src/provider/transform.ts` | provider transform 兼容。 |
 | `opencode` Kilo 边界 | `packages/opencode/src/kilocode/provider/{provider,transform}.ts` | Kilo 专属 provider transform。 |
@@ -93,7 +97,7 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 
 - `Provider.getModel()`、Provider 列表和语言模型加载在读取缓存前检查最新配置快照，保证新模型能够立即使用，已删除模型不会残留。
 - 一次全局配置保存会刷新所有已活动工作区实例；项目配置更新只刷新对应工作区。
-- 目标 Provider 更新时精确清理语言模型、SDK 和 loader 缓存，保留其他 Provider 的认证、SDK、语言模型实例和运行时状态。
+- 目标 Provider 更新时精确清理语言模型、SDK、WebSocket transport 和 loader 缓存，保留其他 Provider 的认证、SDK、语言模型实例和运行时状态。
 - 每个 Provider 维护独立 version，配置更新前启动的异步 SDK 或语言模型加载不能回写新缓存。
 - 配置快照通过信号量串行应用，连续快速保存以后一次配置为准。
 - 设置页保存以配置 PATCH 成功为完成条件，不阻塞等待远端模型目录或 `/provider/ready`；模型目录使用缓存复用、single-flight 和后台刷新。
@@ -286,6 +290,7 @@ node esbuild.js --production
 | 扩展版本 | 显示市场版本 `7.4.1601`。 |
 | 关于页面 | 版本信息不显示 `unknown`。 |
 | 自定义 provider | OpenAI / Anthropic / Gemini 模型发现、保存、请求头、图片能力、推理能力、默认推理强度、token limit、成本选项和候选模型预览正常；选择候选模型会覆盖自动默认参数并保留后续手动调整。 |
+| Responses WebSocket | 自定义 Provider 选择 `OpenAI Responses` 后显示 WebSocket 开关；开启并保存后流式对话使用 WebSocket，标题请求使用 HTTP，WebSocket 失败时可回退 HTTP；关闭后恢复纯 HTTP。 |
 | Provider 热更新 | 后端启动后给已有自定义 Provider 新增模型，保存后无需重启即可选择并发送；删除后模型立即从聊天选择器消失；重新添加后可立即发送。 |
 | 多 Webview 同步 | 同时打开聊天和设置页，Provider 模型变化在两个界面同步，迟到快照不会恢复已删除模型。 |
 | 默认推理强度 | 候选参数带入后选择 `Max`，当前选择框立即显示 `Max`；保存退出后重新进入仍显示 `Max`。 |

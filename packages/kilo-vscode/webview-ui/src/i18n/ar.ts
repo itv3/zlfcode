@@ -950,6 +950,9 @@ export const dict = {
   "provider.custom.field.apiKey.label": "مفتاح API",
   "provider.custom.field.apiKey.placeholder": "مفتاح API",
   "provider.custom.field.apiKey.description": "اختياري. اتركه فارغاً إذا كنت تدير المصادقة عبر الرؤوس.",
+  "provider.custom.field.websocket.label": "تمكين WebSocket",
+  "provider.custom.field.websocket.description":
+    "يتطلب دعم OpenAI Responses WebSocket. عند الفشل، يتم الرجوع إلى HTTP وفقاً لسياسة إعادة المحاولة المدمجة.",
   "provider.custom.models.label": "النماذج",
   "provider.custom.models.id.label": "المعرف",
   "provider.custom.models.id.placeholder": "model-id",

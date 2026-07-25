@@ -14,6 +14,7 @@ export type FormState = {
   npm: CustomProviderPackage
   baseURL: string
   apiKey: string
+  websocket: boolean
   models: ModelEntry[]
   headers: HeaderRow[]
   saving: boolean
@@ -57,7 +58,7 @@ type ValidateResult = {
       npm: CustomProviderPackage
       name: string
       env?: string[]
-      options: { baseURL: string; headers?: Record<string, string> }
+      options: { baseURL: string; headers?: Record<string, string>; websocket?: true }
       models: Record<string, unknown>
     }
   }
@@ -316,6 +317,7 @@ export function validateCustomProvider(input: ValidateArgs): ValidateResult {
   const options = {
     baseURL,
     ...(Object.keys(headers).length ? { headers } : {}),
+    ...(input.form.npm === "@ai-sdk/openai" && input.form.websocket ? { websocket: true as const } : {}),
   }
 
   return {

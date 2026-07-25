@@ -1,4 +1,5 @@
 import { Button } from "@kilocode/kilo-ui/button"
+import { Checkbox } from "@kilocode/kilo-ui/checkbox"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { Dialog } from "@kilocode/kilo-ui/dialog"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
@@ -223,12 +224,16 @@ function resolveAuth(existing: ExistingProvider | undefined, states: Record<stri
 
 function initForm(existing: ExistingProvider | undefined): FormState {
   const npm = existing?.config?.npm
+  const options = existing?.config?.options as
+    | { baseURL?: string; headers?: Record<string, string>; websocket?: boolean }
+    | undefined
   return {
     providerID: existing?.providerID ?? "",
     name: existing?.name ?? "",
     npm: isCustomProviderPackage(npm) ? npm : CUSTOM_PROVIDER_PACKAGE,
-    baseURL: (existing?.config?.options as { baseURL?: string } | undefined)?.baseURL ?? "",
+    baseURL: options?.baseURL ?? "",
     apiKey: "",
+    websocket: options?.websocket === true,
     models: initModels(existing?.config),
     headers: initHeaders(existing?.config),
     saving: false,
@@ -1008,21 +1013,43 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                 />
               </div>
             </div>
-            <TextField
-              type="password"
-              label={language.t("provider.custom.field.apiKey.label")}
-              placeholder={
-                editing() && auth === "api" && !apiTouched()
-                  ? language.t("provider.custom.field.apiKey.placeholder.saved")
-                  : language.t("provider.custom.field.apiKey.placeholder")
-              }
-              value={form.apiKey}
-              onChange={(v) => {
-                setApiTouched(true)
-                setForm("apiKey", v)
-                setFetchKey(v)
+            <div
+              style={{
+                display: "flex",
+                "align-items": "flex-end",
+                gap: "16px",
+                "flex-wrap": "wrap",
               }}
-            />
+            >
+              <div style={{ flex: "1 1 300px", "min-width": "0" }}>
+                <TextField
+                  type="password"
+                  label={language.t("provider.custom.field.apiKey.label")}
+                  placeholder={
+                    editing() && auth === "api" && !apiTouched()
+                      ? language.t("provider.custom.field.apiKey.placeholder.saved")
+                      : language.t("provider.custom.field.apiKey.placeholder")
+                  }
+                  value={form.apiKey}
+                  onChange={(v) => {
+                    setApiTouched(true)
+                    setForm("apiKey", v)
+                    setFetchKey(v)
+                  }}
+                />
+              </div>
+              <Show when={form.npm === "@ai-sdk/openai"}>
+                <div style={{ "padding-bottom": "7px" }}>
+                  <Checkbox
+                    checked={form.websocket}
+                    onChange={(value) => setForm("websocket", value)}
+                    title={language.t("provider.custom.field.websocket.description")}
+                  >
+                    {language.t("provider.custom.field.websocket.label")}
+                  </Checkbox>
+                </div>
+              </Show>
+            </div>
           </div>
 
           {/* 模型 */}

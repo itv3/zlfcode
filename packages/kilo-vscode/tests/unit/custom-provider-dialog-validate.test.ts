@@ -13,6 +13,7 @@ function base(): FormState {
     npm: "@ai-sdk/openai-compatible",
     baseURL: "https://example.com/v1",
     apiKey: "",
+    websocket: false,
     models: [
       {
         id: "model-1",
@@ -51,6 +52,17 @@ describe("validateCustomProvider – variant name validation", () => {
     form.npm = "@ai-sdk/openai"
 
     expect(validateCustomProvider(args(form)).result?.config.npm).toBe("@ai-sdk/openai")
+  })
+
+  it("persists WebSocket only for OpenAI Responses providers", () => {
+    const form = base()
+    form.npm = "@ai-sdk/openai"
+    form.websocket = true
+
+    expect(validateCustomProvider(args(form)).result?.config.options.websocket).toBe(true)
+
+    form.npm = "@ai-sdk/openai-compatible"
+    expect(validateCustomProvider(args(form)).result?.config.options.websocket).toBeUndefined()
   })
 
   it("allows reconnecting a disabled provider id", () => {

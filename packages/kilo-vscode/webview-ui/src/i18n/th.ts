@@ -998,6 +998,9 @@ export const dict = {
   "provider.custom.field.apiKey.label": "คีย์ API",
   "provider.custom.field.apiKey.placeholder": "คีย์ API",
   "provider.custom.field.apiKey.description": "ไม่จำเป็น เว้นว่างไว้หากคุณจัดการการรับรองความถูกต้องผ่านส่วนหัว",
+  "provider.custom.field.websocket.label": "เปิดใช้ WebSocket",
+  "provider.custom.field.websocket.description":
+    "ต้องรองรับ OpenAI Responses WebSocket หากล้มเหลว ระบบจะเปลี่ยนกลับไปใช้ HTTP ตามนโยบายการลองใหม่ในตัว",
   "provider.custom.models.label": "โมเดล",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

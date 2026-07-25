@@ -959,6 +959,9 @@ export const dict = {
   "provider.custom.field.apiKey.placeholder": "API anahtarı",
   "provider.custom.field.apiKey.description":
     "İsteğe bağlı. Kimlik doğrulamayı başlıklar ile yönetiyorsanız boş bırakın.",
+  "provider.custom.field.websocket.label": "WebSocket'i etkinleştir",
+  "provider.custom.field.websocket.description":
+    "OpenAI Responses WebSocket desteği gerektirir. Başarısız olursa yerleşik yeniden deneme politikasına göre HTTP'ye geri döner.",
   "provider.custom.models.label": "Modeller",
   "provider.custom.models.id.label": "Kimlik",
   "provider.custom.models.id.placeholder": "model-kimlik",

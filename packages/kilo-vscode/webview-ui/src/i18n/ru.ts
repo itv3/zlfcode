@@ -1012,6 +1012,9 @@ export const dict = {
   "provider.custom.field.apiKey.placeholder": "API-ключ",
   "provider.custom.field.apiKey.description":
     "Необязательно. Оставьте пустым, если вы управляете аутентификацией через заголовки.",
+  "provider.custom.field.websocket.label": "Включить WebSocket",
+  "provider.custom.field.websocket.description":
+    "Требуется поддержка OpenAI Responses WebSocket. При сбое выполняется переход на HTTP согласно встроенной политике повторных попыток.",
   "provider.custom.models.label": "Модели",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

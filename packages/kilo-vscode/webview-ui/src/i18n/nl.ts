@@ -962,6 +962,9 @@ export const dict = {
   "provider.custom.field.apiKey.label": "API-sleutel",
   "provider.custom.field.apiKey.placeholder": "API-sleutel",
   "provider.custom.field.apiKey.description": "Optioneel. Laat leeg als je authenticatie via headers beheert.",
+  "provider.custom.field.websocket.label": "WebSocket inschakelen",
+  "provider.custom.field.websocket.description":
+    "Vereist ondersteuning voor OpenAI Responses WebSocket. Bij fouten wordt volgens het ingebouwde retrybeleid teruggevallen op HTTP.",
   "provider.custom.models.label": "Modellen",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

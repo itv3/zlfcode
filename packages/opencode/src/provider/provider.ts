@@ -45,6 +45,7 @@ import {
 } from "@/kilocode/provider/provider"
 import * as ModelsRefresh from "@/kilocode/provider/models-refresh"
 import * as ConfigRefresh from "@/kilocode/provider/config-refresh"
+import * as KiloOpenAIWebSocket from "@/kilocode/provider/openai-websocket"
 // kilocode_change end
 import { ProviderError } from "./error"
 
@@ -1173,6 +1174,7 @@ interface State {
   providers: Record<ProviderV2.ID, Info>
   catalog: Record<ProviderV2.ID, Info>
   sdk: Map<string, BundledSDK>
+  websockets: Map<string, KiloOpenAIWebSocket.Transport> // kilocode_change - 自定义 OpenAI Responses 连接池
   modelLoaders: Record<string, CustomModelLoader>
   varsLoaders: Record<string, CustomVarsLoader>
   version: Map<ProviderV2.ID, number> // kilocode_change - 防止配置更新前的异步加载回写旧模型缓存
@@ -1359,6 +1361,15 @@ export const layer = Layer.effect(
           [providerID: string]: CustomVarsLoader
         } = {}
         const sdk = new Map<string, BundledSDK>()
+        const websockets = new Map<string, KiloOpenAIWebSocket.Transport>() // kilocode_change
+        // kilocode_change start - Provider 实例释放时关闭自定义 WebSocket
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            for (const transport of websockets.values()) transport.close()
+            websockets.clear()
+          }),
+        )
+        // kilocode_change end
         const discoveryLoaders: {
           [providerID: string]: CustomDiscoverModels
         } = {}
@@ -1682,6 +1693,7 @@ export const layer = Layer.effect(
           providers,
           catalog,
           sdk,
+          websockets, // kilocode_change
           modelLoaders,
           varsLoaders,
           version: new Map(), // kilocode_change
@@ -1785,7 +1797,11 @@ export const layer = Layer.effect(
         if (existing) return existing
         const version = s.version.get(model.providerID) ?? 0 // kilocode_change
 
-        const customFetch = options["fetch"]
+        // kilocode_change start - 为自定义 OpenAI Responses Provider 注入独立 WebSocket transport
+        const websocketFetch = KiloOpenAIWebSocket.create(model.providerID, model.api.npm, options)
+        if (websocketFetch) s.websockets.set(key, websocketFetch)
+        const customFetch = websocketFetch ?? options["fetch"]
+        // kilocode_change end
         const chunkTimeout = options["chunkTimeout"]
         const headerTimeout = options["headerTimeout"]
         delete options["chunkTimeout"]

@@ -27,6 +27,7 @@ import {
 import { Identity } from "@kilocode/kilo-telemetry"
 import { KiloSession } from "@/kilocode/session"
 import { stripInternalOptions } from "@/kilocode/agent/options"
+import * as KiloOpenAIWebSocket from "@/kilocode/provider/openai-websocket"
 // kilocode_change end
 
 type PrepareInput = {
@@ -241,6 +242,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       ...(isKilo ? { [HEADER_TASKID]: input.sessionID } : {}),
       ...(isKilo && parent ? { [HEADER_PARENT_TASKID]: parent } : {}),
       ...(isKilo && attr.feature ? { [HEADER_FEATURE]: attr.feature } : {}),
+      ...KiloOpenAIWebSocket.headers(input.provider.id, input.model.api.npm, input.provider.options, input.agent.name),
       // kilocode_change end
       ...input.model.headers,
       ...headers,

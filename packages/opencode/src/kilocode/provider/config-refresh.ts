@@ -25,6 +25,7 @@ type Runtime<Model, SDK, Loader, Vars> = {
   providers: Record<ProviderV2.ID, Info>
   catalog: Record<ProviderV2.ID, Info>
   sdk: Map<string, SDK>
+  websockets: Map<string, { close(): void }>
   modelLoaders: Record<string, Loader>
   varsLoaders: Record<string, Vars>
   version: Map<ProviderV2.ID, number>
@@ -202,6 +203,11 @@ export function refresh<Model, SDK, Loader, Vars>(input: RefreshInput<Model, SDK
         }
         for (const key of input.state.sdk.keys()) {
           if (key.startsWith(prefix)) input.state.sdk.delete(key)
+        }
+        for (const [key, transport] of input.state.websockets) {
+          if (!key.startsWith(prefix)) continue
+          transport.close()
+          input.state.websockets.delete(key)
         }
         delete input.state.modelLoaders[item.id]
         delete input.state.varsLoaders[item.id]

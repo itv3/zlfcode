@@ -1015,6 +1015,9 @@ export const dict = {
   "provider.custom.field.apiKey.placeholder": "API ključ",
   "provider.custom.field.apiKey.description":
     "Opcionalno. Ostavi prazno ako upravljaš autentifikacijom putem zaglavlja.",
+  "provider.custom.field.websocket.label": "Omogući WebSocket",
+  "provider.custom.field.websocket.description":
+    "Zahtijeva podršku za OpenAI Responses WebSocket. U slučaju greške vraća se na HTTP prema ugrađenoj politici ponovnih pokušaja.",
   "provider.custom.models.label": "Modeli",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

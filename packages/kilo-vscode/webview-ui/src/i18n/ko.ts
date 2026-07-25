@@ -959,6 +959,9 @@ export const dict = {
   "provider.custom.field.apiKey.label": "API 키",
   "provider.custom.field.apiKey.placeholder": "API 키",
   "provider.custom.field.apiKey.description": "선택사항. 헤더로 인증을 관리하는 경우 비워두세요.",
+  "provider.custom.field.websocket.label": "WebSocket 활성화",
+  "provider.custom.field.websocket.description":
+    "OpenAI Responses WebSocket 지원이 필요합니다. 실패하면 기본 재시도 정책에 따라 HTTP로 전환됩니다.",
   "provider.custom.models.label": "모델",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

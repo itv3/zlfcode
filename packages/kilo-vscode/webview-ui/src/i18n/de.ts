@@ -1026,6 +1026,9 @@ export const dict = {
   "provider.custom.field.apiKey.placeholder": "API-Schlüssel",
   "provider.custom.field.apiKey.description":
     "Optional. Leer lassen, wenn Sie Authentifizierung über Header verwalten.",
+  "provider.custom.field.websocket.label": "WebSocket aktivieren",
+  "provider.custom.field.websocket.description":
+    "Erfordert Unterstützung für OpenAI Responses WebSocket. Bei Fehlern wird gemäß der integrierten Wiederholungsrichtlinie auf HTTP zurückgegriffen.",
   "provider.custom.models.label": "Modelle",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

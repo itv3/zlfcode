@@ -69,6 +69,7 @@ export const CustomProviderConfigSchema = z
             message: INVALID_BASE_URL,
           }),
         headers: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional(),
+        websocket: z.boolean().optional(),
       })
       .strict(),
     models: z
@@ -96,6 +97,7 @@ export type SanitizedProviderConfig = {
   options: {
     baseURL: string
     headers?: Record<string, string>
+    websocket?: true
   }
   models: Record<
     string,
@@ -171,6 +173,7 @@ export function normalizeCustomProviderConfig(
     options: {
       baseURL: config.options.baseURL.trim(),
       ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+      ...(config.options.websocket ? { websocket: true as const } : {}),
     },
     models: Object.fromEntries(
       Object.entries(config.models).map(([id, model]) => [
@@ -209,6 +212,7 @@ type ProviderPatch = Omit<SanitizedProviderConfig, "env" | "models" | "options">
   options: {
     baseURL: string
     headers?: HeaderPatch | null
+    websocket?: true | null
   }
   models: Record<
     string,
@@ -298,6 +302,7 @@ function optionsPatch(existing: AnyRecord, next: SanitizedProviderConfig): Provi
     ...next.options,
     ...(headers ? { headers } : {}),
     ...("headers" in oldOptions && next.options.headers === undefined ? { headers: null } : {}),
+    ...("websocket" in oldOptions && next.options.websocket === undefined ? { websocket: null } : {}),
   }
 }
 
