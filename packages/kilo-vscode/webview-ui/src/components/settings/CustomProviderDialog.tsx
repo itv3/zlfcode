@@ -1015,13 +1015,13 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
             </div>
             <div
               style={{
-                display: "flex",
+                display: "grid",
+                "grid-template-columns": "minmax(0, 1fr) auto",
                 "align-items": "flex-end",
                 gap: "16px",
-                "flex-wrap": "wrap",
               }}
             >
-              <div style={{ flex: "1 1 300px", "min-width": "0" }}>
+              <div style={{ "min-width": "0" }}>
                 <TextField
                   type="password"
                   label={language.t("provider.custom.field.apiKey.label")}
@@ -1039,7 +1039,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                 />
               </div>
               <Show when={form.npm === "@ai-sdk/openai"}>
-                <div style={{ "padding-bottom": "7px" }}>
+                <div style={{ "padding-bottom": "7px", "white-space": "nowrap" }}>
                   <Checkbox
                     checked={form.websocket}
                     onChange={(value) => setForm("websocket", value)}

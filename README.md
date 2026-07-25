@@ -38,7 +38,7 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 | 功能 | 说明 |
 |---|---|
 | API 格式 | 自定义提供商支持 OpenAI / Anthropic / Gemini 三种原生格式 API。 |
-| Responses WebSocket | Provider API 选择 `OpenAI Responses` 时可为当前自定义 Provider 单独启用 WebSocket；默认关闭，连接失败时自动回退 HTTP。 |
+| 启用 WebSocket | Provider API 选择 `OpenAI Responses` 时可为当前自定义 Provider 单独启用 WebSocket；默认关闭，连接失败时自动回退 HTTP。 |
 | 模型自动发现 | 支持 OpenAI、Anthropic、Gemini，并自动处理 endpoint 和认证头。 |
 | 自动发现交互优化 | 默认不全选，已添加模型不再显示，删除已添加模型后会重新拉取模型列表。 |
 | 高级参数配置 | 支持配置图像输入能力、推理能力、`context token limit`、`output token limit`，以及输入、输出、缓存读取、缓存写入成本。 |
@@ -290,7 +290,7 @@ node esbuild.js --production
 | 扩展版本 | 显示市场版本 `7.4.1602`。 |
 | 关于页面 | 版本信息不显示 `unknown`。 |
 | 自定义 provider | OpenAI / Anthropic / Gemini 模型发现、保存、请求头、图片能力、推理能力、默认推理强度、token limit、成本选项和候选模型预览正常；选择候选模型会覆盖自动默认参数并保留后续手动调整。 |
-| Responses WebSocket | 自定义 Provider 选择 `OpenAI Responses` 后显示 WebSocket 开关；开启并保存后流式对话使用 WebSocket，标题请求使用 HTTP，WebSocket 失败时可回退 HTTP；关闭后恢复纯 HTTP。 |
+| 启用 WebSocket | 自定义 Provider 选择 `OpenAI Responses` 后显示 WebSocket 开关；开启并保存后流式对话使用 WebSocket，标题请求使用 HTTP，WebSocket 失败时可回退 HTTP；关闭后恢复纯 HTTP。 |
 | Provider 热更新 | 后端启动后给已有自定义 Provider 新增模型，保存后无需重启即可选择并发送；删除后模型立即从聊天选择器消失；重新添加后可立即发送。 |
 | 多 Webview 同步 | 同时打开聊天和设置页，Provider 模型变化在两个界面同步，迟到快照不会恢复已删除模型。 |
 | 默认推理强度 | 候选参数带入后选择 `Max`，当前选择框立即显示 `Max`；保存退出后重新进入仍显示 `Max`。 |
