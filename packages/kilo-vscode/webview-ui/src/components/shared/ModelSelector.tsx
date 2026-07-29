@@ -44,6 +44,7 @@ import {
   autoSummary,
   buildTriggerLabel,
   sanitizeName,
+  type TriggerLabelSemantics,
 } from "./model-selector-utils"
 import { isVisibleModel } from "../../context/provider-utils"
 import { ModelPreview } from "./ModelPreview"
@@ -139,6 +140,14 @@ export interface ModelSelectorBaseProps {
   allowClear?: boolean
   /** Label shown for the clear option */
   clearLabel?: string
+  /**
+   * 触发器标签语义 — 默认 "configured"（＝上游行为，设置页场景：展示配置值
+   * 本身，未解析的选择按 "providerID / modelID" 原样兜底显示）；聊天选择器
+   * 应显式传 "resolved"（展示实际将被使用的模型，providers 加载后无法解析的
+   * 选择不再显示）。默认值取上游行为是为了让上游合并新增的调用点不被本 fork
+   * 的语义收窄静默影响（F65）。
+   */
+  labelSemantics?: TriggerLabelSemantics
   /** Include the kilo-auto/small model in the list — defaults to false */
   includeAutoSmall?: boolean
   /** Override the provider catalog for constrained selectors. */
@@ -749,6 +758,9 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         noProviders: language.t("dialog.model.noProviders"),
         notSet: language.t("dialog.model.notSet"),
       },
+      // 默认 "configured"＝上游行为；聊天路径（下方 ModelSelector 包装组件、
+      // NewWorktreeDialog）显式传 "resolved"。详见 TriggerLabelSemantics 注释（F65）。
+      props.labelSemantics ?? "configured",
     )
   const label = () => props.label ?? language.t("dialog.model.select.title")
   const controlLabel = () => `${label()}: ${triggerLabel()}`
@@ -1123,6 +1135,9 @@ export const ModelSelector: Component<ModelSelectorProps> = (props) => {
   return (
     <ModelSelectorBase
       value={session.selected(id())}
+      // 聊天选择器展示"实际将被使用的模型"：无法解析的选择交给模型回退逻辑，
+      // 不显示 raw 兜底（resolved 语义，F11/F65）。
+      labelSemantics="resolved"
       onSelect={(providerID, modelID) => {
         session.selectModel(providerID, modelID, id())
       }}

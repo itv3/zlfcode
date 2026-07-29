@@ -289,10 +289,14 @@ describe("buildFileAttachments", () => {
     expect(result).toEqual([])
   })
 
-  it("does not attach an absolute path without a workspace directory", () => {
+  it("forwards an absolute path for extension-side session-directory validation", () => {
+    // workspace 目录未知时，绝对路径不再无条件丢弃，而是以 path 形式原样交给
+    // 扩展端，由 resolveMessageFile 结合会话目录做归属校验后再决定取舍。
     const paths = new Set(["/workspace/src/file.ts"])
     const result = buildFileAttachments("@/workspace/src/file.ts", paths)
-    expect(result).toEqual([])
+    expect(result).toHaveLength(1)
+    expect(result[0]!.path).toBe("/workspace/src/file.ts")
+    expect(result[0]!.url).toBeUndefined()
   })
 
   it("does not attach an absolute Windows path outside the workspace", () => {

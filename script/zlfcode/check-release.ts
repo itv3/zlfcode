@@ -16,6 +16,9 @@ export function parse(tag: string) {
     tag,
     label: tag.slice("zlfcode-v".length),
     version: `${major}.${minor}.${Number(`${patch}${batch}`)}`,
+    // 上游底座版本（如 7.4.16）。Zed 扩展的 extension.toml 必须保持该版本，
+    // 因为其中的 archive URL 指向 Kilo-Org 上游 release，写入 ZLF 市场版本会 404。
+    base: `${major}.${minor}.${patch}`,
   }
 }
 
@@ -39,12 +42,31 @@ export async function validate(root: string, tag: string) {
   await contains(root, "README.md", `| 市场版本 | \`${meta.version}\` |`, errors)
   await contains(root, "packages/kilo-vscode/README.md", `发布批次：\`${meta.label}\``, errors)
   await contains(root, "packages/kilo-vscode/README.md", `市场版本：\`${meta.version}\``, errors)
-  await contains(root, "packages/extensions/zed/extension.toml", `version = "${meta.version}"`, errors)
+  // Zed 扩展保持上游底座版本：sync-versions.ts 已把它排除在批次替换之外，
+  // 这里校验它没有被误写成市场版本，防止 archive URL 指向不存在的 release。
+  await contains(root, "packages/extensions/zed/extension.toml", `version = "${meta.base}"`, errors)
+  // F71：version 行之外，5 个 archive URL 的版本段也可能被单独改坏（如合并冲突
+  // 解决失误）。校验文件内出现的每个 `releases/download/vX/` 下载 URL（不限域名，
+  // fail-closed：当前只有 Kilo-Org 地址，未来引入其他来源时按需放宽）的版本都
+  // 等于底座版本；文件缺失已由上一行 contains 报告，URL 为零个时不误报。
+  await zedArchiveURLs(root, meta.base, errors)
 
   const notes = `.github/release-notes/${tag}.md`
   if (!(await Bun.file(join(root, notes)).exists())) errors.push(`缺少发布说明：${notes}`)
 
   return { ...meta, errors }
+}
+
+async function zedArchiveURLs(root: string, base: string, errors: string[]) {
+  const rel = "packages/extensions/zed/extension.toml"
+  const file = Bun.file(join(root, rel))
+  if (!(await file.exists())) return // 文件缺失由 version 行的 contains 校验统一报告
+  const text = await file.text()
+  for (const match of text.matchAll(/releases\/download\/v([^/]+)\//g)) {
+    const found = match[1]!
+    if (found === base) continue
+    errors.push(`${rel} 的 archive URL 版本是 v${found}，期望上游底座版本 v${base}`)
+  }
 }
 
 async function contains(root: string, rel: string, expected: string, errors: string[]) {

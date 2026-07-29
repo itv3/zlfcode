@@ -88,24 +88,26 @@ function glm52(model: Provider.Model) {
 }
 
 // 此函数会先于共享 provider/transform.ts 的 GLM-5.2 分支返回；升级上游时需对照同步变体形状和顺序。
+// 变体键序与上游 v7.4.16 保持一致（high 在前，更强档位在后），键序影响 UI 展示顺序
+// 与默认档位选择；@ai-sdk/openai 分支为 Kilo 新增（上游无），顺序对齐同族分支。
 function glm52Variants(model: Provider.Model): Record<string, Record<string, unknown>> | undefined {
   if (!model.capabilities.reasoning || !glm52(model)) return
   if (model.api.npm === "@openrouter/ai-sdk-provider") {
     return {
-      xhigh: { reasoning: { effort: "xhigh" } },
       high: { reasoning: { effort: "high" } },
+      xhigh: { reasoning: { effort: "xhigh" } },
     }
   }
   if (model.api.npm === "@ai-sdk/openai-compatible" || model.api.npm === "@ai-sdk/openai") {
     return {
-      max: { reasoningEffort: "max" },
       high: { reasoningEffort: "high" },
+      max: { reasoningEffort: "max" },
     }
   }
   if (model.api.npm === "@ai-sdk/anthropic") {
     return {
-      max: { effort: "max" },
       high: { effort: "high" },
+      max: { effort: "max" },
     }
   }
 }

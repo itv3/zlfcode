@@ -5,11 +5,10 @@
 import type { Config, KiloClient } from "@kilocode/sdk/v2"
 import { validateProviderID as validateProviderIDShared } from "./shared/custom-provider"
 import {
+  customProviderConfigPatches,
   EnvSchema,
-  providerReset,
   resolveCustomProviderAuth,
   sanitizeCustomProviderConfig,
-  withCustomProviderDeletions,
 } from "./shared/custom-provider"
 import type { SanitizedProviderConfig } from "./shared/custom-provider"
 import type { CustomProviderAuthChange } from "./shared/custom-provider"
@@ -208,6 +207,23 @@ function configuredCustomProviders(config: Config | undefined, connected: Set<st
   return providers
 }
 
+/**
+ * 把后端未返回、但存在于 config 中的自定义 provider 兜底补入 all 与 connected。
+ *
+ * 设计目标：后端注册表存在"临时空窗"（server 刚启动/重载、provider 尚未完成注册）
+ * 时，聊天界面不应把用户已保存的自定义 provider 显示为断开（有测试锁定该行为，
+ * 见 provider-actions-save.test.ts 的 "fills connected custom providers..."）。
+ *
+ * 已知局限（F20，接受现状）：本兜底无条件把 sanitize 通过的 config provider 视为
+ * connected，无法区分"临时空窗"与"持久性加载失败"（如 npm 包加载失败、运行时
+ * 初始化异常）。持久失败的 provider 会被继续展示为已连接并列出 config 中的模型，
+ * 用户选中后错误要到发送消息时才暴露；上游 provider.list 的 failed 字段在
+ * connected 模式下也被固定为空数组。要消除该局限需要：为兜底注入的 provider
+ * 附加标记（如 filled）→ 扩展 providersLoaded 消息协议 → webview UI 消费标记做
+ * 区分展示，并跟踪"后续权威拉取仍缺失"的跨轮次状态——改动横跨消息协议与 UI，
+ * 超出当前兜底逻辑的合理边界。若未来出现持久失败误报 connected 的实际反馈，
+ * 应按上述路径实现区分展示，而不是收紧本兜底（否则会重新引入空窗闪断问题）。
+ */
 function mergeConfiguredProviders<T extends { id: string }>(
   response: { all: T[]; connected: string[] },
   config: Config | undefined,
@@ -772,7 +788,9 @@ export async function saveCustomProvider(
     const disabled = globalConfig.disabled_providers ?? []
     const nextDisabled = disabled.filter((item: string) => item !== id)
     const existing = globalConfig.provider?.[id]
-    const reset = providerReset(existing, sanitized.value)
+    // 成对补丁:reset 存在时必须先于 patch 单独应用(先清后写),
+    // 契约详见 customProviderConfigPatches 的文档注释。
+    const { reset, patch } = customProviderConfigPatches(existing, sanitized.value)
     if (reset) {
       await ctx.client.global.config.update(
         {
@@ -783,7 +801,6 @@ export async function saveCustomProvider(
         { throwOnError: true },
       )
     }
-    const patch = withCustomProviderDeletions(existing, sanitized.value)
     await (async () => {
       try {
         await ctx.client.global.config.update(
@@ -822,6 +839,37 @@ export async function saveCustomProvider(
         await ctx.client.auth.remove({ providerID: id }, { throwOnError: true })
       }
     } catch (error) {
+      // F16：auth 阶段失败时回滚已写入的 provider 配置，让保存具备全有或全无语义。
+      // 此前只有 reset→patch 窗口有回滚，config→auth 窗口失败会留下部分写入：
+      // 模型/baseURL 已持久化而 API key 仍是旧值或缺失，新建 provider 还会被
+      // config 兜底合并显示为 connected。回滚分两步执行（config.update 是深合并，
+      // 直接写 existing 无法清除本次 patch 新增的字段）：
+      // 1. 写入 null 删除哨兵整体清除刚保存的条目，并恢复 disabled_providers 原值；
+      // 2. 已有 provider 再写回保存前读取的 existing 完整配置（新建场景到第 1 步即完成）。
+      // 回滚自身失败只记录告警，仍向用户上报原始 auth 错误；后台刷新会同步真实状态。
+      await (async () => {
+        await ctx.client.global.config.update(
+          {
+            config: {
+              provider: { [id]: null },
+              disabled_providers: disabled,
+            },
+          },
+          { throwOnError: true },
+        )
+        if (existing) {
+          await ctx.client.global.config.update(
+            {
+              config: {
+                provider: { [id]: existing },
+              },
+            },
+            { throwOnError: true },
+          )
+        }
+      })().catch((err: unknown) =>
+        console.warn(`[Kilo New] failed to roll back custom provider ${id} after auth failure:`, err),
+      )
       ctx.notifyProvidersChanged?.()
       refreshLater()
       refreshConfigLater()

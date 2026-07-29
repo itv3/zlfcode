@@ -1249,7 +1249,7 @@ export const dict = {
   "settings.aboutKiloCode.title": "關於 Kilo Code",
 
   "session.messages.empty": "在下方輸入訊息以開始對話。",
-  "session.messages.welcome": "Kilo Code 是一個 AI 程式設計助手。讓它幫你建構功能、修復 bug 或解釋程式碼庫。",
+  "session.messages.welcome": "ZLF Code 是一個 AI 程式設計助手。讓它幫你建構功能、修復 bug 或解釋程式碼庫。",
   "session.messages.scrollToBottom": "捲動至底部",
   "session.messages.initializing": "初始化中...",
   "session.messages.taskStarting": "啟動中...",

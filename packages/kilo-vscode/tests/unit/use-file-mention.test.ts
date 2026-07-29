@@ -795,6 +795,52 @@ describe("useFileMention", () => {
     dispose.fn?.()
   })
 
+  it("parseFileAttachments forwards absolute-path mentions as path attachments", () => {
+    // 绝对路径 mention（如拖放在特殊 cwd 下未转成相对路径时）不再被静默丢弃：
+    // 以 path 形式传给扩展端，由 resolveMessageFile 结合会话目录做归属校验。
+    const ctx = {
+      postMessage: () => {},
+      onMessage: () => () => {},
+    }
+
+    const dispose: { fn?: () => void } = {}
+    const mention = createRoot((root) => {
+      dispose.fn = root
+      return useFileMention(ctx, undefined, () => false)
+    })
+
+    const text = "check @/repo/src/main.ts please"
+    mention.seedFromParts(["/repo/src/main.ts"], text)
+
+    const attachments = mention.parseFileAttachments(text)
+    expect(attachments).toHaveLength(1)
+    expect(attachments[0]!.path).toBe("/repo/src/main.ts")
+    expect(attachments[0]!.url).toBeUndefined()
+    expect(attachments[0]!.source?.text.value).toBe("@/repo/src/main.ts")
+
+    dispose.fn?.()
+  })
+
+  it("parseFileAttachments still drops relative mentions that traverse out of the workspace", () => {
+    const ctx = {
+      postMessage: () => {},
+      onMessage: () => () => {},
+    }
+
+    const dispose: { fn?: () => void } = {}
+    const mention = createRoot((root) => {
+      dispose.fn = root
+      return useFileMention(ctx, undefined, () => false)
+    })
+
+    const text = "check @../../etc/passwd please"
+    mention.seedFromParts(["../../etc/passwd"], text)
+
+    expect(mention.parseFileAttachments(text)).toEqual([])
+
+    dispose.fn?.()
+  })
+
   it("insertFilePickerResult ignores a result whose requestId doesn't match the pending request", () => {
     const posted: WebviewMessage[] = []
     const ctx = {

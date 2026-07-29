@@ -352,6 +352,8 @@ export const layer = Layer.effect(
 
     let globalStamp = "" // kilocode_change
 
+    // kilocode_change - 上游此函数名为 loadGlobal；改名为 loadSnapshot 拆出单次快照加载，
+    // 由下方带稳定性重试的 loadGlobal 包装（加载前后 stamp 一致才算稳定快照）
     const loadSnapshot = Effect.fnUntraced(function* (env?: Record<string, string>) {
       // kilocode_change start
       yield* Effect.promise(() => KilocodeConfig.migrateBashPermission())
@@ -400,12 +402,25 @@ export const layer = Layer.effect(
 
     // kilocode_change start - 仅缓存加载期间保持稳定的全局配置快照
     const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {
-      while (true) {
-        const snapshot = yield* loadSnapshot(env)
-        if (snapshot.before !== snapshot.after) continue
-        globalStamp = snapshot.after
-        return snapshot.result
+      // 稳定性重试有上限（审核条目 F44）：正常场景（schema 种子写入、legacy TOML
+      // 迁移）两轮内即可收敛；若外部进程持续改写配置文件，无上限重试会以
+      // 「6 个文件全文读取 + 解析 + 可能写盘」为单位自旋。超限后采用最后一次
+      // 快照并告警——globalStamp 记录该快照对应的文件状态，文件若继续变化，
+      // 后续读取仍会经 refreshGlobal 检测到差异并重新加载。
+      // F75 备注：超限兜底的已知取舍——最后一次快照可能是加载中途被外部改写的
+      // "撕裂"内容；若外部写入恰好在 after stamp 读取之前停止（stamp 与最终文件
+      // 一致），该快照会被沿用到下一次真实变更为止。触发需要连续 5 轮加载期间
+      // 持续写入且恰好停在该窗口内，实践中概率极低。
+      const attempts = 5
+      let snapshot = yield* loadSnapshot(env)
+      for (let retry = 1; snapshot.before !== snapshot.after && retry < attempts; retry++) {
+        snapshot = yield* loadSnapshot(env)
       }
+      if (snapshot.before !== snapshot.after) {
+        yield* Effect.logWarning("global config kept changing during load; using the last snapshot", { attempts })
+      }
+      globalStamp = snapshot.after
+      return snapshot.result
     })
     // kilocode_change end
 
@@ -1079,7 +1094,16 @@ export const layer = Layer.effect(
       const changed = result.changed
       // kilocode_change end
 
-      if (changed) yield* reset() // kilocode_change - 配置更新返回前失效 Provider 注册表
+      // kilocode_change start - 配置更新返回前失效 Provider 注册表；同时把 globalStamp
+      // 推进到本次写盘后的文件状态，避免紧随其后的首次读取把自己刚写入的变更
+      // 误判为「外部修改」而额外做一轮 invalidateAll 并重复发出 ConfigUpdated
+      // 事件（审核条目 F44）。缓存已由 reset() 失效，下一次读取必然重新加载
+      // 最新文件内容，因此推进 stamp 不会隐藏任何并发的外部修改。
+      if (changed) {
+        yield* reset()
+        globalStamp = yield* KilocodeGlobalConfigStamp.read(fs, Global.Path.config)
+      }
+      // kilocode_change end
 
       // kilocode_change start - skip dispose when caller opts out
       if (!dispose) {

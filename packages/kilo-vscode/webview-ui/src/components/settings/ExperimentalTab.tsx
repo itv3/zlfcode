@@ -245,6 +245,7 @@ const ExperimentalTab: Component = () => {
               placement="bottom-start"
               allowClear
               clearLabel={language.t("settings.providers.notSet")}
+              labelSemantics="configured"
               label={language.t("settings.experimental.swePrunerModel.title")}
               description={language.t("settings.experimental.swePrunerModel.description")}
             />

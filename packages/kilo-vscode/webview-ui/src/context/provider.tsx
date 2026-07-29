@@ -79,8 +79,6 @@ export interface ProviderState {
   defaultSelection: ModelSelection
   authMethods: Record<string, ProviderAuthMethod[]>
   authStates: Record<string, ProviderAuthState>
-  optimistic: Record<string, Provider>
-  optimisticAuth: Record<string, ProviderAuthState>
 }
 
 export function initialProviderState(): ProviderState {
@@ -92,8 +90,6 @@ export function initialProviderState(): ProviderState {
     defaultSelection: KILO_AUTO,
     authMethods: {},
     authStates: {},
-    optimistic: {},
-    optimisticAuth: {},
   }
 }
 
@@ -103,18 +99,11 @@ function without<T>(values: Record<string, T>, id: string) {
   return next
 }
 
-function applyAuth(
-  states: Record<string, ProviderAuthState>,
-  optimistic: Record<string, ProviderAuthState>,
-  id: string,
-  auth: ProviderAuthChange,
-) {
-  if (auth.mode === "preserve") return { states, optimistic }
-  if (auth.mode === "clear") return { states: without(states, id), optimistic: without(optimistic, id) }
-  return {
-    states: { ...states, [id]: auth.state },
-    optimistic,
-  }
+/** 按认证三态（preserve/set/clear）计算新的认证状态映射。 */
+function applyAuth(states: Record<string, ProviderAuthState>, id: string, auth: ProviderAuthChange) {
+  if (auth.mode === "preserve") return states
+  if (auth.mode === "clear") return without(states, id)
+  return { ...states, [id]: auth.state }
 }
 
 function applyDefault(defaults: Record<string, string>, id: string, provider: Provider | undefined) {
@@ -147,13 +136,10 @@ export function applyProviderMessage(state: ProviderState, message: Change): Pro
       defaultSelection: message.defaultSelection,
       authMethods: message.authMethods,
       authStates: message.authStates,
-      optimistic: {},
-      optimisticAuth: {},
     }
   }
 
   if (message.type === "providerConnected") {
-    const auth = applyAuth(state.authStates, state.optimisticAuth, message.providerID, message.auth)
     return {
       ...state,
       revision: message.revision,
@@ -162,9 +148,7 @@ export function applyProviderMessage(state: ProviderState, message: Change): Pro
         ? state.connected
         : [...state.connected, message.providerID],
       defaults: applyDefault(state.defaults, message.providerID, message.provider),
-      authStates: auth.states,
-      optimistic: state.optimistic,
-      optimisticAuth: auth.optimistic,
+      authStates: applyAuth(state.authStates, message.providerID, message.auth),
     }
   }
 
@@ -176,13 +160,11 @@ export function applyProviderMessage(state: ProviderState, message: Change): Pro
     connected: state.connected.filter((id) => id !== message.providerID),
     defaults,
     authStates: without(state.authStates, message.providerID),
-    optimistic: without(state.optimistic, message.providerID),
-    optimisticAuth: without(state.optimisticAuth, message.providerID),
   }
 }
 
 /**
- * 将后端刷新结果作为权威快照,并结束本次保存产生的乐观覆盖。
+ * 将后端刷新结果作为权威快照。
  * providerConnected 负责在保存完成到刷新返回之间即时更新界面;
  * providersLoaded 到达后必须允许服务端的新增、修改和删除结果生效。
  */

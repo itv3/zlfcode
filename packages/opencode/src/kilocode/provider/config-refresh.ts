@@ -1,13 +1,16 @@
 import type { Auth } from "@/auth"
 import type { Config } from "@/config/config"
-import { orderedVariants, patchConfigModel } from "@/kilocode/provider/provider"
-import type { Info, Model } from "@/provider/provider"
-import * as ProviderTransform from "@/provider/transform"
-import { ModelV2 } from "@opencode-ai/core/model"
+import {
+  compileConfigModels,
+  compileProviderInfo,
+  finalizeProviderModels,
+  resolveEnvApiKey,
+} from "@/kilocode/provider/compile"
+import type { Info } from "@/provider/provider"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import type { ConfigProviderV1 } from "@opencode-ai/core/v1/config/provider"
 import { Effect } from "effect"
-import { isDeepEqual, mapValues, mergeDeep } from "remeda"
+import { isDeepEqual } from "remeda"
 
 type Entry = ConfigProviderV1.Info | null | undefined
 
@@ -25,6 +28,11 @@ type Runtime<Model, SDK, Loader, Vars> = {
   providers: Record<ProviderV2.ID, Info>
   catalog: Record<ProviderV2.ID, Info>
   sdk: Map<string, SDK>
+  /**
+   * resolveSDK 的 single-flight 在飞加载表（F68）。只需要遍历与删除能力，
+   * 用最小结构类型以兼容 provider.ts 侧 Map<string, Promise<SDK>> 的实际形状。
+   */
+  sdkLoads: { keys(): IterableIterator<string>; delete(key: string): boolean }
   websockets: Map<string, { close(): void }>
   modelLoaders: Record<string, Loader>
   varsLoaders: Record<string, Vars>
@@ -37,6 +45,12 @@ export type RefreshInput<Model, SDK, Loader, Vars> = {
   auth: (id: ProviderV2.ID) => Effect.Effect<Auth.Info | undefined>
   env: Effect.Effect<Record<string, string | undefined>>
   experimental: boolean
+  /**
+   * 存在 plugin auth loader 的 Provider ID 集合。这些 Provider 的运行时
+   * options 可能由插件注入（provider.ts 的 plugin auth loader 分支），
+   * 增量重建无法复现注入结果，必须回退完整重建。不传时视为无插件注入。
+   */
+  pluginAuthProviders?: ReadonlySet<string>
 }
 
 /**
@@ -57,105 +71,27 @@ export function diff(before: Config.Info, after: Config.Info) {
 /**
  * 从最终合并后的配置编译一个 Provider。配置不再包含模型时返回 undefined，
  * 由调用方从运行时注册表删除该 Provider。
+ *
+ * 编译逻辑与 provider.ts 全量构建路径共享同一实现（见 compile.ts），
+ * 保证增量刷新产物与重启后的全量重建产物逐字段一致。
  */
 export function build(input: BuildInput): Info | undefined {
   const config = input.config
   if (!config) return
 
-  const models: Record<string, Model> = { ...(input.base?.models ?? {}) }
-  const provider: Info = {
-    id: input.id,
-    name: config.name ?? input.base?.name ?? input.id,
-    env: config.env ?? input.base?.env ?? [],
-    options: mergeDeep(input.base?.options ?? {}, config.options ?? {}),
-    source: "config",
-    models,
-  }
+  const provider = compileProviderInfo({ id: input.id, config, base: input.base })
   if (input.key !== undefined) provider.key = input.key
 
-  for (const [modelID, configModel] of Object.entries(config.models ?? {})) {
-    if (!configModel) continue
-    const existing = models[configModel.id ?? modelID]
-    const apiID = configModel.id ?? existing?.api.id ?? modelID
-    const apiNpm =
-      configModel.provider?.npm ?? config.npm ?? existing?.api.npm ?? "@ai-sdk/openai-compatible"
-    const name = (() => {
-      if (configModel.name) return configModel.name
-      if (configModel.id && configModel.id !== modelID) return modelID
-      return existing?.name ?? modelID
-    })()
-    const model: Model = {
-      id: ModelV2.ID.make(modelID),
-      api: {
-        id: apiID,
-        npm: apiNpm,
-        url: configModel.provider?.api ?? config.api ?? existing?.api.url ?? "",
-      },
-      status: configModel.status ?? existing?.status ?? "active",
-      name,
-      providerID: input.id,
-      capabilities: {
-        temperature: configModel.temperature ?? existing?.capabilities.temperature ?? false,
-        reasoning: configModel.reasoning ?? existing?.capabilities.reasoning ?? false,
-        attachment: configModel.attachment ?? existing?.capabilities.attachment ?? false,
-        toolcall: configModel.tool_call ?? existing?.capabilities.toolcall ?? true,
-        input: {
-          text: configModel.modalities?.input?.includes("text") ?? existing?.capabilities.input.text ?? true,
-          audio: configModel.modalities?.input?.includes("audio") ?? existing?.capabilities.input.audio ?? false,
-          image: configModel.modalities?.input?.includes("image") ?? existing?.capabilities.input.image ?? false,
-          video: configModel.modalities?.input?.includes("video") ?? existing?.capabilities.input.video ?? false,
-          pdf: configModel.modalities?.input?.includes("pdf") ?? existing?.capabilities.input.pdf ?? false,
-        },
-        output: {
-          text: configModel.modalities?.output?.includes("text") ?? existing?.capabilities.output.text ?? true,
-          audio: configModel.modalities?.output?.includes("audio") ?? existing?.capabilities.output.audio ?? false,
-          image: configModel.modalities?.output?.includes("image") ?? existing?.capabilities.output.image ?? false,
-          video: configModel.modalities?.output?.includes("video") ?? existing?.capabilities.output.video ?? false,
-          pdf: configModel.modalities?.output?.includes("pdf") ?? existing?.capabilities.output.pdf ?? false,
-        },
-        interleaved:
-          configModel.interleaved ??
-          existing?.capabilities.interleaved ??
-          (!existing && apiNpm === "@ai-sdk/openai-compatible" && apiID.includes("deepseek")
-            ? { field: "reasoning_content" }
-            : false),
-      },
-      cost: {
-        input: configModel.cost?.input ?? existing?.cost.input ?? 0,
-        output: configModel.cost?.output ?? existing?.cost.output ?? 0,
-        cache: {
-          read: configModel.cost?.cache_read ?? existing?.cost.cache.read ?? 0,
-          write: configModel.cost?.cache_write ?? existing?.cost.cache.write ?? 0,
-        },
-      },
-      options: mergeDeep(existing?.options ?? {}, configModel.options ?? {}),
-      limit: {
-        context: configModel.limit?.context ?? existing?.limit.context ?? 0,
-        input: configModel.limit?.input ?? existing?.limit.input,
-        output: configModel.limit?.output ?? existing?.limit.output ?? 0,
-      },
-      headers: mergeDeep(existing?.headers ?? {}, configModel.headers ?? {}),
-      family: configModel.family ?? existing?.family ?? "",
-      release_date: configModel.release_date ?? existing?.release_date ?? "",
-      ...patchConfigModel(configModel, existing),
-    }
-    model.variants = orderedVariants(ProviderTransform.variants(model), configModel.variants ?? {})
-    models[modelID] = model
-  }
-
-  for (const [modelID, model] of Object.entries(provider.models)) {
-    model.api.id = model.api.id ?? model.id ?? modelID
-    if (model.status === "alpha" && !input.experimental) delete provider.models[modelID]
-    if (model.status === "deprecated") delete provider.models[modelID]
-    if (
-      (config.blacklist && config.blacklist.includes(modelID)) ||
-      (config.whitelist && !config.whitelist.includes(modelID))
-    )
-      delete provider.models[modelID]
-    if (!model.variants || Object.keys(model.variants).length === 0) {
-      model.variants = mapValues(ProviderTransform.variants(model), (variant) => variant)
-    }
-  }
+  compileConfigModels({
+    providerID: input.id,
+    config,
+    models: provider.models,
+  })
+  finalizeProviderModels({
+    provider,
+    configProvider: config,
+    experimental: input.experimental,
+  })
 
   if (Object.keys(provider.models).length === 0) return
   return provider
@@ -168,12 +104,33 @@ export function build(input: BuildInput): Info | undefined {
 export function refresh<Model, SDK, Loader, Vars>(input: RefreshInput<Model, SDK, Loader, Vars>) {
   return Effect.gen(function* () {
     const changed = diff(input.state.config, input.config)
+    // 启停名单判定（审核条目 F05）：命中 disabled_providers 或不在
+    // enabled_providers 中的 Provider 在全量构建时会被整体删除，增量路径
+    // 若继续编译会把已禁用的 Provider 写回运行时注册表（"复活"），与重启
+    // 后行为不一致。diff() 已保证两份配置除 provider 段外完全一致，因此
+    // 启停名单直接读取新配置即可。语义与 provider.ts 的 isProviderAllowed
+    // 保持一致。
+    const disabled = new Set(input.config.disabled_providers ?? [])
+    const enabled = input.config.enabled_providers ? new Set(input.config.enabled_providers) : null
+    const allowed = (id: ProviderV2.ID) => {
+      if (enabled && !enabled.has(id)) return false
+      if (disabled.has(id)) return false
+      return true
+    }
     const incremental =
       changed !== undefined &&
       changed.every(
         (id) =>
           !input.state.catalog[id] &&
-          (!input.state.providers[id] || input.state.providers[id].source === "config"),
+          (!input.state.providers[id] || input.state.providers[id].source === "config") &&
+          allowed(id) &&
+          // 插件注入判定（审核条目 F40）：存在 plugin auth loader 的
+          // Provider 走完整重建，避免丢失插件注入的 options。其余插件注入
+          // 途径无需额外检测：plugin provider.models hook 只作用于 models.dev
+          // 目录内的 Provider（已被上面的 `!catalog[id]` 守卫排除）；plugin
+          // config() hook 的产物已合并进 config.get() 返回的配置快照，diff()
+          // 对比的就是合并后的结果。
+          !input.pluginAuthProviders?.has(id),
       )
     if (!incremental) return false
 
@@ -183,7 +140,10 @@ export function refresh<Model, SDK, Loader, Vars>(input: RefreshInput<Model, SDK
         const auth = yield* input.auth(id)
         if (auth && auth.type !== "api") return { id, oauth: true as const }
         const entry = input.config.provider?.[id]
-        const key = auth?.key ?? entry?.env?.map((name) => env[name]).find(Boolean)
+        // key 注入语义与全量构建对齐（审核条目 F37）：优先使用已保存的
+        // API auth key；否则按 resolveEnvApiKey 的全量语义解析 env var
+        // （仅声明恰好一个 env var 时才注入值，多个时交由 SDK 自行读取）。
+        const key = auth?.key ?? resolveEnvApiKey(entry?.env, env).key
         const provider = build({
           id,
           config: entry,
@@ -203,6 +163,14 @@ export function refresh<Model, SDK, Loader, Vars>(input: RefreshInput<Model, SDK
         }
         for (const key of input.state.sdk.keys()) {
           if (key.startsWith(prefix)) input.state.sdk.delete(key)
+        }
+        // 同步清除 in-flight 的 single-flight 条目（F68）：热更新只改 models 不改
+        // options 时 SDK key 不变，若不清除，刷新后的新调用会命中旧 in-flight——
+        // 旧加载完成时因 version 失配不入缓存、close transport，却把该 SDK 返回给
+        // 新调用者（WebSocket Provider 场景下本次请求会经已 close 的连接池发出）。
+        // 删除条目后新调用发起全新加载；旧加载完成时照常被 version 检查拦截。
+        for (const key of input.state.sdkLoads.keys()) {
+          if (key.startsWith(prefix)) input.state.sdkLoads.delete(key)
         }
         for (const [key, transport] of input.state.websockets) {
           if (!key.startsWith(prefix)) continue

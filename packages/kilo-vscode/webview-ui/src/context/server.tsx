@@ -53,115 +53,89 @@ export const ServerProvider: ParentComponent = (props) => {
     if (m.type === "fontSizeChanged") applyFontSize(m.fontSize)
   })
 
-  function handleReadyMessage(message: Extract<ExtensionMessage, { type: "ready" }>) {
-    console.log("[Kilo New] Server ready:", message.serverInfo)
-    setServerInfo(message.serverInfo)
-    if (message.extensionVersion) setExtensionVersion(message.extensionVersion)
-    setConnectionState("connected")
-    setErrorMessage(undefined)
-    setErrorDetails(undefined)
-    if (message.vscodeLanguage) {
-      setVscodeLanguage(message.vscodeLanguage)
-    }
-    if (message.languageOverride) {
-      setLanguageOverride(message.languageOverride)
-    }
-    if (message.workspaceDirectory) {
-      setWorkspaceDirectory(message.workspaceDirectory)
-    }
-  }
-
-  function handleConnectionStateMessage(message: Extract<ExtensionMessage, { type: "connectionState" }>) {
-    console.log("[Kilo New] Connection state changed:", message.state)
-    setConnectionState(message.state)
-    if (message.state !== "connected") setServerInfo(undefined)
-    if (message.error) {
-      setErrorMessage(message.userMessage ?? message.error)
-      setErrorDetails(message.userDetails ?? message.error)
-      return
-    }
-    if (message.state === "connected") {
-      setErrorMessage(undefined)
-      setErrorDetails(undefined)
-    }
-  }
-
-  function handleErrorMessage(message: Extract<ExtensionMessage, { type: "error" }>) {
-    console.error("[Kilo New] Server error:", message.message)
-    setErrorMessage(message.message)
-    setErrorDetails(message.message)
-  }
-
-  function handleProfileDataMessage(message: Extract<ExtensionMessage, { type: "profileData" }>) {
-    console.log("[Kilo New] Profile data:", message.data ? "received" : "null")
-    setProfileData(message.data)
-  }
-
-  function handleDeviceAuthMessage(
-    message: Extract<
-      ExtensionMessage,
-      {
-        type: "deviceAuthStarted" | "deviceAuthComplete" | "deviceAuthFailed" | "deviceAuthCancelled"
-      }
-    >,
-  ) {
-    switch (message.type) {
-      case "deviceAuthStarted":
-        console.log("[Kilo New] Device auth started")
-        setDeviceAuth({
-          status: "pending",
-          code: message.code,
-          verificationUrl: message.verificationUrl,
-          expiresIn: message.expiresIn,
-        })
-        return
-      case "deviceAuthComplete":
-        console.log("[Kilo New] Device auth complete")
-        setDeviceAuth({ status: "success" })
-        setTimeout(() => setDeviceAuth(initialDeviceAuth), 1500)
-        return
-      case "deviceAuthFailed":
-        console.log("[Kilo New] Device auth failed:", message.error)
-        setDeviceAuth({ status: "error", error: message.error })
-        return
-      case "deviceAuthCancelled":
-        console.log("[Kilo New] Device auth cancelled")
-        setDeviceAuth(initialDeviceAuth)
-        return
-    }
-  }
-
-  function handleServerMessage(message: ExtensionMessage) {
-    switch (message.type) {
-      case "ready":
-        handleReadyMessage(message)
-        return
-      case "workspaceDirectoryChanged":
-        setWorkspaceDirectory(message.directory)
-        return
-      case "languageChanged":
-        setLanguageOverride(message.locale || undefined)
-        return
-      case "connectionState":
-        handleConnectionStateMessage(message)
-        return
-      case "error":
-        handleErrorMessage(message)
-        return
-      case "profileData":
-        handleProfileDataMessage(message)
-        return
-      case "deviceAuthStarted":
-      case "deviceAuthComplete":
-      case "deviceAuthFailed":
-      case "deviceAuthCancelled":
-        handleDeviceAuthMessage(message)
-        return
-    }
-  }
-
   onMount(() => {
-    const unsubscribe = vscode.onMessage(handleServerMessage)
+    const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
+      switch (message.type) {
+        case "ready":
+          console.log("[Kilo New] Server ready:", message.serverInfo)
+          setServerInfo(message.serverInfo)
+          if (message.extensionVersion) setExtensionVersion(message.extensionVersion)
+          setConnectionState("connected")
+          setErrorMessage(undefined)
+          setErrorDetails(undefined)
+          if (message.vscodeLanguage) {
+            setVscodeLanguage(message.vscodeLanguage)
+          }
+          if (message.languageOverride) {
+            setLanguageOverride(message.languageOverride)
+          }
+          if (message.workspaceDirectory) {
+            setWorkspaceDirectory(message.workspaceDirectory)
+          }
+          break
+
+        case "workspaceDirectoryChanged":
+          setWorkspaceDirectory(message.directory)
+          break
+
+        case "languageChanged":
+          setLanguageOverride(message.locale || undefined)
+          break
+
+        case "connectionState":
+          console.log("[Kilo New] Connection state changed:", message.state)
+          setConnectionState(message.state)
+          // kilocode_change: 连接状态离开 connected 时清空 serverInfo，避免断连/重连
+          // 窗口内界面继续使用已失效的服务器地址与凭据（remote ssh Provider 同步修复）。
+          if (message.state !== "connected") setServerInfo(undefined)
+          if (message.error) {
+            setErrorMessage(message.userMessage ?? message.error)
+            setErrorDetails(message.userDetails ?? message.error)
+          } else if (message.state === "connected") {
+            setErrorMessage(undefined)
+            setErrorDetails(undefined)
+          }
+          break
+
+        case "error":
+          console.error("[Kilo New] Server error:", message.message)
+          setErrorMessage(message.message)
+          setErrorDetails(message.message)
+          break
+
+        case "profileData":
+          console.log("[Kilo New] Profile data:", message.data ? "received" : "null")
+          setProfileData(message.data)
+          break
+
+        case "deviceAuthStarted":
+          console.log("[Kilo New] Device auth started")
+          setDeviceAuth({
+            status: "pending",
+            code: message.code,
+            verificationUrl: message.verificationUrl,
+            expiresIn: message.expiresIn,
+          })
+          break
+
+        case "deviceAuthComplete":
+          console.log("[Kilo New] Device auth complete")
+          setDeviceAuth({ status: "success" })
+          // Reset to idle after a short delay
+          setTimeout(() => setDeviceAuth(initialDeviceAuth), 1500)
+          break
+
+        case "deviceAuthFailed":
+          console.log("[Kilo New] Device auth failed:", message.error)
+          setDeviceAuth({ status: "error", error: message.error })
+          break
+
+        case "deviceAuthCancelled":
+          console.log("[Kilo New] Device auth cancelled")
+          setDeviceAuth(initialDeviceAuth)
+          break
+      }
+    })
 
     onCleanup(() => {
       gitSub()

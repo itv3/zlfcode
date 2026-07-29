@@ -39,7 +39,8 @@ const model = (overrides: Record<string, unknown> = {}): Model =>
   }) as Model
 
 describe("GLM-5.2 variant order", () => {
-  test("keeps max first for OpenAI-compatible custom providers", () => {
+  // 变体键序与上游 v7.4.16 一致：high 在前、更强档位（max/xhigh）在后（审核条目 F42）。
+  test("keeps high first for OpenAI-compatible custom providers (matches upstream)", () => {
     const variants = ProviderTransform.variants(
       model({
         id: "glm-5.2",
@@ -51,10 +52,11 @@ describe("GLM-5.2 variant order", () => {
       }),
     )
 
-    expect(Object.keys(variants)).toEqual(["max", "high"])
+    expect(Object.keys(variants)).toEqual(["high", "max"])
+    expect(variants.max).toEqual({ reasoningEffort: "max" })
   })
 
-  test("keeps xhigh first for OpenRouter", () => {
+  test("keeps high first for OpenRouter (matches upstream)", () => {
     const variants = ProviderTransform.variants(
       model({
         id: "openrouter/z-ai/glm-5.2",
@@ -66,6 +68,39 @@ describe("GLM-5.2 variant order", () => {
       }),
     )
 
-    expect(Object.keys(variants)).toEqual(["xhigh", "high"])
+    expect(Object.keys(variants)).toEqual(["high", "xhigh"])
+    expect(variants.xhigh).toEqual({ reasoning: { effort: "xhigh" } })
+  })
+
+  // @ai-sdk/openai 分支为 Kilo 新增（上游无此分支），顺序对齐同族的 openai-compatible 分支。
+  test("keeps high first for the Kilo-only @ai-sdk/openai branch", () => {
+    const variants = ProviderTransform.variants(
+      model({
+        id: "glm-5.2",
+        api: {
+          id: "glm-5.2",
+          url: "https://api.test.com",
+          npm: "@ai-sdk/openai",
+        },
+      }),
+    )
+
+    expect(Object.keys(variants)).toEqual(["high", "max"])
+  })
+
+  test("keeps high first for @ai-sdk/anthropic (matches upstream)", () => {
+    const variants = ProviderTransform.variants(
+      model({
+        id: "glm-5.2",
+        api: {
+          id: "glm-5.2",
+          url: "https://api.test.com",
+          npm: "@ai-sdk/anthropic",
+        },
+      }),
+    )
+
+    expect(Object.keys(variants)).toEqual(["high", "max"])
+    expect(variants.max).toEqual({ effort: "max" })
   })
 })

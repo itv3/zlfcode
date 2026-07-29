@@ -1,14 +1,13 @@
 import type { ModelSelection, Provider } from "../types/messages"
-import { isModelValid } from "./provider-utils"
+import { isModelUsable } from "./provider-utils"
 
 function validate(
   providers: Record<string, Provider>,
   connected: string[],
   selection: ModelSelection | null | undefined,
 ): ModelSelection | null {
-  if (!selection) return null
-  if (Object.keys(providers).length === 0) return selection
-  return isModelValid(providers, connected, selection) ? selection : null
+  // 豁免语义统一由 isModelUsable 提供：providers 未加载时视为可用。
+  return isModelUsable(providers, connected, selection) ? selection : null
 }
 
 function recent(

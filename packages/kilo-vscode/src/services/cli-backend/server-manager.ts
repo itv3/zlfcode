@@ -16,7 +16,14 @@ export interface ServerInstance {
   shared?: boolean
 }
 
-const STARTUP_TIMEOUT_SECONDS = 180
+// CLI 后端启动超时按运行环境分级：
+// - 本地环境：CLI 与扩展宿主在同一台机器，正常启动只需数秒；二进制损坏、端口
+//   占用等启动挂死问题应尽快反馈给用户，45 秒已远超正常本地启动耗时。
+// - 远程环境（Remote SSH / WSL / Dev Container，vscode.env.remoteName 非空）：
+//   扩展宿主运行在远端，二进制解压、冷启动和磁盘 IO 都可能明显偏慢，
+//   保留 180 秒的宽松超时，避免慢环境被误判为启动失败。
+const LOCAL_STARTUP_TIMEOUT_SECONDS = 45
+const REMOTE_STARTUP_TIMEOUT_SECONDS = 180
 const KILL_FALLBACK_MS = 5_000
 const LOCK_STALE_MS = 90_000
 const LOCK_WAIT_MS = 250
@@ -43,6 +50,15 @@ export function resolveIndexingEnv(folders: readonly WorkspaceFolderLike[] | und
 
 export function resolveManagedServerEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { ...env, KILO_DISABLE_CHANNEL_DB: "true" }
+}
+
+/**
+ * 按运行环境返回 CLI 后端启动超时秒数。
+ * `remoteName` 传 `vscode.env.remoteName`：本地窗口为 undefined（用较短的本地
+ * 超时），Remote SSH / WSL / Dev Container 等远程窗口为非空字符串（保留宽松超时）。
+ */
+export function resolveStartupTimeoutSeconds(remoteName: string | undefined): number {
+  return remoteName ? REMOTE_STARTUP_TIMEOUT_SECONDS : LOCAL_STARTUP_TIMEOUT_SECONDS
 }
 
 export class ServerManager {
@@ -225,19 +241,21 @@ export class ServerManager {
         }
       })
 
+      // 启动超时按本地/远程环境分级，见 resolveStartupTimeoutSeconds。
+      const startupTimeoutSeconds = resolveStartupTimeoutSeconds(vscode.env.remoteName)
       setTimeout(() => {
         if (!resolved) {
-          console.error(`[Kilo New] ServerManager: ⏰ Server startup timeout (${STARTUP_TIMEOUT_SECONDS}s)`)
+          console.error(`[Kilo New] ServerManager: ⏰ Server startup timeout (${startupTimeoutSeconds}s)`)
           ServerManager.killProcess(serverProcess, "SIGTERM")
           ServerManager.scheduleKillFallback(serverProcess)
           const { userMessage, userDetails } = toErrorMessage(
-            t("server.startupTimeout", { seconds: STARTUP_TIMEOUT_SECONDS }),
+            t("server.startupTimeout", { seconds: startupTimeoutSeconds }),
             stderrLines,
             cliPath,
           )
           reject(new ServerStartupError(userMessage, userDetails))
         }
-      }, STARTUP_TIMEOUT_SECONDS * 1000)
+      }, startupTimeoutSeconds * 1000)
     })
   }
 
@@ -266,7 +284,8 @@ export class ServerManager {
         fs.rmSync(lock, { recursive: true, force: true })
         continue
       }
-      if (Date.now() - started > LOCK_STALE_MS + STARTUP_TIMEOUT_SECONDS * 1000) {
+      // 等待其他窗口启动的上限与本窗口的启动超时保持同一分级。
+      if (Date.now() - started > LOCK_STALE_MS + resolveStartupTimeoutSeconds(vscode.env.remoteName) * 1000) {
         throw new Error("Timed out waiting for another Kilo backend startup to finish")
       }
       await sleep(LOCK_WAIT_MS)
@@ -296,7 +315,10 @@ export class ServerManager {
       return null
     }
     if (!(await this.isSharedHealthy(state))) {
-      this.clearSharedState(state.pid)
+      // 健康检查失败可能是高负载下的假阳性：只有确认进程已死才清理状态文件；
+      // 进程仍存活时保留文件并放弃复用，由本窗口自行启动新的后端
+      // （writeSharedState 会原子覆盖旧状态，不会留下无人管理的空窗）。
+      if (!this.isProcessAlive(state.pid)) this.clearSharedState(state.pid)
       return null
     }
     console.log("[Kilo New] ServerManager: Reusing shared CLI backend:", { pid: state.pid, port: state.port })
@@ -374,6 +396,21 @@ export class ServerManager {
     }
   }
 
+  /**
+   * 当前实例对应的后端进程是否已确认死亡。
+   * 供连接层在 SSE 断开后快速判断是否需要立即重建（见 connection-service.ts
+   * 的 probeBackendAfterDisconnect），避免等待健康轮询累计 3 次失败（约 30 秒）。
+   * 返回 false 表示「进程仍存活」或「无法确认」（无实例/无 pid）；后者交由
+   * 常规健康轮询处理，因此该方法不会引入误杀。
+   */
+  isBackendProcessDead(): boolean {
+    const instance = this.instance
+    if (!instance) return false
+    const pid = instance.process?.pid ?? instance.pid
+    if (pid === undefined) return false
+    return !this.isProcessAlive(pid)
+  }
+
   private async isInstanceHealthy(server: ServerInstance): Promise<boolean> {
     const code = server.process?.exitCode
     if (code !== undefined && code !== null) return false
@@ -393,8 +430,28 @@ export class ServerManager {
     const pid = server.process?.pid ?? server.pid
     console.warn("[Kilo New] ServerManager: dropping CLI backend:", { reason, port: server.port, pid })
     this.instance = null
-    this.clearSharedState(pid)
-    if (!server.process) return
+    // 假阳性保护：删除共享状态文件（server-start.json）必须先确认后端进程已死。
+    // 健康检查失败可能只是后端高负载下 /global/health 短暂超时（假阳性），此时
+    // 进程仍然存活并被其他窗口正常使用；若贸然删除状态文件，本窗口会拉起第二个
+    // 后端并写入新状态，旧后端却仍被 owner 窗口使用——形成双后端并存、各窗口
+    // provider/chat 状态分裂，这正是 dispose() 注释里明确要避免的场景。
+    const alive = pid !== undefined && this.isProcessAlive(pid)
+    if (!server.process) {
+      // shared 实例（本窗口不拥有进程）：只放弃本窗口的连接。
+      // - 进程已确认死亡：清理陈旧状态文件，让下一轮启动流程重新拉起后端；
+      // - 进程仍然存活：保留状态文件，下一轮 getServer 会重读共享状态并重试连接。
+      if (!alive) this.clearSharedState(pid)
+      return
+    }
+    if (!alive) {
+      // owned 实例但进程已确认死亡：exit 事件处理器通常已清理过状态文件，
+      // 这里再兜底清理一次（clearSharedState 内部有 pid 匹配保护，幂等）。
+      this.clearSharedState(pid)
+      return
+    }
+    // owned 实例且进程仍存活：说明后端已不可用（如事件循环挂死），由本窗口
+    // 负责杀掉重建。注意这里不直接删除状态文件——进程 exit 事件处理器会在
+    // 进程真正退出后完成清理，保证「删除状态文件」始终发生在进程确认死亡之后。
     ServerManager.killProcess(server.process, "SIGTERM")
     ServerManager.scheduleKillFallback(server.process)
   }
@@ -481,6 +538,16 @@ export class ServerManager {
     // 不要在真正退出前提前删除共享状态文件。
     // 否则扩展宿主先退出、`kilo serve` 还活着时，新宿主会误以为没有共享后端，
     // 进而再拉起第二个 server，造成 provider/chat 状态分裂。
+    //
+    // 已知限制（所有权移交尚未实现）：共享后端的生命周期完全绑定启动它的
+    // owner 窗口——这里对 owned 进程发 SIGTERM（并有 SIGKILL 兜底），且启动时
+    // KILO_PARENT_PID 指向本扩展宿主 pid，owner 宿主被硬杀时 CLI 的
+    // parent-watchdog 也会让后端自杀。因此 owner 窗口关闭时，其他复用该后端的
+    // 窗口的连接会一并中断，进行中的流式生成被终止。缓解：这些窗口会在 SSE
+    // 断开后立即做一次进程死亡快速探测（见 connection-service.ts 的
+    // probeBackendAfterDisconnect），秒级发现并自动重建后端；兜底则由健康轮询
+    // 在约 30 秒内自愈。彻底解决需要引用计数或所有权移交（owner 退出时由存活
+    // 窗口接管并原子更新 server-start.json），属于大型重构，暂不在本轮实施。
     console.log("[Kilo New] ServerManager: 🔴 Disposing — sending SIGTERM to process group, PID:", proc.pid)
     ServerManager.killProcess(proc, "SIGTERM")
 

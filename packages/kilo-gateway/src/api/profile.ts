@@ -1,11 +1,13 @@
 import { select } from "@clack/prompts"
 import type { KilocodeProfile, Organization, KilocodeBalance } from "../types.js"
+// kilocode_change start - 引入默认模型请求的超时常量
 import {
   KILO_API_BASE,
   DEFAULT_MODEL,
   DEFAULT_FREE_MODEL,
   DEFAULT_MODEL_FETCH_TIMEOUT_MS,
 } from "./constants.js"
+// kilocode_change end
 
 /**
  * Fetch user profile from Kilo API
@@ -107,14 +109,16 @@ export const getKiloBalance = fetchBalance
 export async function fetchDefaultModel(
   token?: string,
   organizationId?: string,
-  input?: AbortSignal,
+  input?: AbortSignal, // kilocode_change - 允许调用方传入取消信号
 ): Promise<string> {
   const path = organizationId ? `/api/organizations/${organizationId}/defaults` : `/api/defaults`
   const url = `${KILO_API_BASE}${path}`
 
   try {
+    // kilocode_change start - 5 秒超时保护，避免默认模型请求阻塞 Provider 初始化
     const timeout = AbortSignal.timeout(DEFAULT_MODEL_FETCH_TIMEOUT_MS)
     const signal = input ? AbortSignal.any([input, timeout]) : timeout
+    // kilocode_change end
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     }
@@ -122,7 +126,7 @@ export async function fetchDefaultModel(
       headers.Authorization = `Bearer ${token}`
     }
 
-    const response = await fetch(url, { headers, signal })
+    const response = await fetch(url, { headers, signal }) // kilocode_change - 携带超时/取消信号
 
     if (!response.ok) {
       return token ? DEFAULT_MODEL : DEFAULT_FREE_MODEL

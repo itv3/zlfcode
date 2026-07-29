@@ -65,10 +65,28 @@ function sameSet(a: Set<string>, b: Set<string>): boolean {
   return true
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 // Poll /global/health every 10 seconds.
 // This provides a second detection channel for server death independent of the SSE heartbeat.
 const HEALTH_POLL_INTERVAL_MS = 10_000
 const HEALTH_FAILURE_LIMIT = 3
+
+// 自动恢复（recover）节流：后端「启动成功但随后持续崩溃」时，每次 exit 事件都
+// 会触发新一轮 spawn。若不加节流会形成无限重启循环（每轮仅受 CLI 启动耗时约
+// 束）。因此按 1s/5s/30s 指数退避，连续 5 次仍失败就停在 error 状态等待用户手
+// 动重试；连接稳定保持 60 秒后重置计数。
+const RECOVERY_BACKOFF_MS: readonly number[] = [1_000, 5_000, 30_000]
+const RECOVERY_ATTEMPT_LIMIT = 5
+const RECOVERY_STABLE_RESET_MS = 60_000
+
+/** 按连续失败次数返回下一次自动恢复前的退避等待时间（毫秒）。 */
+export function resolveRecoveryDelayMs(attempt: number, backoff: readonly number[] = RECOVERY_BACKOFF_MS): number {
+  if (backoff.length === 0) return 0
+  return backoff[Math.min(Math.max(attempt, 0), backoff.length - 1)]!
+}
 
 /** Reject all pending network-offline waits for a given directory. */
 async function drainNetworkWaits(client: KiloClient, dir: string) {
@@ -97,6 +115,13 @@ export class KiloConnectionService {
   private connectPromise: Promise<void> | null = null
   private connectCancel: ((error: Error) => void) | null = null
   private recoveryPromise: Promise<void> | null = null
+  /** 连续自动恢复失败次数；连接稳定保持一段时间后清零。 */
+  private recoveryAttempts = 0
+  /** 连接稳定计时器：到期后重置 recoveryAttempts。 */
+  private recoveryResetTimer: ReturnType<typeof setTimeout> | null = null
+  /** 退避序列与稳定窗口做成实例字段，便于测试注入更短的时间。 */
+  private recoveryBackoffMs: readonly number[] = RECOVERY_BACKOFF_MS
+  private recoveryStableResetMs = RECOVERY_STABLE_RESET_MS
   private healthPollTimer: ReturnType<typeof setInterval> | null = null
   private healthFailures = 0
   private disposed = false
@@ -757,6 +782,7 @@ export class KiloConnectionService {
     this.disposed = true
     this.cancelConnection(new Error("Connection service has been disposed."))
     this.stopHealthPoll()
+    this.cancelRecoveryReset()
     this.sseClient?.dispose()
     this.serverManager.dispose()
     this.eventListeners.clear()
@@ -880,10 +906,33 @@ export class KiloConnectionService {
     }
   }
 
-  /** 单飞恢复当前后端；所有并发调用方等待同一轮 Server、SDK 与 SSE 重建。 */
+  /**
+   * 单飞恢复当前后端；所有并发调用方等待同一轮 Server、SDK 与 SSE 重建。
+   * 带指数退避与连续失败上限：超过上限后停止自动重建，停在 error 状态等待
+   * 用户手动重试（手动重试走 connect()，不受此上限约束；重试成功且连接稳定
+   * 保持一段时间后计数自动清零，见 scheduleRecoveryReset）。
+   */
   private recover(reason: Error): Promise<void> {
     if (this.disposed) return Promise.resolve()
     if (this.recoveryPromise) return this.recoveryPromise
+
+    if (this.recoveryAttempts >= RECOVERY_ATTEMPT_LIMIT) {
+      // 连续自动恢复全部失败：不再无节制拉起新进程，清理残余连接并保持
+      // error 状态，把决定权交还给用户（UI 的 Retry 按钮会走 connect()）。
+      console.warn("[Kilo New] ConnectionService: automatic recovery limit reached; waiting for manual retry", {
+        attempts: this.recoveryAttempts,
+      })
+      this.serverManager.forgetServer()
+      this.resetConnection()
+      this.setState(
+        "error",
+        new Error("CLI backend keeps failing. Automatic recovery has been paused — retry manually."),
+      )
+      return Promise.resolve()
+    }
+
+    const delay = resolveRecoveryDelayMs(this.recoveryAttempts, this.recoveryBackoffMs)
+    this.recoveryAttempts += 1
 
     const root = this.currentDirectory ?? this.rootDirectory ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
     const task = Promise.resolve().then(async () => {
@@ -892,6 +941,8 @@ export class KiloConnectionService {
       this.serverManager.forgetServer()
       this.resetConnection()
       if (pending) await pending.catch(() => undefined)
+      // 指数退避：连续失败越多等待越久，避免后端反复崩溃时形成无节流重启循环。
+      if (delay > 0) await sleep(delay)
       if (this.disposed) return
       if (!root) throw new Error("CLI backend disconnected and no workspace folder is available.")
       await this.startConnection(root)
@@ -909,10 +960,35 @@ export class KiloConnectionService {
     return done
   }
 
+  /**
+   * 连接保持稳定一段时间后清零连续恢复失败计数。
+   * 在 doConnect 确认连接成功后调度；期间若连接再次被重置（resetConnection）
+   * 则取消计时，保证「短暂恢复成功后又立即崩溃」不会绕过退避上限。
+   */
+  private scheduleRecoveryReset(): void {
+    this.cancelRecoveryReset()
+    if (this.recoveryAttempts === 0) return
+    this.recoveryResetTimer = setTimeout(() => {
+      this.recoveryResetTimer = null
+      this.recoveryAttempts = 0
+    }, this.recoveryStableResetMs)
+    // 不让稳定计时器阻止扩展宿主退出。
+    this.recoveryResetTimer.unref?.()
+  }
+
+  private cancelRecoveryReset(): void {
+    if (this.recoveryResetTimer) {
+      clearTimeout(this.recoveryResetTimer)
+      this.recoveryResetTimer = null
+    }
+  }
+
   private resetConnection(): void {
     this.cancelConnection(new Error("Connection attempt was reset."))
     this.stopHealthPoll()
     this.stopCheckin()
+    // 连接被重置说明尚未稳定：取消稳定计时，防止半途清零恢复失败计数。
+    this.cancelRecoveryReset()
     const sse = this.sseClient
     this.sseClient = null
     sse?.disconnect()
@@ -927,9 +1003,28 @@ export class KiloConnectionService {
 
   private handleServerExit(code: number | null): void {
     console.warn("[Kilo New] ConnectionService: CLI background process exited:", code)
+    // recover 内部带指数退避与连续失败上限：后端反复崩溃时不会形成无节流重启循环。
     void this.recover(
       new Error(`CLI background process exited with code ${code ?? "unknown"}. Reconnecting automatically.`),
     )
+  }
+
+  /**
+   * SSE 断开后立即探测一次后端进程。
+   * owner 窗口关闭时会 SIGTERM 共享后端（见 server-manager.ts dispose 注释），
+   * 其他窗口原本要等健康轮询累计 3 次失败（约 20-30 秒）才会重建连接，期间
+   * 进行中的流式生成已被终止却迟迟得不到恢复。这里在 SSE 断开的第一时间检查
+   * 后端进程是否已确认死亡（信号 0 探测，无假阳性），已死则立即 recover，把
+   * 检测窗口从数十秒缩短到秒级；进程仍存活的短暂 SSE 中断依旧交给 SSE 自身的
+   * 重连循环和常规健康轮询处理，不会因此提前触发破坏性重建。
+   */
+  private async probeBackendAfterDisconnect(baseUrl: string, password: string): Promise<void> {
+    if (this.disposed || this.recoveryPromise) return
+    const config = this.config
+    if (!config || config.baseUrl !== baseUrl || config.password !== password) return
+    if (this.serverManager.isBackendProcessDead()) {
+      void this.recover(new Error("CLI backend process is gone. Reconnecting automatically."))
+    }
   }
 
   private async doConnect(workspaceDir: string): Promise<void> {
@@ -1022,6 +1117,15 @@ export class KiloConnectionService {
 
       if (!didConnect && sseState === "disconnected") {
         cancel(new Error(`SSE connection ended in state: ${sseState}`))
+        return
+      }
+
+      if (didConnect) {
+        // 已建立过的连接离开 connected：SSE 流断开进入重连循环时 adapter 发出
+        // "connecting"（每轮重连前都会发出），外层循环被显式终止时发出
+        // "disconnected"。两种情况都立即探测后端进程是否已死，缩短 owner 窗口
+        // 关闭后其他窗口的检测窗口（详见 probeBackendAfterDisconnect 注释）。
+        void this.probeBackendAfterDisconnect(config.baseUrl, config.password)
       }
     })
 
@@ -1038,6 +1142,8 @@ export class KiloConnectionService {
     this.startCheckin()
     // Start the independent health poll once we are confirmed connected.
     this.startHealthPoll(config.baseUrl, config.password)
+    // 连接确认成功：调度稳定计时，稳定保持一段时间后清零自动恢复失败计数。
+    this.scheduleRecoveryReset()
   }
 
   private startCheckin(): void {

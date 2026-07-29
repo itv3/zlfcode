@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import * as vscode from "vscode"
-import { KiloConnectionService } from "./connection-service"
+import { KiloConnectionService, resolveRecoveryDelayMs } from "./connection-service"
 
 function state(value: boolean) {
   return {
@@ -358,5 +358,145 @@ describe("KiloConnectionService drainPendingPrompts", () => {
     await expect(pending).rejects.toThrow(`Failed to list permissions for ${dirs[1]}`)
     expect(calls).not.toContain(dirs[4])
     expect(cleared).toBe(0)
+  })
+})
+
+describe("KiloConnectionService automatic recovery", () => {
+  test("resolveRecoveryDelayMs follows the 1s/5s/30s backoff sequence", () => {
+    expect(resolveRecoveryDelayMs(0)).toBe(1_000)
+    expect(resolveRecoveryDelayMs(1)).toBe(5_000)
+    expect(resolveRecoveryDelayMs(2)).toBe(30_000)
+    // 超出序列长度后停留在最长退避。
+    expect(resolveRecoveryDelayMs(3)).toBe(30_000)
+    expect(resolveRecoveryDelayMs(99)).toBe(30_000)
+    // 防御：负数按首个退避处理，空序列返回 0。
+    expect(resolveRecoveryDelayMs(-1)).toBe(1_000)
+    expect(resolveRecoveryDelayMs(0, [])).toBe(0)
+  })
+
+  test("stops automatic recovery after the failure limit and waits for manual retry", async () => {
+    const service = new KiloConnectionService({} as any)
+    const svc = service as any
+    // 注入毫秒级退避，让测试快速跑完 5 轮。
+    svc.recoveryBackoffMs = [1, 2, 3]
+    let forgets = 0
+    svc.serverManager = {
+      forgetServer: () => {
+        forgets += 1
+        return true
+      },
+      dispose: () => {},
+    }
+    let attempts = 0
+    svc.startConnection = async () => {
+      attempts += 1
+      throw new Error("start failed")
+    }
+
+    // 连续 5 轮自动恢复全部失败。
+    for (let i = 0; i < 5; i++) {
+      await svc.recover(new Error("backend crashed"))
+    }
+    expect(attempts).toBe(5)
+    expect(forgets).toBe(5)
+
+    // 第 6 次触发：超过上限，不再重建，停在 error 状态提示手动重试。
+    await svc.recover(new Error("backend crashed"))
+    expect(attempts).toBe(5)
+    expect(service.getConnectionState()).toBe("error")
+    expect(service.getConnectionError()?.message).toContain("retry manually")
+  })
+
+  test("concurrent recover calls during backoff share the same in-flight recovery", async () => {
+    const service = new KiloConnectionService({} as any)
+    const svc = service as any
+    svc.recoveryBackoffMs = [20]
+    svc.serverManager = { forgetServer: () => true, dispose: () => {} }
+    let attempts = 0
+    svc.startConnection = async () => {
+      attempts += 1
+    }
+
+    const first = svc.recover(new Error("boom"))
+    // 退避等待期间再次触发（模拟健康轮询与 exit 事件同时到达）：必须复用同一轮。
+    const second = svc.recover(new Error("boom again"))
+    expect(second).toBe(first)
+    await first
+    expect(attempts).toBe(1)
+    expect(svc.recoveryAttempts).toBe(1)
+  })
+
+  test("resets the failure counter after the connection stays stable", async () => {
+    const service = new KiloConnectionService({} as any)
+    const svc = service as any
+    svc.recoveryAttempts = 3
+    svc.recoveryStableResetMs = 10
+
+    svc.scheduleRecoveryReset()
+    await Bun.sleep(30)
+
+    expect(svc.recoveryAttempts).toBe(0)
+  })
+
+  test("does not reset the counter when the connection is torn down within the stable window", async () => {
+    const service = new KiloConnectionService({} as any)
+    const svc = service as any
+    svc.recoveryAttempts = 3
+    svc.recoveryStableResetMs = 10
+
+    svc.scheduleRecoveryReset()
+    // 稳定窗口内连接再次被重置：稳定计时必须取消，计数保留以维持退避上限。
+    svc.resetConnection()
+    await Bun.sleep(30)
+
+    expect(svc.recoveryAttempts).toBe(3)
+  })
+})
+
+describe("KiloConnectionService SSE disconnect fast probe", () => {
+  test("recovers immediately when the backend process is confirmed dead", async () => {
+    const service = new KiloConnectionService({} as any)
+    const svc = service as any
+    svc.config = { baseUrl: "http://127.0.0.1:1", password: "pw" }
+    svc.serverManager = { isBackendProcessDead: () => true, dispose: () => {} }
+    let recovered = 0
+    svc.recover = async () => {
+      recovered += 1
+    }
+
+    await svc.probeBackendAfterDisconnect("http://127.0.0.1:1", "pw")
+
+    expect(recovered).toBe(1)
+  })
+
+  test("does not recover when the backend process is still alive", async () => {
+    const service = new KiloConnectionService({} as any)
+    const svc = service as any
+    svc.config = { baseUrl: "http://127.0.0.1:1", password: "pw" }
+    svc.serverManager = { isBackendProcessDead: () => false, dispose: () => {} }
+    let recovered = 0
+    svc.recover = async () => {
+      recovered += 1
+    }
+
+    await svc.probeBackendAfterDisconnect("http://127.0.0.1:1", "pw")
+
+    expect(recovered).toBe(0)
+  })
+
+  test("ignores probes for a superseded connection config", async () => {
+    const service = new KiloConnectionService({} as any)
+    const svc = service as any
+    svc.config = { baseUrl: "http://127.0.0.1:2", password: "new" }
+    svc.serverManager = { isBackendProcessDead: () => true, dispose: () => {} }
+    let recovered = 0
+    svc.recover = async () => {
+      recovered += 1
+    }
+
+    // 旧连接的探测请求：config 已被新连接替换，必须忽略。
+    await svc.probeBackendAfterDisconnect("http://127.0.0.1:1", "old")
+
+    expect(recovered).toBe(0)
   })
 })

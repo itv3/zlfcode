@@ -1,5 +1,4 @@
 import { Auth } from "@/auth"
-import { EffectBridge } from "@/effect/bridge" // kilocode_change
 import {
   invalidateAfterProviderAuthChange,
   invalidatePresence,
@@ -15,20 +14,20 @@ import { remove as removeAuth } from "@/kilocode/auth/remove" // kilocode_change
 export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (handlers) =>
   Effect.gen(function* () {
     const auth = yield* Auth.Service
-    const bridge = yield* EffectBridge.make() // kilocode_change
     const lifecycle = Log.create({ service: "server" }) // kilocode_change
 
     // kilocode_change start
+    // 审核条目 F36/F41：同步等待 invalidateAfterProviderAuthChange 完成后再返回，
+    // 恢复上游「authSet/authRemove 返回即认证已生效」的语义。该函数现已轻量
+    // （仅内存级 ModelCache.clear + ModelsRefresh.notify，不销毁实例、不涉及
+    // Remote-SSH 断连问题），同步等待的开销可忽略。失败仅记录告警，不让
+    // 认证写入本身报错——auth 数据已落盘，缓存失效失败可由后续读取自愈。
     const invalidate = (providerID: ProviderV2.ID) =>
       Effect.gen(function* () {
         if (providerID === "kilo") yield* invalidatePresence()
-        yield* Effect.sync(() =>
-          bridge.fork(
-            invalidateAfterProviderAuthChange(providerID, { timeout: "5 seconds" }).pipe(
-              Effect.catchCause((cause) =>
-                Effect.sync(() => lifecycle.warn("provider auth invalidation failed", { providerID, cause })),
-              ),
-            ),
+        yield* invalidateAfterProviderAuthChange(providerID).pipe(
+          Effect.catchCause((cause) =>
+            Effect.sync(() => lifecycle.warn("provider auth invalidation failed", { providerID, cause })),
           ),
         )
       })

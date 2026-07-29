@@ -35,6 +35,10 @@ function createCtx(
     failReady?: boolean
     hangReady?: boolean
     missingModels?: string[]
+    /** F16：注入 auth.set 失败，覆盖 config 写入成功后 auth 阶段失败的回滚路径。 */
+    failAuthSet?: boolean
+    /** F16：注入 auth.remove 失败，覆盖清除 key 时 auth 阶段失败的回滚路径。 */
+    failAuthRemove?: boolean
   } = {},
 ) {
   const calls = {
@@ -63,10 +67,12 @@ function createCtx(
           auth: { type: string; key: string; metadata?: Record<string, string> }
         }) => {
           calls.set.push(input)
+          if (opts.failAuthSet) throw new Error("auth set failed")
           return { data: true }
         },
         remove: async (input: { providerID: string }) => {
           calls.remove.push(input)
+          if (opts.failAuthRemove) throw new Error("auth remove failed")
           return { data: true }
         },
       },
@@ -572,6 +578,125 @@ describe("saveCustomProvider", () => {
     expect(calls.dispose).toBe(0)
     expect(calls.refresh).toBe(0)
     expect(calls.notify).toBe(1)
+  })
+
+  // F16：config 写入成功后 auth.set/auth.remove 失败必须回滚已写入的 provider 配置，
+  // 使保存具备全有或全无语义（此前只有 reset→patch 窗口有回滚）。
+  it("rolls back a newly created provider with a null sentinel when auth.set fails", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx(
+      { disabled_providers: ["myprovider", "openai"] },
+      { disabled_providers: ["myprovider", "openai"] },
+      { failAuthSet: true },
+    )
+
+    await saveCustomProvider(ctx, "req", "myprovider", createProvider(), "sk-test", true, null, setCachedConfig)
+    await flush()
+
+    // 第 1 次:保存 patch(移除 disabled 中的 myprovider);第 2 次:回滚 null 哨兵并恢复 disabled_providers 原值。
+    expect(calls.config).toHaveLength(2)
+    expect(calls.config[0].config.disabled_providers).toEqual(["openai"])
+    expect(calls.config[1].config).toEqual({
+      provider: { myprovider: null },
+      disabled_providers: ["myprovider", "openai"],
+    })
+    expect(calls.set).toEqual([{ providerID: "myprovider", auth: { type: "api", key: "sk-test" } }])
+    expect(calls.stored).toHaveLength(0)
+    expect(calls.notify).toBe(1)
+    expect(calls.posts).toContainEqual({
+      type: "providerActionError",
+      requestId: "req",
+      providerID: "myprovider",
+      action: "connect",
+      message: "auth set failed",
+    })
+    expect(calls.posts.every((post) => (post as { type?: string }).type !== "providerConnected")).toBe(true)
+  })
+
+  it("restores the previous provider config when auth.set fails for an existing provider", async () => {
+    const existing = {
+      disabled_providers: [],
+      provider: {
+        myprovider: createSavedProvider(),
+      },
+    }
+    const { ctx, calls, setCachedConfig } = createCtx(existing, existing, { failAuthSet: true })
+
+    const next = {
+      name: "My Provider",
+      options: { baseURL: "https://changed.example.com/v1" },
+      models: {
+        "model-added": { name: "Added Model" },
+      },
+    }
+    await saveCustomProvider(ctx, "req", "myprovider", next, "sk-new", true, null, setCachedConfig)
+    await flush()
+
+    // 第 1 次:保存 patch;第 2 次:null 哨兵整体清除(深合并下无法用 existing 覆盖新增字段);
+    // 第 3 次:写回保存前读取的 existing 完整配置。
+    expect(calls.config).toHaveLength(3)
+    expect(calls.config[1].config).toEqual({
+      provider: { myprovider: null },
+      disabled_providers: [],
+    })
+    expect(calls.config[2].config).toEqual({ provider: { myprovider: existing.provider.myprovider } })
+    expect(calls.stored).toHaveLength(0)
+    expect(calls.posts).toContainEqual({
+      type: "providerActionError",
+      requestId: "req",
+      providerID: "myprovider",
+      action: "connect",
+      message: "auth set failed",
+    })
+  })
+
+  it("rolls back config when auth.remove fails while clearing the api key", async () => {
+    const existing = {
+      disabled_providers: [],
+      provider: {
+        myprovider: createSavedProvider(),
+      },
+    }
+    const { ctx, calls, setCachedConfig } = createCtx(existing, existing, { failAuthRemove: true })
+
+    await saveCustomProvider(ctx, "req", "myprovider", createProvider(), undefined, true, null, setCachedConfig)
+    await flush()
+
+    expect(calls.remove).toEqual([{ providerID: "myprovider" }])
+    expect(calls.config).toHaveLength(3)
+    expect(calls.config[1].config).toEqual({
+      provider: { myprovider: null },
+      disabled_providers: [],
+    })
+    expect(calls.config[2].config).toEqual({ provider: { myprovider: existing.provider.myprovider } })
+    expect(calls.stored).toHaveLength(0)
+    expect(calls.posts).toContainEqual({
+      type: "providerActionError",
+      requestId: "req",
+      providerID: "myprovider",
+      action: "connect",
+      message: "auth remove failed",
+    })
+  })
+
+  it("still reports the auth error when the rollback itself fails", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx(
+      { disabled_providers: [] },
+      { disabled_providers: [] },
+      // 第 1 次 config.update 为保存 patch(成功),第 2 次为回滚(注入失败)。
+      { failAuthSet: true, failGlobalUpdateAt: 2 },
+    )
+
+    await saveCustomProvider(ctx, "req", "myprovider", createProvider(), "sk-test", true, null, setCachedConfig)
+    await flush()
+
+    expect(calls.config).toHaveLength(2)
+    expect(calls.posts).toContainEqual({
+      type: "providerActionError",
+      requestId: "req",
+      providerID: "myprovider",
+      action: "connect",
+      message: "auth set failed",
+    })
   })
 
   it("does not block a custom provider save on a pending runtime readiness check", async () => {

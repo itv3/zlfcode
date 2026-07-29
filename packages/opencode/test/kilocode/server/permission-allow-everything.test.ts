@@ -1,3 +1,24 @@
+// ⚠️ 已知测试隔离限制（F69，预存缺陷，保守处理）：本文件的 HTTP 用例与
+// test/kilocode/server/ 目录整体连跑（bun test test/kilocode/server/）时会互相干扰：
+//
+// 根因链（2026-07-30 排查确认）：
+// 1. Server.Default() 与 HttpApiApp.webHandler 是进程级 lazy 单例，认证配置
+//    （ServerAuth.Config.defaultLayer 读 KILO_SERVER_PASSWORD）在单例首次构建时
+//    解析一次并被共享 memoMap（@opencode-ai/core/effect/memo-map）memo；
+// 2. lazy.reset() 无法绕开——重建的 handler 经同一 memoMap 拿回旧 auth config
+//    （已用探针实证：reset 后重设密码再请求仍 401）；
+// 3. /permission/allow-everything 属 REQUIRED_AUTH_PATHS（fail-closed）：单例在
+//    无密码状态下构建后，该端点无论携带什么凭据一律 401；反之本文件先跑并以
+//    requireAuth() 的密码构建单例后，后续文件（cloud-session-import 等）的无凭据
+//    请求会全部 401。三组测试对同一单例的认证状态期望互斥，同进程连跑必有一方失败。
+//
+// 影响范围：仅本地整目录连跑；CI 经 script/test-runner.ts 按文件 shard 分进程执行，
+// 不受影响。单独运行本文件（bun test test/kilocode/server/permission-allow-everything.test.ts）
+// 语义完整且通过。
+//
+// 彻底修复方向（另立任务）：为测试提供非单例的 webHandler 工厂（独立 memoMap）并
+// 适配 fixture 实例路由，或引入按文件的进程隔离运行方式。在此之前请勿以"整目录
+// 连跑出现 401"作为回归判断依据。
 import { afterEach, describe, expect, test } from "bun:test"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Cause, Effect, Exit, Fiber, Layer } from "effect"

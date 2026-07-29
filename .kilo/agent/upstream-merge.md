@@ -315,12 +315,9 @@ able to understand why this one upstream test is treated differently.
 
 ### 10. Resync version strings in a separate commit
 
-Upstream stamps its own version into shared files — notably
-`packages/extensions/zed/extension.toml` (version field + 5 Kilo-Org download
-URLs), and any `package.json` that upstream bumped in the same release window.
-After the merge this leaves parts of the tree pointing at upstream's version
-(e.g. `1.14.30`), whose release tag does not exist on Kilo's pipeline, so the
-Zed download URLs silently 404.
+Upstream stamps its own version into `package.json` files it bumped in the
+same release window. After the merge this leaves parts of the tree pointing
+at upstream's version string instead of ours.
 
 Fix this in a dedicated commit *after* `resolve merge conflicts`:
 
@@ -334,9 +331,17 @@ git commit -m "chore: resync versions after upstream merge"
 
 The script rewrites every top-level `"version"` in `package.json` files
 (excluding `node_modules`, hidden dirs, and `packages/kilo-jetbrains/` which
-tracks its own cadence), plus the Zed extension toml. It is idempotent — rerun
-it any time to rebase the version back onto Kilo main (useful during
-long-running upstream merges where `main` releases in the meantime).
+tracks its own cadence). It is idempotent — rerun it any time to rebase the
+version back onto Kilo main (useful during long-running upstream merges where
+`main` releases in the meantime).
+
+⚠️ ZLF 注意（F63，与 F56 的修复保持一致）：`packages/extensions/zed/extension.toml`
+已被 **有意排除** 在同步范围之外——其 `version` 与 5 个 archive URL 指向
+Kilo-Org 上游 release（如 `v7.4.16`）。ZLF 不发布 Zed 扩展，把它们改写成 ZLF
+市场版本（如 `7.4.1603`）会生成上游不存在的下载地址（全部 404）。合并上游后
+该文件应与上游 tag 保持逐字节一致，**不要手动"纠正"它的版本号**；
+`script/zlfcode/check-release.ts` 会校验它保持上游底座版本且全部 archive URL
+版本一致，误写会在发布前被拦截。
 
 Keeping this in its own commit makes reviewers' job easier: the merge commit
 only contains behavioural resolutions, and the version resync is a trivial

@@ -1,6 +1,6 @@
 import type { ModelSelection, Provider } from "../types/messages"
 import { resolveModelSelection } from "./model-selection"
-import { isModelValid } from "./provider-utils"
+import { isModelUsable } from "./provider-utils"
 
 /**
  * Pure-logic helpers for per-session and global model selection.
@@ -45,9 +45,8 @@ function resolveModel(
 }
 
 function valid(env: ResolveEnv, selection: ModelSelection | null | undefined): selection is ModelSelection {
-  if (!selection) return false
-  if (Object.keys(env.providers).length === 0) return true
-  return isModelValid(env.providers, env.connected, selection)
+  // 豁免语义统一由 isModelUsable 提供：providers 未加载时视为可用。
+  return isModelUsable(env.providers, env.connected, selection)
 }
 
 /**

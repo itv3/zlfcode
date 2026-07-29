@@ -80,7 +80,7 @@ import { clearSessionDraftDiscarded, deleteDraftsForSession } from "../utils/dra
 import { createAbortState } from "./abort-state"
 import { clearIfOn, createCloudPrune } from "./session-cloud-prune"
 import { isSameSessionTree } from "./model-usage"
-import { createStaleModelPruner } from "./session-model-prune"
+import { isModelUsable } from "./provider-utils"
 import { createDraftAgentSeed } from "./session-agent"
 
 const RECENT_LIMIT = 5
@@ -600,7 +600,7 @@ export const SessionProvider: ParentComponent = (props) => {
   }
 
   function validModel(selection: ModelSelection | null | undefined) {
-    return !!selection && (Object.keys(provider.providers()).length === 0 || provider.isModelValid(selection))
+    return isModelUsable(provider.providers(), provider.connected(), selection)
   }
 
   function sessionModel(sessionID: string) {
@@ -960,15 +960,16 @@ export const SessionProvider: ParentComponent = (props) => {
   vscode.postMessage({ type: "requestFavorites" })
   onCleanup(unsubFavorites)
 
-  createStaleModelPruner({
-    providers: provider.providers,
-    connected: provider.connected,
-    store,
-    setStore,
-    setAgents: setUserSetAgents,
-    post: vscode.postMessage,
-    valid: provider.isModelValid,
-  })
+  // 注意：这里曾接线一个 stale model pruner（原 session-model-prune.ts），在
+  // provider 快照中条目不可见时对收藏、最近模型和 per-agent 选择执行持久化
+  // 删除（toggleFavorite remove / clearModelSelection / persistRecents）。该
+  // 行为在 provider 瞬时缺失（如 kilo gateway 拉取失败的过渡快照、后端重启
+  // SSE 重连）或用户主动断开 provider（数据本应仅隐藏、保留待重连恢复）时会
+  // 永久删除用户数据且跨窗口传播。读取与展示路径已完整过滤失效条目
+  // （resolveModelSelection 全链校验、ModelSelector 与 visibleModels 交集展示、
+  // sessionModel/validModel 防御），持久删除没有实际收益，故整体移除该 pruner
+  // 及其接线，失效条目保留在内存与持久存储中，provider 恢复后自动重新生效。
+  // 回归锁定见 tests/unit/stale-model-retention.test.ts。
   createPreferenceRecovery({
     ready: () => Object.keys(provider.providers()).length > 0,
     connected: provider.connected,

@@ -113,6 +113,7 @@ const ModelsTab: Component = () => {
             placement="bottom-start"
             allowClear
             clearLabel={language.t("settings.providers.notSet")}
+            labelSemantics="configured"
             label={language.t("settings.providers.defaultModel.title")}
             description={language.t("settings.providers.defaultModel.description")}
           />
@@ -127,6 +128,7 @@ const ModelsTab: Component = () => {
             placement="bottom-start"
             allowClear
             clearLabel={language.t("settings.providers.notSet")}
+            labelSemantics="configured"
             includeAutoSmall
             label={language.t("settings.providers.smallModel.title")}
             description={language.t("settings.providers.smallModel.description")}
@@ -143,6 +145,7 @@ const ModelsTab: Component = () => {
               placement="bottom-start"
               allowClear
               clearLabel={language.t("settings.providers.notSet")}
+              labelSemantics="configured"
               label={language.t("settings.providers.subagentModel.title")}
               description={language.t("settings.providers.subagentModel.description")}
             />
@@ -172,6 +175,7 @@ const ModelsTab: Component = () => {
             favorites={false}
             allowClear
             clearLabel={language.t("settings.providers.notSet")}
+            labelSemantics="configured"
             label={language.t("settings.autocomplete.model.title")}
             description={language.t("settings.autocomplete.model.description")}
           />
@@ -242,6 +246,7 @@ const ModelsTab: Component = () => {
                 placement="bottom-start"
                 allowClear
                 clearLabel={language.t("settings.providers.notSet")}
+                labelSemantics="configured"
                 label={`${language.t("settings.providers.modeModels")}: ${agent.name}`}
                 description={language.t("settings.providers.modeModels.description")}
               />

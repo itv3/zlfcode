@@ -2,11 +2,13 @@
 // kilocode_change - new file
 // Sync every Kilo version string across the monorepo to a single target.
 //
-// Why this exists: upstream opencode stamps its own version into shared files
-// during each release (notably `packages/extensions/zed/extension.toml`). When
-// we merge upstream, that churn either produces conflicts or silently leaves
-// our packages pointing at upstream's version — and upstream's version tag
-// doesn't exist on our release pipeline, so the resulting download URLs 404.
+// Why this exists: upstream stamps its own version into the `package.json`
+// files it bumped during each release. When we merge upstream, that churn
+// either produces conflicts or silently leaves our packages pointing at
+// upstream's version string.
+//（F63 说明：历史版本的本注释还提到 zed extension.toml 的下载地址 404 问题并
+// 因此改写该文件——那与下方"Intentionally NOT touched"的现行结论方向相反，
+// 已随 F56 修复一并纠正：该文件必须保持 Kilo-Org 上游底座版本，本脚本不再触碰。）
 //
 // Run this in a dedicated commit after resolving an upstream merge (see
 // `.kilo/command/upstream-manual-merge.md`). It's also handy mid-merge to
@@ -20,17 +22,19 @@
 // What gets updated:
 //   - every `package.json` top-level `"version": "..."` field in the repo
 //     (excluding node_modules and hidden directories)
-//   - `packages/extensions/zed/extension.toml` top-level `version = "..."`
-//   - the five Kilo-Org download URLs inside that toml
 //
 // Intentionally NOT touched:
 //   - `packages/kilo-jetbrains/**` — the JetBrains plugin has its own release
 //     cadence and version number.
 //   - dependency version strings inside `package.json` — internal deps use
 //     `workspace:*` so they don't need bumping.
+//   - `packages/extensions/zed/extension.toml` — 该文件的 version 与五个
+//     archive URL 指向 Kilo-Org 上游 release（如 v7.4.16）。ZLF 不发布 Zed
+//     扩展，如果把它们改写为 ZLF 市场版本（如 7.4.1603），会生成上游不存在
+//     的 release 下载地址（全部 404）。因此保持上游底座版本原值不做批次替换。
 
 import { Glob } from "bun"
-import { join, relative } from "node:path"
+import { join } from "node:path"
 
 const root = join(import.meta.dir, "..")
 
@@ -79,20 +83,8 @@ for await (const rel of glob.scan({ cwd: root, onlyFiles: true })) {
   updated++
 }
 
-const zed = join(root, "packages/extensions/zed/extension.toml")
-if (await Bun.file(zed).exists()) {
-  const text = await Bun.file(zed).text()
-  const next = text
-    .replace(/^version\s*=\s*"[^"]+"/m, `version = "${target}"`)
-    .replace(
-      /https:\/\/github\.com\/Kilo-Org\/kilocode\/releases\/download\/v[^/]+\//g,
-      `https://github.com/Kilo-Org/kilocode/releases/download/v${target}/`,
-    )
-  if (next !== text) {
-    await Bun.write(zed, next)
-    console.log(`  ${relative(root, zed)}`)
-    updated++
-  }
-}
+// 注意：`packages/extensions/zed/extension.toml` 被有意排除在同步范围之外。
+// 其 version 与 archive URL 必须保持上游底座版本（指向 Kilo-Org 的真实 release），
+// 改写为 ZLF 市场版本会得到不存在的下载地址。见文件头注释。
 
 console.log(`\nupdated ${updated} file(s)`)

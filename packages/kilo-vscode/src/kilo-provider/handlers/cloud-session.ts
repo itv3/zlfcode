@@ -186,7 +186,8 @@ export async function handleImportAndSend(
       }
 
       if (command) {
-        const parts = files?.map((f) => resolveMessageFile(f, dir))
+        // flatMap + `?? []`：会话目录外的附件被归属校验丢弃（详见 resolveMessageFile 注释）。
+        const parts = files?.flatMap((f) => resolveMessageFile(f, dir) ?? [])
         await client.session.command(
           {
             sessionID: session.id,
@@ -207,7 +208,9 @@ export async function handleImportAndSend(
       const parts: Array<TextPartInput | FilePartInput> = []
       if (files) {
         for (const f of files) {
-          parts.push(resolveMessageFile(f, dir))
+          const part = resolveMessageFile(f, dir)
+          // 会话目录外的附件被归属校验丢弃（详见 resolveMessageFile 注释）。
+          if (part) parts.push(part)
         }
       }
       parts.push({ type: "text", text, metadata: review ? reviewMetadata(review) : undefined })

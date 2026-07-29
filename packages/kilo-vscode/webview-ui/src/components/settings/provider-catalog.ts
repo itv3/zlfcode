@@ -43,6 +43,18 @@ export function kiloFallbackProvider(): Provider {
   return createKiloFallbackProvider()
 }
 
+/**
+ * 兼容壳：上游 v7.4.16 的设置主页 Popular providers 区块用该函数取热门 provider 的备注文案 key。
+ * ZLF 移除设置主页的 Popular providers 区块后此函数暂无调用方，但依据 README「维护原则」第 5 条
+ * （不删除、不重命名上游导出符号），按上游原实现保留导出，避免下次上游合并新增调用点时直接冲突或报错。
+ * 「不再展示 note」的产品决策留在调用侧（ProvidersTab），不在此共享工具层删除能力。
+ */
+export function providerNoteKey(provider: Provider | string) {
+  if (typeof provider !== "string" && provider.metadata?.noteKey) return provider.metadata.noteKey
+  if (provider === KILO_PROVIDER_ID) return "settings.providers.note.kilo"
+  return undefined
+}
+
 export function sortProviders(items: Provider[]) {
   return items.slice().sort((a, b) => {
     const rank = popularProviderIndex(a) - popularProviderIndex(b)

@@ -29,6 +29,8 @@ import {
 import {
   sessionToWebview,
   indexProvidersById,
+  sameProvidersSnapshot,
+  filterAgents,
   filterVisibleAgents,
   mapSSEEventToWebviewMessage,
   getErrorMessage,
@@ -218,7 +220,11 @@ const mapAgent = (a: Agent) => ({
 const SESSION_SCOPED_PART_EVENTS = new Set(["message.part.updated", "message.part.delta", "message.part.removed"])
 const isSessionScopedPartEvent = (type: string) => SESSION_SCOPED_PART_EVENTS.has(type)
 const PROVIDER_FETCH_TIMEOUT_MS = 15_000
-const PROVIDER_RETRY_DELAYS = [1_000, 3_000, 10_000, 30_000] as const
+// F22：尾部追加 2 分钟与 5 分钟档。用户环境确实无法访问 Kilo gateway（网络策略
+// 封锁等）时，自愈重试永不终止，30 秒封顶意味着每 30 秒 4 个 HTTP 请求无上限;
+// 逐渐退避到 5 分钟封顶可大幅降低无效请求量，同时保留"缺失后最终自愈"的语义
+// （短期缺失仍走前几档 1s/3s/10s/30s 快速恢复，不影响 F02 的缺失重试行为）。
+const PROVIDER_RETRY_DELAYS = [1_000, 3_000, 10_000, 30_000, 120_000, 300_000] as const
 
 type RawSyncPayload = Extract<WirePayload, { type: "sync" }>
 type LegacySyncEvent =
@@ -314,6 +320,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private contextSessionID: string | undefined
   private connectionState: "connecting" | "connected" | "disconnected" | "error" = "connecting"
   private connectionGeneration = 0
+  /** F21：refreshConnectionData 已执行过的 connectionGeneration，同一代只全量拉取一次。 */
+  private refreshedConnectionGeneration = -1
   private loginAttempt = 0
   private isWebviewReady = false
   private readonly extensionVersion: string
@@ -325,6 +333,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private providersAbort: AbortController | null = null
   private providersRetry: ReturnType<typeof setTimeout> | null = null
   private providersRetryAttempt = 0
+  /**
+   * F22：标记下一次 fetchAndSendProviders 由后台自愈重试（scheduleProviderRetry）
+   * 触发。仅该场景允许在快照内容与 cachedProvidersMessage 一致（revision 之外）时
+   * 跳过重复 postMessage——webview 主动的 requestProviders（含冷启动重试）必须
+   * 始终收到快照，否则冷启动的 webview 会因缓存命中而永远拿不到数据。
+   */
+  private providersRetryPass = false
   private providersGeneration = 0
   private sandboxRevision = 0
   private cachedAgentsMessage: unknown = null
@@ -1739,11 +1754,20 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   /**
    * 连接建立后补发依赖后端的数据。若中途发生重连或 client 被替换,
    * 直接安静退出,交给下一轮 connected 事件重新刷新,避免把 webview 打进错误态。
+   *
+   * F21:按 connectionGeneration 去重——首连时 onStateChange 的 connected 回调与
+   * initializeConnection 尾部几乎总是先后触发本方法,同一 generation 只执行一次,
+   * 避免 agents/skills/commands/config 等接口各拉两遍(Remote-SSH 下开销不可忽略)。
+   * 标记在进入时写入(而非完成后):两条路径的调用会重叠,完成后标记无法去重。
+   * 重连场景 connectionGeneration 必然递增(onStateChange 状态变化或重新初始化),
+   * 新 generation 不等于已记录值,刷新照常执行,不影响既有重连刷新行为。
    */
   private async refreshConnectionData(): Promise<void> {
     const generation = this.connectionGeneration
     const client = this.client
     if (!client || this.connectionState !== "connected") return
+    if (this.refreshedConnectionGeneration === generation) return
+    this.refreshedConnectionGeneration = generation
 
     await Promise.all([
       this.fetchAndSendProviders(),
@@ -2328,6 +2352,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.providersRetry = setTimeout(() => {
       this.providersRetry = null
       if (this.connectionState !== "connected") return
+      // F22：标记本次拉取为后台自愈重试，允许在结果与缓存快照一致时跳过重复推送。
+      this.providersRetryPass = true
       void this.fetchAndSendProviders("connected").catch((error) =>
         console.error("[Kilo New] Provider retry failed:", error),
       )
@@ -2343,10 +2369,17 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   /** 串行拉取 Provider；connected 与 catalog 均不会丢失后续请求。 */
   private async fetchAndSendProviders(mode: ProviderFetchMode = "connected"): Promise<void> {
     if (this.providersRefresh) {
+      // 已有在飞任务：本次请求（无论来源）只能排队合并，放弃跳过推送的优化，
+      // 保证合并后的消费者总能收到快照。
+      this.providersRetryPass = false
       this.queueProviderFetch(mode)
       await this.providersRefresh
       return
     }
+    // F22：取出并清空自愈重试标记；仅首轮拉取允许跳过重复推送，advance 消费的
+    // 后续排队项来自其他请求方，必须始终推送。
+    let retryPass = this.providersRetryPass
+    this.providersRetryPass = false
     const next = ++this.providersGeneration
     const task = (async () => {
       let generation = next
@@ -2355,6 +2388,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       const advance = () => {
         const queued = this.takeProviderFetch()
         if (!queued) return false
+        retryPass = false
         generation = this.providersGeneration
         current = queued
         revision = this.connectionService.getProviderRevision?.() ?? 0
@@ -2407,8 +2441,17 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             authMethods,
             authStates,
           }
-          if (current === "connected") this.cachedProvidersMessage = message
-          this.postMessage(message)
+          if (current === "connected") {
+            // F22：后台自愈重试轮次中，若拉取结果与上次已推送的缓存快照在 revision
+            // 之外完全一致（后端状态未变化），跳过重复 postMessage，避免长期缺失
+            // Kilo 时周期性向 webview 推送相同全量快照触发无意义重渲染。
+            // 缓存仍更新为最新消息（携带最新 revision），供后续离线回放使用。
+            const duplicate = retryPass && sameProvidersSnapshot(this.cachedProvidersMessage, message)
+            this.cachedProvidersMessage = message
+            if (!duplicate) this.postMessage(message)
+          } else {
+            this.postMessage(message)
+          }
           if (current === "connected") {
             const missing =
               this.expectsKiloProvider() && !response.all.some((provider) => provider.id === KILO_PROVIDER_ID)
@@ -2432,6 +2475,20 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       this.providersRefresh = null
       this.providersMode = null
       this.providersAbort = null
+      // F19：task 返回（advance 判空）与本 finally 执行之间存在一个微任务窗口。
+      // 若 handleProvidersChange 在该窗口内同步触发，它会看到 providersRefresh
+      // 非空而只向 providersQueued 排队（refreshing=true 也不主动发起新 fetch），
+      // 排队项将无人消费，webview 保持过期 Provider 状态直到下一次任意拉取。
+      // 这里在清理后兜底检查队列：仍有排队项则补发一次拉取（fetchAndSendProviders
+      // 的 while 循环会通过 advance 消费其余排队项），确保排队请求总有消费者。
+      // 断连时跳过：重连后 refreshConnectionData 会全量刷新，排队项已无意义。
+      if (this.connectionState !== "connected") return
+      const queued = this.takeProviderFetch()
+      if (queued !== null) {
+        void this.fetchAndSendProviders(queued).catch((error) =>
+          console.error("[Kilo New] fetchAndSendProviders after queued window failed:", error),
+        )
+      }
     })
     this.providersRefresh = done
     await done
@@ -2595,12 +2652,18 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       )
 
       const all = agents
+      // 注意:filterVisibleAgents 必须接收后端原始列表——其 defaultAgent 回退语义
+      // 依赖 agents[0](后端认定的默认智能体,可能是被隐藏的 orchestrator)。
       const { visible, defaultAgent } = filterVisibleAgents(all)
 
       const message = {
         type: "agentsLoaded",
         agents: visible.map(mapAgent),
-        allAgents: all.map(mapAgent),
+        // F54:allAgents 同样经过 filterAgents 过滤内置 orchestrator(README「智能体
+        // 中文化与隐藏 orchestrator」章节描述的行为),把防御收敛到下发单点,避免依赖
+        // webview 各消费入口(AgentBehaviourTab 的 isHiddenAgent 等)自行过滤。
+        // filterAgents 保留 native === false 的同名自定义 agent,保留语义不变。
+        allAgents: filterAgents(all).map(mapAgent),
         defaultAgent,
       }
       this.cachedAgentsMessage = message
@@ -3574,7 +3637,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       const parts: Array<TextPartInput | FilePartInput> = []
       if (files) {
         for (const f of files) {
-          parts.push(resolveMessageFile(f, dir))
+          const part = resolveMessageFile(f, dir)
+          // 会话目录外的附件被归属校验丢弃（详见 resolveMessageFile 注释）。
+          if (part) parts.push(part)
         }
       }
       parts.push({ type: "text", text, metadata: review ? reviewMetadata(review) : undefined })
@@ -3666,7 +3731,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         this.connectionService.recordMessageSessionId(messageID, sid)
       }
 
-      const parts = files?.map((f) => resolveMessageFile(f, dir))
+      // flatMap + `?? []`：会话目录外的附件被归属校验丢弃（详见 resolveMessageFile 注释）。
+      const parts = files?.flatMap((f) => resolveMessageFile(f, dir) ?? [])
 
       await this.requirements.assertAgentRequirements(agent, dir)
       await this.checkpoints.get(sid)

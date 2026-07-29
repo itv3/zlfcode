@@ -6,6 +6,7 @@ import {
   resolveServerCwd,
   resolveIndexingEnv,
   resolveManagedServerEnv,
+  resolveStartupTimeoutSeconds,
   toErrorMessage,
 } from "../../src/services/cli-backend/server-manager"
 import {
@@ -512,6 +513,82 @@ describe("ServerManager shared startup", () => {
     }
   })
 
+  it("does not delete shared state when reuse health check fails but the process is alive", async () => {
+    // 假阳性保护：复用共享后端时健康检查失败（可能是高负载下的超时），
+    // 只要进程仍存活就必须保留 server-start.json，避免删除后拉起第二个后端。
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-vscode-shared-health-alive-"))
+    const cli = path.join(root, "bin", process.platform === "win32" ? "kilo.exe" : "kilo")
+    const file = path.join(root, "server-start.json")
+    const context = {
+      globalStorageUri: { fsPath: root },
+      extensionPath: root,
+      extension: { packageJSON: { version: "test" } },
+    } as unknown as ConstructorParameters<typeof ServerManager>[0]
+    const manager = new ServerManager(context) as unknown as TestableServerManager & {
+      getSharedServer: () => Promise<ServerInstance | null>
+    }
+
+    try {
+      await fs.mkdir(path.dirname(cli), { recursive: true })
+      await fs.writeFile(
+        file,
+        JSON.stringify({ pid: 43_210, port: 40123, password: "secret", cliPath: cli, version: "test" }),
+      )
+      manager.getCliPath = () => cli
+      manager.isProcessAlive = () => true
+      manager.isSharedHealthy = async () => false
+
+      expect(await manager.getSharedServer()).toBeNull()
+      expect(
+        await fs.stat(file).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(true)
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("clears stale shared state when the process dies during the reuse health check", async () => {
+    // 「确认已死后清理陈旧状态」的正确场景必须保留：健康检查失败且进程
+    // 已确认死亡时，允许删除状态文件让下一轮启动流程重新拉起后端。
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-vscode-shared-health-dead-"))
+    const cli = path.join(root, "bin", process.platform === "win32" ? "kilo.exe" : "kilo")
+    const file = path.join(root, "server-start.json")
+    const context = {
+      globalStorageUri: { fsPath: root },
+      extensionPath: root,
+      extension: { packageJSON: { version: "test" } },
+    } as unknown as ConstructorParameters<typeof ServerManager>[0]
+    const manager = new ServerManager(context) as unknown as TestableServerManager & {
+      getSharedServer: () => Promise<ServerInstance | null>
+    }
+
+    try {
+      await fs.mkdir(path.dirname(cli), { recursive: true })
+      await fs.writeFile(
+        file,
+        JSON.stringify({ pid: 43_210, port: 40123, password: "secret", cliPath: cli, version: "test" }),
+      )
+      manager.getCliPath = () => cli
+      // 第一次探测（进入健康检查前）进程还活着，健康检查期间进程死亡。
+      let probes = 0
+      manager.isProcessAlive = () => ++probes === 1
+      manager.isSharedHealthy = async () => false
+
+      expect(await manager.getSharedServer()).toBeNull()
+      expect(
+        await fs.stat(file).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(false)
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
   it("keeps shared server state until the child actually exits", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-vscode-dispose-state-"))
     const context = {
@@ -555,5 +632,181 @@ describe("ServerManager shared startup", () => {
       ;(process as { kill: typeof process.kill }).kill = kill
       await fs.rm(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe("ServerManager dropInstance false-positive protection", () => {
+  // 构造一个带独立临时目录的 manager，返回常用句柄。
+  async function setup(prefix: string) {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix))
+    const file = path.join(root, "server-start.json")
+    const context = {
+      globalStorageUri: { fsPath: root },
+      extensionPath: root,
+      extension: { packageJSON: { version: "test" } },
+    } as unknown as ConstructorParameters<typeof ServerManager>[0]
+    const manager = new ServerManager(context) as unknown as TestableServerManager & {
+      instance: ServerInstance | null
+      writeSharedState: (server: ServerInstance) => void
+    }
+    return { root, file, manager }
+  }
+
+  async function exists(file: string) {
+    return fs.stat(file).then(
+      () => true,
+      () => false,
+    )
+  }
+
+  it("keeps the shared state file when dropping a shared instance whose process is alive", async () => {
+    // 健康检查假阳性场景：shared 实例（无 process 字段）被放弃，但后端进程
+    // 仍存活并被 owner 窗口使用——绝不能删除全局状态文件，否则本窗口会拉起
+    // 第二个后端造成状态分裂。
+    const { root, file, manager } = await setup("kilo-vscode-drop-shared-alive-")
+    try {
+      manager.writeSharedState({
+        port: 40123,
+        password: "secret",
+        process: { pid: 43_210 } as unknown as ChildProcess,
+      })
+      manager.isProcessAlive = () => true
+      manager.instance = { port: 40123, password: "secret", pid: 43_210, shared: true }
+
+      expect(manager.forgetServer()).toBe(true)
+
+      expect(manager.instance).toBeNull()
+      expect(await exists(file)).toBe(true)
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("clears the shared state file when dropping a shared instance whose process is dead", async () => {
+    // 「确认已死后清理陈旧状态」的正确场景：进程已死时删除状态文件是安全且必要的。
+    const { root, file, manager } = await setup("kilo-vscode-drop-shared-dead-")
+    try {
+      manager.writeSharedState({
+        port: 40123,
+        password: "secret",
+        process: { pid: 43_210 } as unknown as ChildProcess,
+      })
+      manager.isProcessAlive = () => false
+      manager.instance = { port: 40123, password: "secret", pid: 43_210, shared: true }
+
+      expect(manager.forgetServer()).toBe(true)
+
+      expect(await exists(file)).toBe(false)
+    } finally {
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("signals an owned live process but leaves state cleanup to the exit handler", async () => {
+    // owned 实例进程仍存活（如事件循环挂死）：应发 SIGTERM 重建，但状态文件
+    // 必须等进程真正退出（exit 事件处理器）后再清理。
+    const { root, file, manager } = await setup("kilo-vscode-drop-owned-alive-")
+    const proc = Object.assign(new EventEmitter(), {
+      pid: 43_210,
+      exitCode: null,
+    }) as EventEmitter & ChildProcess
+    const kill = process.kill
+    const signals: Array<{ pid: number; signal: unknown }> = []
+    try {
+      manager.writeSharedState({ port: 40123, password: "secret", process: proc })
+      manager.isProcessAlive = () => true
+      manager.instance = { port: 40123, password: "secret", process: proc }
+      ;(process as { kill: typeof process.kill }).kill = ((pid: number, signal?: unknown) => {
+        signals.push({ pid, signal })
+        return true
+      }) as typeof process.kill
+
+      expect(manager.forgetServer()).toBe(true)
+
+      expect(signals.some((entry) => entry.signal === "SIGTERM")).toBe(true)
+      expect(await exists(file)).toBe(true)
+    } finally {
+      ;(process as { kill: typeof process.kill }).kill = kill
+      // 触发 exit 事件以清除 scheduleKillFallback 的 SIGKILL 兜底计时器。
+      proc.emit("exit", 0)
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("clears the shared state file without signaling when the owned process is already dead", async () => {
+    const { root, file, manager } = await setup("kilo-vscode-drop-owned-dead-")
+    const proc = Object.assign(new EventEmitter(), {
+      pid: 43_210,
+      exitCode: null,
+    }) as EventEmitter & ChildProcess
+    const kill = process.kill
+    const signals: unknown[] = []
+    try {
+      manager.writeSharedState({ port: 40123, password: "secret", process: proc })
+      manager.isProcessAlive = () => false
+      manager.instance = { port: 40123, password: "secret", process: proc }
+      ;(process as { kill: typeof process.kill }).kill = ((pid: number, signal?: unknown) => {
+        signals.push(signal)
+        return true
+      }) as typeof process.kill
+
+      expect(manager.forgetServer()).toBe(true)
+
+      expect(signals).toEqual([])
+      expect(await exists(file)).toBe(false)
+    } finally {
+      ;(process as { kill: typeof process.kill }).kill = kill
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("ServerManager isBackendProcessDead", () => {
+  const context = {
+    globalStorageUri: { fsPath: "/nonexistent-kilo-test" },
+    extensionPath: "/nonexistent-kilo-test",
+    extension: { packageJSON: { version: "test" } },
+  } as unknown as ConstructorParameters<typeof ServerManager>[0]
+
+  it("returns true when the shared instance process is confirmed dead", () => {
+    const manager = new ServerManager(context) as unknown as TestableServerManager & {
+      instance: ServerInstance | null
+      isBackendProcessDead: () => boolean
+    }
+    manager.isProcessAlive = () => false
+    manager.instance = { port: 40123, password: "secret", pid: 43_210, shared: true }
+
+    expect(manager.isBackendProcessDead()).toBe(true)
+  })
+
+  it("returns false when the process is alive or cannot be determined", () => {
+    const manager = new ServerManager(context) as unknown as TestableServerManager & {
+      instance: ServerInstance | null
+      isBackendProcessDead: () => boolean
+    }
+    manager.isProcessAlive = () => true
+
+    // 无实例：无法确认，交给常规健康轮询。
+    expect(manager.isBackendProcessDead()).toBe(false)
+    // 进程存活：不算死亡。
+    manager.instance = { port: 40123, password: "secret", pid: 43_210, shared: true }
+    expect(manager.isBackendProcessDead()).toBe(false)
+    // 无 pid：无法确认。
+    manager.isProcessAlive = () => false
+    manager.instance = { port: 40123, password: "secret" }
+    expect(manager.isBackendProcessDead()).toBe(false)
+  })
+})
+
+describe("resolveStartupTimeoutSeconds", () => {
+  it("uses the shorter local timeout when not running remotely", () => {
+    expect(resolveStartupTimeoutSeconds(undefined)).toBe(45)
+    expect(resolveStartupTimeoutSeconds("")).toBe(45)
+  })
+
+  it("keeps the relaxed timeout for remote environments", () => {
+    expect(resolveStartupTimeoutSeconds("ssh-remote")).toBe(180)
+    expect(resolveStartupTimeoutSeconds("wsl")).toBe(180)
+    expect(resolveStartupTimeoutSeconds("dev-container")).toBe(180)
   })
 })

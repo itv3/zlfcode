@@ -36,15 +36,14 @@ import {
   kiloCustomLoaders,
   KILO_MODEL_SCHEMA_EXTENSIONS,
   patchModelsDevModel as patchKiloModel,
-  patchConfigModel as patchKiloConfigModel,
   patchCustomLoaderResult,
   patchKiloProviderPrivacy,
   kiloSmallModelPriority,
   buildTimeoutSignal,
-  orderedVariants,
 } from "@/kilocode/provider/provider"
 import * as ModelsRefresh from "@/kilocode/provider/models-refresh"
 import * as ConfigRefresh from "@/kilocode/provider/config-refresh"
+import * as ConfigCompile from "@/kilocode/provider/compile"
 import * as KiloOpenAIWebSocket from "@/kilocode/provider/openai-websocket"
 // kilocode_change end
 import { ProviderError } from "./error"
@@ -1166,6 +1165,10 @@ export interface Interface {
   ) => Effect.Effect<{ providerID: ProviderV2.ID; modelID: string } | undefined>
   readonly getSmallModel: (providerID: ProviderV2.ID) => Effect.Effect<Model | undefined>
   readonly defaultModel: () => Effect.Effect<{ providerID: ProviderV2.ID; modelID: ModelV2.ID }, DefaultModelError>
+  // kilocode_change start - 仅失效当前实例的 Provider 状态（ready 检查失败路径使用）；
+  // 声明为可选以免影响既有测试替身实现
+  readonly invalidate?: () => Effect.Effect<void>
+  // kilocode_change end
 }
 
 interface State {
@@ -1174,7 +1177,9 @@ interface State {
   providers: Record<ProviderV2.ID, Info>
   catalog: Record<ProviderV2.ID, Info>
   sdk: Map<string, BundledSDK>
+  sdkLoads: Map<string, Promise<SDK>> // kilocode_change - resolveSDK 的 single-flight 缓存，同 key 并发加载去重（审核条目 F38）
   websockets: Map<string, KiloOpenAIWebSocket.Transport> // kilocode_change - 自定义 OpenAI Responses 连接池
+  lifecycle: { disposed: boolean } // kilocode_change - 实例销毁标志：阻止销毁后完成的 in-flight SDK 加载把 transport 注册进已 finalize 的连接池（F68）
   modelLoaders: Record<string, CustomModelLoader>
   varsLoaders: Record<string, CustomVarsLoader>
   version: Map<ProviderV2.ID, number> // kilocode_change - 防止配置更新前的异步加载回写旧模型缓存
@@ -1362,9 +1367,15 @@ export const layer = Layer.effect(
         } = {}
         const sdk = new Map<string, BundledSDK>()
         const websockets = new Map<string, KiloOpenAIWebSocket.Transport>() // kilocode_change
-        // kilocode_change start - Provider 实例释放时关闭自定义 WebSocket
+        // kilocode_change start - Provider 实例释放时关闭自定义 WebSocket。
+        // lifecycle.disposed 供 resolveSDK 的 version 防回写检查使用（F68）：
+        // 实例销毁不会 bump version，若无此标志，销毁时仍在 in-flight 的 SDK
+        // 加载完成后会把新建的 transport 注册进已 close/clear 的连接池，
+        // 其内部 pruneTimer 将无人清理。
+        const lifecycle = { disposed: false }
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
+            lifecycle.disposed = true
             for (const transport of websockets.values()) transport.close()
             websockets.clear()
           }),
@@ -1435,100 +1446,26 @@ export const layer = Layer.effect(
         }
 
         // extend database from config
+        // kilocode_change start - 配置 Provider 的模型编译与增量刷新路径共享同一实现
+        // （见 kilocode/provider/compile.ts），字段 fallback 链与上游原实现逐字段一致，
+        // 保证热更新产物与全量重建产物不漂移。
         for (const [providerID, provider] of configProviders) {
-          if (!provider) continue // kilocode_change - null entries are transient delete sentinels
+          if (!provider) continue // null entries are transient delete sentinels
           const existing = database[providerID]
-          const parsed: Info = {
+          const parsed = ConfigCompile.compileProviderInfo({
             id: ProviderV2.ID.make(providerID),
-            name: provider.name ?? existing?.name ?? providerID,
-            env: provider.env ?? existing?.env ?? [],
-            options: mergeDeep(existing?.options ?? {}, provider.options ?? {}),
-            source: "config",
-            models: existing?.models ?? {},
-          }
-
-          for (const [modelID, model] of Object.entries(provider.models ?? {})) {
-            if (!model) continue // kilocode_change - null entries are transient delete sentinels
-            const existingModel = parsed.models[model.id ?? modelID]
-            const apiID = model.id ?? existingModel?.api.id ?? modelID
-            const apiNpm =
-              model.provider?.npm ??
-              provider.npm ??
-              existingModel?.api.npm ??
-              modelsDev[providerID]?.npm ??
-              "@ai-sdk/openai-compatible"
-            const name = iife(() => {
-              if (model.name) return model.name
-              if (model.id && model.id !== modelID) return modelID
-              return existingModel?.name ?? modelID
-            })
-            const parsedModel: Model = {
-              id: ModelV2.ID.make(modelID),
-              api: {
-                id: apiID,
-                npm: apiNpm,
-                url: model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api ?? "",
-              },
-              status: model.status ?? existingModel?.status ?? "active",
-              name,
-              providerID: ProviderV2.ID.make(providerID),
-              capabilities: {
-                temperature: model.temperature ?? existingModel?.capabilities.temperature ?? false,
-                reasoning: model.reasoning ?? existingModel?.capabilities.reasoning ?? false,
-                attachment: model.attachment ?? existingModel?.capabilities.attachment ?? false,
-                toolcall: model.tool_call ?? existingModel?.capabilities.toolcall ?? true,
-                input: {
-                  text: model.modalities?.input?.includes("text") ?? existingModel?.capabilities.input.text ?? true,
-                  audio: model.modalities?.input?.includes("audio") ?? existingModel?.capabilities.input.audio ?? false,
-                  image: model.modalities?.input?.includes("image") ?? existingModel?.capabilities.input.image ?? false,
-                  video: model.modalities?.input?.includes("video") ?? existingModel?.capabilities.input.video ?? false,
-                  pdf: model.modalities?.input?.includes("pdf") ?? existingModel?.capabilities.input.pdf ?? false,
-                },
-                output: {
-                  text: model.modalities?.output?.includes("text") ?? existingModel?.capabilities.output.text ?? true,
-                  audio:
-                    model.modalities?.output?.includes("audio") ?? existingModel?.capabilities.output.audio ?? false,
-                  image:
-                    model.modalities?.output?.includes("image") ?? existingModel?.capabilities.output.image ?? false,
-                  video:
-                    model.modalities?.output?.includes("video") ?? existingModel?.capabilities.output.video ?? false,
-                  pdf: model.modalities?.output?.includes("pdf") ?? existingModel?.capabilities.output.pdf ?? false,
-                },
-                interleaved:
-                  model.interleaved ??
-                  existingModel?.capabilities.interleaved ??
-                  (!existingModel && apiNpm === "@ai-sdk/openai-compatible" && apiID.includes("deepseek")
-                    ? { field: "reasoning_content" }
-                    : false),
-              },
-              cost: {
-                input: model?.cost?.input ?? existingModel?.cost?.input ?? 0,
-                output: model?.cost?.output ?? existingModel?.cost?.output ?? 0,
-                cache: {
-                  read: model?.cost?.cache_read ?? existingModel?.cost?.cache.read ?? 0,
-                  write: model?.cost?.cache_write ?? existingModel?.cost?.cache.write ?? 0,
-                },
-              },
-              options: mergeDeep(existingModel?.options ?? {}, model.options ?? {}),
-              limit: {
-                context: model.limit?.context ?? existingModel?.limit?.context ?? 0,
-                input: model.limit?.input ?? existingModel?.limit?.input,
-                output: model.limit?.output ?? existingModel?.limit?.output ?? 0,
-              },
-              headers: mergeDeep(existingModel?.headers ?? {}, model.headers ?? {}),
-              family: model.family ?? existingModel?.family ?? "",
-              release_date: model.release_date ?? existingModel?.release_date ?? "",
-              // variants: {}, // kilocode_change, moved into patchKiloConfigModel
-              ...patchKiloConfigModel(model, existingModel), // kilocode_change
-            }
-            parsedModel.variants = orderedVariants(
-              ProviderTransform.variants(parsedModel),
-              model.variants ?? {},
-            ) // kilocode_change - 保留配置中的 variants 顺序，供自定义默认值使用
-            parsed.models[modelID] = parsedModel
-          }
+            config: provider,
+            base: existing,
+          })
+          ConfigCompile.compileConfigModels({
+            providerID: ProviderV2.ID.make(providerID),
+            config: provider,
+            models: parsed.models,
+            modelsDev: modelsDev[providerID],
+          })
           database[providerID] = parsed
         }
+        // kilocode_change end
 
         // kilocode_change start - load auths before env so OAuth plugins can override inherited credentials
         const auths = yield* auth.all().pipe(Effect.orDie)
@@ -1544,13 +1481,16 @@ export const layer = Layer.effect(
           ) {
             continue
           }
-          const apiKey = provider.env.map((item) => envs[item]).find(Boolean)
-          // kilocode_change end
-          if (!apiKey) continue
+          // env key 解析与增量刷新路径共用同一实现（compile.ts），
+          // 语义不变：任一 env var 有值即激活；仅声明恰好一个 env var 时注入 key
+          //（F66：found/key 两行同属本 fork 对上游原 apiKey 逻辑的替换，一并圈进标记块）
+          const resolved = ConfigCompile.resolveEnvApiKey(provider.env, envs)
+          if (!resolved.found) continue
           mergeProvider(providerID, {
             source: "env",
-            key: provider.env.length === 1 ? apiKey : undefined,
+            key: resolved.key,
           })
+          // kilocode_change end
         }
 
         // load apikeys
@@ -1648,38 +1588,15 @@ export const layer = Layer.effect(
 
           const configProvider = cfg.provider?.[providerID]
 
-          for (const [modelID, model] of Object.entries(provider.models)) {
-            model.api.id = model.api.id ?? model.id ?? modelID
-            if (
-              // These chat aliases are invalid for the special handling in the
-              // built-in providers below, but custom providers may support them.
-              (modelID === "gpt-5-chat-latest" &&
-                (providerID === ProviderV2.ID.openai ||
-                  providerID === ProviderV2.ID.githubCopilot ||
-                  providerID === ProviderV2.ID.openrouter)) ||
-              (providerID === ProviderV2.ID.openrouter && modelID === "openai/gpt-5-chat")
-            )
-              delete provider.models[modelID]
-            if (model.status === "alpha" && !runtimeFlags.enableExperimentalModels) delete provider.models[modelID]
-            if (model.status === "deprecated") delete provider.models[modelID]
-            if (
-              (configProvider?.blacklist && configProvider.blacklist.includes(modelID)) ||
-              (configProvider?.whitelist && !configProvider.whitelist.includes(modelID))
-            )
-              delete provider.models[modelID]
-
-            if (!model.variants || Object.keys(model.variants).length === 0) {
-              model.variants = mapValues(ProviderTransform.variants(model), (v) => v)
-            }
-
-            const configVariants = configProvider?.models?.[modelID]?.variants
-            if (configVariants && model.variants) {
-              model.variants = orderedVariants(
-                model.variants,
-                configVariants,
-              ) // kilocode_change - 保留配置中的 variants 顺序，供自定义默认值使用
-            }
-          }
+          // kilocode_change start - 模型级过滤与兜底（api.id 兜底、gpt-5-chat 别名剔除、
+          // alpha/deprecated 过滤、black/whitelist、空 variants 兜底、configVariants 重排）
+          // 与增量刷新路径共享同一实现（见 kilocode/provider/compile.ts），逻辑与上游一致
+          ConfigCompile.finalizeProviderModels({
+            provider,
+            configProvider,
+            experimental: runtimeFlags.enableExperimentalModels,
+          })
+          // kilocode_change end
 
           if (Object.keys(provider.models).length === 0) {
             delete providers[providerID]
@@ -1693,7 +1610,9 @@ export const layer = Layer.effect(
           providers,
           catalog,
           sdk,
+          sdkLoads: new Map(), // kilocode_change - single-flight 缓存（审核条目 F38）
           websockets, // kilocode_change
+          lifecycle, // kilocode_change - 实例销毁标志（F68）
           modelLoaders,
           varsLoaders,
           version: new Map(), // kilocode_change
@@ -1706,18 +1625,40 @@ export const layer = Layer.effect(
     const lock = Semaphore.makeUnsafe(1)
 
     const current = Effect.fn("Provider.state")(function* () {
+      // 无锁快速路径（审核条目 F09）：lock 是跨所有工作区目录共享的服务级
+      // 信号量，若每次读取都要先进锁，A 工作区的一次全量重建（含模型目录
+      // 网络请求）会阻塞 B 工作区的所有模型解析，而 getLanguage 位于每次
+      // LLM 请求的热路径。配置引用未变化时（绝大多数读取）直接返回缓存
+      // 状态，不进入信号量。config.get() 自带外部修改检测（stamp 变化会
+      // 失效缓存并返回新引用），因此 cached.config === cfg 足以证明无需
+      // 刷新；InstanceState 基于 ScopedCache，同 key 并发构建自带去重，
+      // 快速路径触发的首次构建不会重复执行。
+      const cfg = yield* config.get()
+      const cached = yield* InstanceState.get(state)
+      if (cached.config === cfg) return cached
+
       return yield* lock.withPermits(1)(
         Effect.gen(function* () {
+          // 锁内二次检查：等待信号量期间其他调用可能已完成同一配置快照的
+          // 刷新（或配置又发生了变化），必须在锁内重读最新配置与缓存，
+          // 避免对同一快照重复刷新
           const cfg = yield* config.get()
           const cached = yield* InstanceState.get(state)
           if (cached.config === cfg) return cached
 
+          // 存在 plugin auth loader 的 Provider 的 options 可能由插件注入，
+          // 增量重建无法复现，传入集合让 refresh 对这些 id 回退完整重建（F40）
+          const hooks = yield* plugin.list()
+          const pluginAuthProviders = new Set(
+            hooks.filter((x) => x.auth?.provider && x.auth.loader).map((x) => x.auth!.provider),
+          )
           const refreshed = yield* ConfigRefresh.refresh({
             config: cfg,
             state: cached,
             auth: (id) => auth.get(id).pipe(Effect.orDie),
             env: env.all(),
             experimental: runtimeFlags.enableExperimentalModels,
+            pluginAuthProviders,
           })
           if (refreshed) return cached
 
@@ -1795,84 +1736,131 @@ export const layer = Layer.effect(
         )}` // kilocode_change - 允许配置热更新精确清理目标 Provider SDK
         const existing = s.sdk.get(key)
         if (existing) return existing
-        const version = s.version.get(model.providerID) ?? 0 // kilocode_change
 
-        // kilocode_change start - 为自定义 OpenAI Responses Provider 注入独立 WebSocket transport
-        const websocketFetch = KiloOpenAIWebSocket.create(model.providerID, model.api.npm, options)
-        if (websocketFetch) s.websockets.set(key, websocketFetch)
-        const customFetch = websocketFetch ?? options["fetch"]
-        // kilocode_change end
-        const chunkTimeout = options["chunkTimeout"]
-        const headerTimeout = options["headerTimeout"]
-        delete options["chunkTimeout"]
-        delete options["headerTimeout"]
+        // kilocode_change start - single-flight（审核条目 F38）：同 key 并发加载共享
+        // 同一个 Promise，避免两个并发 getLanguage 都走完加载流程后互相覆盖缓存
+        // （被覆盖一方创建的 WebSocket transport 将永远不会被 close 而泄漏）。
+        // 加载结束后（无论成败）由创建方清除条目，失败后下一次调用可重试。
+        // 说明：块内的 options.fetch 构建与 bundled/npm 加载逻辑与上游 v7.4.16
+        // 一致，仅结构上移入 single-flight 的 loadPromise 中；升级上游时请对照
+        // 上游 resolveSDK 的对应片段同步。
+        const inflight = s.sdkLoads.get(key)
+        if (inflight) return await inflight
+        const version = s.version.get(model.providerID) ?? 0
 
-        options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
-          const fetchFn = customFetch ?? fetch
-          const opts = init ?? {}
-          const chunkAbortCtl = typeof chunkTimeout === "number" && chunkTimeout > 0 ? new AbortController() : undefined
-          const timeout = buildTimeoutSignal(options) // kilocode_change - use cancellable timeout for connection phase
-          const headerTimeoutMs = headerTimeout === false ? undefined : headerTimeout
-          const headerTimeoutCtl = typeof headerTimeoutMs === "number" ? timeoutController(headerTimeoutMs) : undefined
-          const signals: AbortSignal[] = []
-
-          if (opts.signal) signals.push(opts.signal)
-          if (chunkAbortCtl) signals.push(chunkAbortCtl.signal)
-          if (headerTimeoutCtl) signals.push(headerTimeoutCtl.signal)
-          if (timeout.signal) signals.push(timeout.signal) // kilocode_change
-
-          const combined = signals.length === 0 ? null : signals.length === 1 ? signals[0] : AbortSignal.any(signals)
-          if (combined) opts.signal = combined
-
-          // kilocode_change start - clear connection-phase timeout once headers arrive
+        const loadPromise = (async (): Promise<SDK> => {
+          // 为自定义 OpenAI Responses Provider 注入独立 WebSocket transport。
+          // 注意：transport 先创建但不立即注册——注册推迟到加载完成且 version
+          // 防回写检查通过之后（审核条目 F43），过期或失败的加载必须 close
+          // 释放 transport（其内部的 pruneTimer 与连接池不再有人管理）。
+          const websocketFetch = KiloOpenAIWebSocket.create(model.providerID, model.api.npm, options)
           try {
-            const res = await fetchFn(input, {
-              ...opts,
-              // @ts-ignore see here: https://github.com/oven-sh/bun/issues/16682
-              timeout: false,
-            }).finally(() => headerTimeoutCtl?.clear())
-            timeout.clear()
-            if (!chunkAbortCtl) return res
-            return wrapSSE(res, chunkTimeout, chunkAbortCtl)
-          } catch (err) {
-            timeout.clear()
-            throw err
-          }
-          // kilocode_change end
-        }
+            const customFetch = websocketFetch ?? options["fetch"]
+            const chunkTimeout = options["chunkTimeout"]
+            const headerTimeout = options["headerTimeout"]
+            delete options["chunkTimeout"]
+            delete options["headerTimeout"]
 
-        const bundledLoader = BUNDLED_PROVIDERS[model.api.npm]
-        if (bundledLoader) {
-          const factory = await bundledLoader()
-          const loaded = factory({
-            name: model.providerID,
-            ...options,
-          })
-          if ((s.version.get(model.providerID) ?? 0) === version) s.sdk.set(key, loaded) // kilocode_change
-          return loaded as SDK
-        }
+            options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
+              const fetchFn = customFetch ?? fetch
+              const opts = init ?? {}
+              const chunkAbortCtl =
+                typeof chunkTimeout === "number" && chunkTimeout > 0 ? new AbortController() : undefined
+              const timeout = buildTimeoutSignal(options) // use cancellable timeout for connection phase
+              const headerTimeoutMs = headerTimeout === false ? undefined : headerTimeout
+              const headerTimeoutCtl =
+                typeof headerTimeoutMs === "number" ? timeoutController(headerTimeoutMs) : undefined
+              const signals: AbortSignal[] = []
 
-        const installedPath = await (async () => {
-          if (model.api.npm.startsWith("file://")) {
-            return model.api.npm
+              if (opts.signal) signals.push(opts.signal)
+              if (chunkAbortCtl) signals.push(chunkAbortCtl.signal)
+              if (headerTimeoutCtl) signals.push(headerTimeoutCtl.signal)
+              if (timeout.signal) signals.push(timeout.signal)
+
+              const combined =
+                signals.length === 0 ? null : signals.length === 1 ? signals[0] : AbortSignal.any(signals)
+              if (combined) opts.signal = combined
+
+              // clear connection-phase timeout once headers arrive
+              try {
+                const res = await fetchFn(input, {
+                  ...opts,
+                  // @ts-ignore see here: https://github.com/oven-sh/bun/issues/16682
+                  timeout: false,
+                }).finally(() => headerTimeoutCtl?.clear())
+                timeout.clear()
+                if (!chunkAbortCtl) return res
+                return wrapSSE(res, chunkTimeout, chunkAbortCtl)
+              } catch (err) {
+                timeout.clear()
+                throw err
+              }
+            }
+
+            const loaded = await (async (): Promise<BundledSDK> => {
+              const bundledLoader = BUNDLED_PROVIDERS[model.api.npm]
+              if (bundledLoader) {
+                const factory = await bundledLoader()
+                return factory({
+                  name: model.providerID,
+                  ...options,
+                })
+              }
+
+              const installedPath = await (async () => {
+                if (model.api.npm.startsWith("file://")) {
+                  return model.api.npm
+                }
+                const item = await Npm.add(model.api.npm)
+                if (!item.entrypoint) throw new Error(`Package ${model.api.npm} has no import entrypoint`)
+                return item.entrypoint
+              })()
+
+              // `installedPath` is a local entry path or an existing `file://` URL. Normalize
+              // only path inputs so Node on Windows accepts the dynamic import.
+              const importSpec = installedPath.startsWith("file://") ? installedPath : pathToFileURL(installedPath).href
+              const mod = await import(importSpec)
+
+              const fn = mod[Object.keys(mod).find((key) => key.startsWith("create"))!]
+              return fn({
+                name: model.providerID,
+                ...options,
+              })
+            })()
+
+            // version 防回写检查（审核条目 F43）：配置热更新已 bump version 时，
+            // 本次加载属于过期配置——不写缓存、不注册 transport，close 释放；
+            // 检查通过时才注册，注册前若同 key 残留旧 transport 先 close 再覆盖。
+            // lifecycle.disposed（F68）：实例销毁不 bump version，销毁后完成的
+            // in-flight 加载同样不得注册（连接池已被 finalizer close/clear）。
+            if (!s.lifecycle.disposed && (s.version.get(model.providerID) ?? 0) === version) {
+              s.sdk.set(key, loaded)
+              if (websocketFetch) {
+                const stale = s.websockets.get(key)
+                if (stale && stale !== websocketFetch) stale.close()
+                s.websockets.set(key, websocketFetch)
+              }
+            } else {
+              websocketFetch?.close()
+            }
+            return loaded as SDK
+          } catch (e) {
+            // 加载失败时 transport 尚未注册，必须在此 close 释放
+            websocketFetch?.close()
+            throw e
           }
-          const item = await Npm.add(model.api.npm)
-          if (!item.entrypoint) throw new Error(`Package ${model.api.npm} has no import entrypoint`)
-          return item.entrypoint
         })()
 
-        // `installedPath` is a local entry path or an existing `file://` URL. Normalize
-        // only path inputs so Node on Windows accepts the dynamic import.
-        const importSpec = installedPath.startsWith("file://") ? installedPath : pathToFileURL(installedPath).href
-        const mod = await import(importSpec)
-
-        const fn = mod[Object.keys(mod).find((key) => key.startsWith("create"))!]
-        const loaded = fn({
-          name: model.providerID,
-          ...options,
-        })
-        if ((s.version.get(model.providerID) ?? 0) === version) s.sdk.set(key, loaded) // kilocode_change
-        return loaded as SDK
+        s.sdkLoads.set(key, loadPromise)
+        try {
+          return await loadPromise
+        } finally {
+          // 只清除仍指向本次加载的条目（F68）：配置热更新会从外部删除 in-flight
+          // 条目，此后同 key 可能已被新一轮加载占用，无条件 delete 会误删新条目、
+          // 破坏新加载的 single-flight 去重。
+          if (s.sdkLoads.get(key) === loadPromise) s.sdkLoads.delete(key)
+        }
+        // kilocode_change end
       } catch (e) {
         throw new InitError({ providerID: model.providerID, cause: e })
       }
@@ -2068,7 +2056,24 @@ export const layer = Layer.effect(
       }
     })
 
-    return Service.of({ list, getProvider, getModel, getLanguage, closest, getSmallModel, defaultModel })
+    // kilocode_change start - 仅失效当前实例（当前目录）的 Provider 状态。
+    // 与 ModelsRefresh.notify() 的全局失效不同，本方法不影响其他工作区实例，
+    // 供 ready 检查失败等只需刷新本实例的路径使用（审核条目 F39）。
+    const invalidate = Effect.fn("Provider.invalidate")(function* () {
+      yield* InstanceState.invalidate(state)
+    })
+    // kilocode_change end
+
+    return Service.of({
+      list,
+      getProvider,
+      getModel,
+      getLanguage,
+      closest,
+      getSmallModel,
+      defaultModel,
+      invalidate, // kilocode_change
+    })
   }),
 )
 

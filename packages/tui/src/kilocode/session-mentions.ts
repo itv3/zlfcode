@@ -12,6 +12,7 @@ export type SessionMention = {
   title: string
   updated: number
 }
+
 export async function fetchSessionMentions(
   sdk: ReturnType<typeof useSDK>,
   directory: string,
@@ -80,3 +81,4 @@ export function createSessionPart(session: SessionMention) {
     },
   }
 }
+

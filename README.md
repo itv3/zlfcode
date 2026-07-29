@@ -45,6 +45,7 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 | 默认参数匹配 | 添加模型时按模型 ID 匹配内置默认参数，自动填充能力、成本和 token limit；也可选择候选模型应用其参数，并在保存前手动调整。 |
 | 候选模型预览 | 候选模型支持 hover 预览，显示图片、推理、上下文/输出 token、成本和推理强度等默认参数。 |
 | 配置界面增强 | 优化自定义提供商配置界面布局、提示语和参数命名，减少表单高度。 |
+| 设置主页精简 | 移除上游设置主页的 Popular providers 快捷连接区块，让设置主页聚焦自定义 Provider 管理；热门 provider 经「Add provider」弹窗仍可连接，并在弹窗中按推荐分组置顶。 |
 | Provider 热更新 | 新增、修改或删除自定义 Provider 模型后，无需重启后端即可在所有活动工作区和聊天界面使用最新配置。 |
 
 关键实现：
@@ -68,6 +69,7 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 - 未命中精确默认值时显示最多 5 个候选模型，候选排序考虑 token 命中、覆盖度、顺序、尾缀、精确命中和前缀命中。
 - 用户点击候选项后，候选模型的能力、token limit、成本和完整 `variants` 会覆盖自动匹配的默认参数；之后仍可手动调整，并以保存时的表单值为准。
 - 配置界面保持紧凑布局：`Provider API` 与 `BASE_URL` 在桌面宽度下并排显示。
+- 设置主页移除上游 Popular providers 快捷连接区块（含备注文案与一键 Connect），这是有意的 UI 决策：设置主页聚焦自定义 Provider 入口并压缩页面高度。热门 provider 的可达性不受影响——「Add provider」打开的 `ProviderSelectDialog` 仍提供完整 provider 目录，且热门 provider 经 `popularProviderIndex` 按推荐分组（`settings.providers.group.recommended`）置顶展示。该决策由 `tests/unit/providers-tab-source.test.ts` 锁定；`provider-catalog.ts` 中上游导出的 `providerNoteKey` 依维护原则第 5 条保留为兼容壳，不随区块移除删除。
 
 关键文件：
 

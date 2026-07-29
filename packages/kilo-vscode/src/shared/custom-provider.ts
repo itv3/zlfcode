@@ -206,8 +206,8 @@ type VariantPatch = Partial<{ [Key in keyof VariantConfig]: VariantConfig[Key] |
 type LimitPatch = { context: number; input?: number; output: number }
 type CostPatch = { input: number; output: number; cache_read?: number; cache_write?: number }
 type HeaderPatch = Record<string, string | null>
-type ResetPatch = { models: Record<string, { variants?: Record<string, null>; limit?: null; cost?: null }> }
-type ProviderPatch = Omit<SanitizedProviderConfig, "env" | "models" | "options"> & {
+export type ResetPatch = { models: Record<string, { variants?: Record<string, null>; limit?: null; cost?: null }> }
+export type ProviderPatch = Omit<SanitizedProviderConfig, "env" | "models" | "options"> & {
   env?: string[] | null
   options: {
     baseURL: string
@@ -282,11 +282,14 @@ function variantPatch(
   return { ...newVariants, ...changes } as Record<string, VariantConfig | VariantPatch | null>
 }
 
-function limitPatch(oldModel: AnyRecord, newModel: AnyRecord) {
+// 注意:limit/cost 的子字段删除(如旧 limit 有 input 而新 limit 没有)不在这里
+// 用 null 哨兵表达,这两个函数只透传新值;子字段清理依赖调用方先应用
+// providerReset 返回的整体 null 重置。详见 customProviderConfigPatches 的契约说明。
+function limitPatch(newModel: AnyRecord) {
   return cleanPatch<LimitPatch>(newModel.limit)
 }
 
-function costPatch(oldModel: AnyRecord, newModel: AnyRecord) {
+function costPatch(newModel: AnyRecord) {
   return cleanPatch<CostPatch>(newModel.cost)
 }
 
@@ -306,6 +309,15 @@ function optionsPatch(existing: AnyRecord, next: SanitizedProviderConfig): Provi
   }
 }
 
+/**
+ * 生成"整体 null 重置"补丁:当模型的 variants 顺序变化,或 limit/cost 的
+ * 子字段被删除时,返回把对应字段整体置 null 的补丁;无需重置时返回 undefined。
+ *
+ * 【成对调用契约】本函数与 withCustomProviderDeletions 必须成对使用:
+ * 返回的重置补丁必须先于主补丁单独 config.update 一次(先清后写),
+ * 否则 CLI 深合并会让被删除的 limit.input、cost.cache_read 等子字段残留在磁盘。
+ * 推荐通过 customProviderConfigPatches 一次性获取两个补丁,避免漏配。
+ */
 export function providerReset(existing: unknown, next: SanitizedProviderConfig): ResetPatch | undefined {
   if (!isRecord(existing)) return undefined
   const old = isRecord(existing.models) ? existing.models : {}
@@ -330,11 +342,15 @@ export function providerReset(existing: unknown, next: SanitizedProviderConfig):
 }
 
 /**
- * Build a provider patch that includes null sentinels for model properties,
- * variants, and variant options that existed in the previous config but are
- * absent from the new one. The CLI `config.update` endpoint deep-merges the
- * payload with the existing config; without explicit nulls, removed entries
- * would persist on disk.
+ * 生成主补丁:对旧配置中存在、新配置中缺失的模型、模型属性、变体和变体选项
+ * 写入 null 删除哨兵。CLI 的 `config.update` endpoint 会把载荷与既有配置深合并,
+ * 缺少显式 null 时被删除的条目会残留在磁盘上。
+ *
+ * 【成对调用契约】limit/cost 的"子字段级"删除(如旧 limit 有 input 而新 limit
+ * 没有)不由本函数表达——本函数只透传新的 limit/cost 值;子字段清理完全依赖
+ * 调用方先应用 providerReset 返回的整体 null 重置(单独一次 config.update)。
+ * 单独使用本函数会让被删除的 limit.input、cost.cache_read 等子字段在深合并后
+ * 残留且不会有任何报错。推荐通过 customProviderConfigPatches 一次性获取两个补丁。
  */
 export function withCustomProviderDeletions(existing: unknown, next: SanitizedProviderConfig): ProviderPatch {
   if (!isRecord(existing)) return next
@@ -351,8 +367,8 @@ export function withCustomProviderDeletions(existing: unknown, next: SanitizedPr
     const newModel = patched[id]
     if (!isRecord(oldModel) || !isRecord(newModel)) continue
     const variants = variantPatch(oldModel, newModel)
-    const limit = limitPatch(oldModel, newModel)
-    const cost = costPatch(oldModel, newModel)
+    const limit = limitPatch(newModel)
+    const cost = costPatch(newModel)
     patched[id] = {
       ...newModel,
       ...(variants ? { variants } : {}),
@@ -371,4 +387,25 @@ export function withCustomProviderDeletions(existing: unknown, next: SanitizedPr
     options: optionsPatch(existing, next),
     models: patched,
   }
+}
+
+/**
+ * 保存自定义 provider 时使用的统一入口:一次性生成成对的两个补丁,
+ * 把 providerReset 与 withCustomProviderDeletions 之间的隐式契约显式化。
+ *
+ * 应用顺序(调用方必须遵守):
+ * 1. reset 存在时,先单独 config.update 应用 reset(把 variants/limit/cost 整体置 null,
+ *    清掉旧配置里即将被删除的子字段);
+ * 2. 再 config.update 应用 patch(写入新值与模型/属性级的 null 删除哨兵)。
+ *
+ * 两步都基于同一份 existing 快照生成;跳过第 1 步会让被删除的 limit.input、
+ * cost.cache_read 等子字段在 CLI 深合并后残留在磁盘配置中。
+ * 旧的两个导出仍保留以兼容既有调用方,新代码请优先使用本函数。
+ */
+export function customProviderConfigPatches(
+  existing: unknown,
+  next: SanitizedProviderConfig,
+): { reset?: ResetPatch; patch: ProviderPatch } {
+  const reset = providerReset(existing, next)
+  return { ...(reset ? { reset } : {}), patch: withCustomProviderDeletions(existing, next) }
 }

@@ -3,7 +3,6 @@ import { effectCmd } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { KiloShutdown } from "@/kilocode/cli/shutdown" // kilocode_change
-import { startParentWatchdog } from "../../kilocode/parent-watchdog" // kilocode_change
 
 export const ServeCommand = effectCmd({
   command: "serve",
@@ -30,10 +29,9 @@ export const ServeCommand = effectCmd({
 
     // kilocode_change start - graceful signal shutdown
     // yield* Effect.never
-    const stopWatchdog = startParentWatchdog(() => process.kill(process.pid, "SIGTERM"))
-    yield* Effect.promise(() => KiloShutdown.waitForServer(server)).pipe(
-      Effect.ensuring(Effect.sync(stopWatchdog)),
-    )
+    // 孤儿检测已统一收敛到 KiloShutdown.waitForServer 内部（复用 parent-watchdog，
+    // 仅在设置 KILO_PARENT_PID 时生效），此处不再单独启动 watchdog，避免双重停机竞争。
+    yield* Effect.promise(() => KiloShutdown.waitForServer(server))
     // kilocode_change end
   }),
 })

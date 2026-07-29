@@ -1,6 +1,7 @@
 import type { Provider, ProviderModel, ModelSelection } from "../types/messages"
-import { isSmall } from "../components/shared/model-selector-utils"
-import { KILO_PROVIDER_ID } from "../../../src/shared/provider-model"
+// isSmall 来自共享层 provider-model，避免 context 层反向依赖组件层的
+// model-selector-utils（后者又 type-import context 层，形成层次倒挂）。
+import { isSmall, KILO_PROVIDER_ID } from "../../../src/shared/provider-model"
 
 export type EnrichedModel = ProviderModel & { providerID: string; providerName: string }
 
@@ -60,4 +61,26 @@ export function isModelValid(
   const model = provider.models[selection.modelID]
   if (!model) return false
   return isVisibleModel({ ...model, providerID: selection.providerID }, connected)
+}
+
+/**
+ * 判断一个模型选择当前是否"可用"，带 providers 未加载时的豁免语义：
+ *
+ * - selection 为空 → 不可用；
+ * - providers 快照为空（扩展端权威快照尚未到达，例如启动窗口或后端重连期间）
+ *   → 无法判断有效性，此时一律视为可用，避免把用户既有选择误判为失效；
+ * - providers 就绪后 → 委托 isModelValid 做完整校验（provider 存在、模型存在、
+ *   已连接或为 Kilo 免费模型）。
+ *
+ * 此前该豁免逻辑在 session.tsx、NewWorktreeDialog.tsx、session-model-store.ts
+ * 三处各自实现一份，语义调整需人工同步；现统一收敛到这里，调用方一律复用。
+ */
+export function isModelUsable(
+  providers: Record<string, Provider>,
+  connected: string[],
+  selection: ModelSelection | null | undefined,
+): selection is ModelSelection {
+  if (!selection) return false
+  if (Object.keys(providers).length === 0) return true
+  return isModelValid(providers, connected, selection)
 }

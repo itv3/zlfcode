@@ -3,6 +3,7 @@ import {
   flattenModels,
   findModel,
   isModelValid,
+  isModelUsable,
   isVisibleModel,
   visibleModels,
 } from "../../webview-ui/src/context/provider-utils"
@@ -109,6 +110,46 @@ describe("isModelValid", () => {
 
   it("rejects unknown models", () => {
     expect(isModelValid(providers, ["openai"], { providerID: "openai", modelID: "missing" })).toBe(false)
+  })
+})
+
+describe("isModelUsable", () => {
+  const providers = {
+    kilo: makeProvider("kilo", "Kilo Gateway", ["stepfun/step-flash:free", "anthropic/paid"], ["stepfun/step-flash:free"]),
+    openai: makeProvider("openai", "OpenAI", ["gpt-4o"]),
+  }
+
+  it("selection 为空时返回 false（无论 providers 是否加载）", () => {
+    expect(isModelUsable({}, [], null)).toBe(false)
+    expect(isModelUsable({}, [], undefined)).toBe(false)
+    expect(isModelUsable(providers, ["openai"], null)).toBe(false)
+  })
+
+  it("providers 尚未加载（快照为空）时豁免校验，视为可用", () => {
+    expect(isModelUsable({}, [], { providerID: "openai", modelID: "gpt-4o" })).toBe(true)
+    expect(isModelUsable({}, [], { providerID: "unknown", modelID: "whatever" })).toBe(true)
+  })
+
+  it("providers 就绪后委托 isModelValid 做完整校验", () => {
+    // 已连接 provider 的模型可用
+    expect(isModelUsable(providers, ["openai"], { providerID: "openai", modelID: "gpt-4o" })).toBe(true)
+    // 未连接的非 kilo provider 不可用
+    expect(isModelUsable(providers, [], { providerID: "openai", modelID: "gpt-4o" })).toBe(false)
+    // kilo 免费模型无需连接即可用
+    expect(isModelUsable(providers, [], { providerID: "kilo", modelID: "stepfun/step-flash:free" })).toBe(true)
+    // kilo 付费模型不可用
+    expect(isModelUsable(providers, [], { providerID: "kilo", modelID: "anthropic/paid" })).toBe(false)
+    // 不存在的模型不可用
+    expect(isModelUsable(providers, ["openai"], { providerID: "openai", modelID: "missing" })).toBe(false)
+  })
+
+  it("与三处旧实现的豁免语义保持一致：providers 非空但 provider 缺失时不豁免", () => {
+    // 过渡快照（如 kilo gateway 拉取失败）下 kilo 不在 providers 中：
+    // 判定为不可用（读取路径回退），但绝不应触发持久删除（见 stale-model-retention.test.ts）。
+    const transitional = { openai: makeProvider("openai", "OpenAI", ["gpt-4o"]) }
+    expect(isModelUsable(transitional, ["openai"], { providerID: "kilo", modelID: "stepfun/step-flash:free" })).toBe(
+      false,
+    )
   })
 })
 

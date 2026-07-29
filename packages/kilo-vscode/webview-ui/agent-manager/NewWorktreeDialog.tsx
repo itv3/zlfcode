@@ -21,6 +21,7 @@ import { useVSCode } from "../src/context/vscode"
 import { useServer } from "../src/context/server"
 import { useSession } from "../src/context/session"
 import { useProvider } from "../src/context/provider"
+import { isModelUsable } from "../src/context/provider-utils"
 import { useConfig } from "../src/context/config"
 import { cycleVariant } from "../src/context/session-variant-store"
 import { ModelSelectorBase } from "../src/components/shared/ModelSelector"
@@ -123,10 +124,8 @@ export const NewWorktreeDialog: Component<{ onClose: () => void; defaultBaseBran
   const speech = useSpeechToText(vscode, server, { t })
   const canUseSpeech = () => canUseSpeechToText(config(), provider.authStates())
   const speechModel = () => selectedSpeechToTextModel(config())
-  const validModel = (selection: { providerID: string; modelID: string }) => {
-    if (Object.keys(provider.providers()).length === 0) return true
-    return provider.isModelValid(selection)
-  }
+  const validModel = (selection: { providerID: string; modelID: string }) =>
+    isModelUsable(provider.providers(), provider.connected(), selection)
 
   const visibleAllocations = createMemo(() => {
     const next: ModelAllocations = new Map()
@@ -608,6 +607,8 @@ export const NewWorktreeDialog: Component<{ onClose: () => void; defaultBaseBran
                   <Show when={!compareMode()}>
                     <ModelSelectorBase
                       value={model()}
+                      // 与聊天选择器一致展示"实际将被使用的模型"（resolved 语义，F65）。
+                      labelSemantics="resolved"
                       onSelect={(pid, mid) => {
                         if (pid && mid) setModel({ providerID: pid, modelID: mid })
                       }}

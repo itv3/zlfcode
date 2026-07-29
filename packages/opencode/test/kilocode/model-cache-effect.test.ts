@@ -27,6 +27,7 @@ function layer(
     readonly fail?: number
   },
   fail?: number,
+  empty?: number, // 第 empty 次请求返回空模型列表（用于模拟空结果留下的空缓存）
 ) {
   const http = HttpClient.make((request) =>
     Effect.gen(function* () {
@@ -44,7 +45,13 @@ function layer(
         )
       return HttpClientResponse.fromWeb(
         request,
-        Response.json(count === fail ? null : { data: [{ id: `apertis-${count}`, owned_by: "apertis" }] }),
+        Response.json(
+          count === fail
+            ? null
+            : count === empty
+              ? { data: [] }
+              : { data: [{ id: `apertis-${count}`, owned_by: "apertis" }] },
+        ),
       )
     }),
   )
@@ -116,6 +123,28 @@ it.effect("过期模型立即返回旧值并在后台刷新", () =>
     expect(Object.keys(out.first)).toEqual(["apertis-1"])
     expect(out.stale).toEqual(out.first)
     expect(out.pending).toBeUndefined()
+    expect(Object.keys(out.fresh)).toEqual(["apertis-2"])
+    expect((yield* Ref.get(hits)).length).toBe(2)
+  }),
+)
+
+// 审核条目 F08：空结果（或失败）留下的空缓存过期后，前台请求必须同步重取，
+// 不能把空对象当可用缓存走 stale 快速路径继续返回空列表。
+// 同时覆盖 F45：evaluate 的 entry.cached 过期判定与 get/commit 统一使用 Clock，
+// TestClock 推进后 cached 必须同样判定为过期并触发重新拉取。
+it.effect("空缓存过期后前台请求同步重取而不是返回空列表", () =>
+  Effect.gen(function* () {
+    const hits = yield* Ref.make<Hit[]>([])
+    const out = yield* ModelCache.Service.use((cache) =>
+      Effect.gen(function* () {
+        const empty = yield* cache.fetch("apertis", { apiKey: "test-key" })
+        yield* TestClock.adjust("6 minutes")
+        const fresh = yield* cache.fetch("apertis", { apiKey: "test-key" })
+        return { empty, fresh }
+      }),
+    ).pipe(Effect.provide(layer(hits, TestConfig.layer(), auth, undefined, undefined, 1)))
+
+    expect(out.empty).toEqual({})
     expect(Object.keys(out.fresh)).toEqual(["apertis-2"])
     expect((yield* Ref.get(hits)).length).toBe(2)
   }),

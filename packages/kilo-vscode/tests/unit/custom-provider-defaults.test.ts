@@ -1,17 +1,23 @@
 import { describe, expect, it } from "bun:test"
 import path from "node:path"
+import { createStore } from "solid-js/store"
 import {
+  autoFillErrorKeys,
+  autoFillModel,
   defaultCandidates,
   defaultKeys,
   defaultsForModel,
   mergeModelDefaults,
   parseDefaults,
   replaceModelDefaults,
+  revertAutoFill,
+  stripReasoningDefaults,
 } from "../../webview-ui/src/components/settings/CustomProviderDefaults"
 import {
   customProviderCatalog,
   customProviderProtocol,
   normalizeCustomProviderBaseURL,
+  normalizeProtocolBaseURL,
 } from "../../src/shared/provider-model"
 import type { ModelEntry } from "../../webview-ui/src/components/settings/CustomProviderModelCard"
 import type { Provider } from "../../webview-ui/src/types/messages"
@@ -209,6 +215,34 @@ describe("custom provider default matching", () => {
     expect(normalizeCustomProviderBaseURL("@ai-sdk/google", "https://generativelanguage.googleapis.com")).toBe(
       "https://generativelanguage.googleapis.com/v1beta",
     )
+  })
+
+  it("keeps Gemini base URLs that already end with a version segment", () => {
+    // F23 回归:v1 / v1beta / v1alpha 都是 Gemini 的合法 API 版本段,
+    // 已带版本段的 baseURL 必须原样保留,不能再追加 /v1beta。
+    expect(normalizeCustomProviderBaseURL("@ai-sdk/google", "https://generativelanguage.googleapis.com/v1alpha")).toBe(
+      "https://generativelanguage.googleapis.com/v1alpha",
+    )
+    expect(normalizeCustomProviderBaseURL("@ai-sdk/google", "https://generativelanguage.googleapis.com/v1beta")).toBe(
+      "https://generativelanguage.googleapis.com/v1beta",
+    )
+    expect(normalizeCustomProviderBaseURL("@ai-sdk/google", "https://generativelanguage.googleapis.com/v1")).toBe(
+      "https://generativelanguage.googleapis.com/v1",
+    )
+  })
+
+  it("normalizes base URLs by protocol with the same rules as by package", () => {
+    // normalizeProtocolBaseURL 是按协议的共享入口,规则必须与按包名的版本一致且幂等。
+    expect(normalizeProtocolBaseURL("anthropic", "https://api.anthropic.com")).toBe("https://api.anthropic.com/v1")
+    expect(normalizeProtocolBaseURL("anthropic", "https://api.anthropic.com/v1")).toBe("https://api.anthropic.com/v1")
+    expect(normalizeProtocolBaseURL("gemini", "https://generativelanguage.googleapis.com")).toBe(
+      "https://generativelanguage.googleapis.com/v1beta",
+    )
+    expect(normalizeProtocolBaseURL("gemini", "https://generativelanguage.googleapis.com/v1alpha")).toBe(
+      "https://generativelanguage.googleapis.com/v1alpha",
+    )
+    // openai 协议无默认版本段,只做 trim 与去尾斜杠。
+    expect(normalizeProtocolBaseURL("openai", " https://example.com/v1/ ")).toBe("https://example.com/v1")
   })
 
   it("does not silently match thinking suffix models against the base catalog model", () => {
@@ -526,5 +560,159 @@ describe("custom provider default matching", () => {
     const output = result.stdout.toString() + result.stderr.toString()
 
     expect(result.exitCode, output).toBe(0)
+  })
+})
+
+// F04 回归:逐键精确匹配的自动填充必须可回收,途经前缀命中(如输入
+// glm-5.2-max 途经 glm-5.2)残留的错误默认参数不能被静默保存。
+describe("custom provider default auto-fill revert", () => {
+  function blank(id = ""): ModelEntry {
+    return {
+      id,
+      name: "",
+      supportsImages: false,
+      modalities: { input: ["text"], output: ["text"] },
+      contextLimit: "",
+      outputLimit: "",
+      costEnabled: false,
+      inputCost: "",
+      outputCost: "",
+      cacheReadCost: "",
+      cacheWriteCost: "",
+      reasoning: false,
+      variants: [],
+    }
+  }
+
+  it("autoFillModel 精确命中时只补空字段并记录写入来源", () => {
+    const defaults = defaultsForModel(providers(), "@ai-sdk/openai-compatible", "glm-5.2")
+    const { next, record } = autoFillModel(blank("glm-5.2"), "glm-5.2", defaults)
+
+    // 合并结果与 mergeModelDefaults 完全一致(同一实现点)。
+    expect(next).toEqual(mergeModelDefaults(blank("glm-5.2"), defaults))
+    expect(next.contextLimit).toBe("1000000")
+    expect(next.reasoning).toBe(true)
+    // 记录中的字段就是本次实际写入的字段;supportsImages 未变化不记录。
+    expect(record?.id).toBe("glm-5.2")
+    expect(Object.keys(record?.fields ?? {}).sort()).toEqual([
+      "cacheReadCost",
+      "cacheWriteCost",
+      "contextLimit",
+      "costEnabled",
+      "inputCost",
+      "outputCost",
+      "outputLimit",
+      "reasoning",
+      "variants",
+    ])
+  })
+
+  it("autoFillModel 没有字段可填时不产生记录并返回原引用", () => {
+    const model = blank("glm-5.2")
+    model.contextLimit = "123"
+    model.outputLimit = "456"
+    model.costEnabled = true
+    model.inputCost = "7"
+    model.outputCost = "8"
+    model.cacheReadCost = "9"
+    model.cacheWriteCost = "10"
+    model.reasoning = true
+    model.variants = [
+      {
+        name: "custom",
+        enableThinking: undefined,
+        thinking: undefined,
+        splitReasoning: undefined,
+        reasoningEffort: "low",
+        outputEffort: undefined,
+        chatTemplateArgs: undefined,
+      },
+    ]
+
+    const defaults = defaultsForModel(providers(), "@ai-sdk/openai-compatible", "glm-5.2")
+    const { next, record } = autoFillModel(model, "glm-5.2", defaults)
+
+    expect(next).toBe(model)
+    expect(record).toBeUndefined()
+  })
+
+  it("回收途经前缀命中残留的默认参数,让最终精确命中能写入正确值", () => {
+    const pool = providers()
+    // 第一步:输入途经前缀 glm-5.2,精确命中并自动填充。
+    const hit = defaultsForModel(pool, "@ai-sdk/openai-compatible", "glm-5.2")
+    const { next: filled, record } = autoFillModel(blank("glm-5.2"), "glm-5.2", hit)
+    expect(record).toBeDefined()
+
+    // 第二步:继续输入到 glm-5.2-max,精确命中失效。
+    const typed = { ...filled, id: "glm-5.2-max" }
+    expect(defaultsForModel(pool, "@ai-sdk/openai-compatible", "glm-5.2-max")).toEqual({})
+
+    // 第三步:回收后所有仍等于自动填充值的字段恢复为空,可再次接受正确默认值。
+    const reverted = revertAutoFill(typed, record!)
+    expect(reverted.id).toBe("glm-5.2-max")
+    expect(reverted.reasoning).toBe(false)
+    expect(reverted.contextLimit).toBe("")
+    expect(reverted.outputLimit).toBe("")
+    expect(reverted.costEnabled).toBe(false)
+    expect(reverted.inputCost).toBe("")
+    expect(reverted.outputCost).toBe("")
+    expect(reverted.cacheReadCost).toBe("")
+    expect(reverted.cacheWriteCost).toBe("")
+    expect(reverted.variants).toEqual([])
+  })
+
+  it("revertAutoFill 保留用户手改过的字段", () => {
+    const hit = defaultsForModel(providers(), "@ai-sdk/openai-compatible", "glm-5.2")
+    const { next: filled, record } = autoFillModel(blank("glm-5.2"), "glm-5.2", hit)
+
+    // 用户手改 contextLimit 与 inputCost 后继续输入 ID。
+    const edited = { ...filled, id: "glm-5.2-max", contextLimit: "204800", inputCost: "2.5" }
+    const reverted = revertAutoFill(edited, record!)
+
+    expect(reverted.contextLimit).toBe("204800")
+    expect(reverted.inputCost).toBe("2.5")
+    // 未手改的字段照常回收。
+    expect(reverted.outputLimit).toBe("")
+    expect(reverted.outputCost).toBe("")
+    expect(reverted.reasoning).toBe(false)
+    expect(reverted.variants).toEqual([])
+  })
+
+  it("revertAutoFill 通过结构比较识别 store 代理包装后的自动填充值", () => {
+    // 填充值写入 Solid store 后再读出来是 proxy 包装,引用与记录里保存的
+    // 原始数组不同;回收必须按结构比较,否则 variants 永远无法回收。
+    const hit = defaultsForModel(providers(), "@ai-sdk/openai-compatible", "glm-5.2")
+    const { next: filled, record } = autoFillModel(blank("glm-5.2"), "glm-5.2", hit)
+
+    const [store, setStore] = createStore({ models: [filled] })
+    setStore("models", 0, "id", "glm-5.2-max")
+
+    const reverted = revertAutoFill(store.models[0]!, record!)
+    expect(reverted.variants).toEqual([])
+    expect(reverted.contextLimit).toBe("")
+    expect(reverted.reasoning).toBe(false)
+  })
+
+  it("stripReasoningDefaults 让显式取消的 reasoning 不被强制勾回", () => {
+    const hit = defaultsForModel(providers(), "@ai-sdk/openai-compatible", "glm-5.2")
+    const stripped = stripReasoningDefaults(hit)
+    const { next, record } = autoFillModel(blank("glm-5.2"), "glm-5.2", stripped)
+
+    // reasoning 与 variants 不再注入,其余默认值照常补空。
+    expect(next.reasoning).toBe(false)
+    expect(next.variants).toEqual([])
+    expect(next.contextLimit).toBe("1000000")
+    expect(next.inputCost).toBe("1.4")
+    expect(record?.fields.reasoning).toBeUndefined()
+    expect(record?.fields.variants).toBeUndefined()
+    // 原 defaults 对象不被就地修改。
+    expect(hit.reasoning).toBe(true)
+  })
+
+  it("autoFillErrorKeys 只返回本次写入过的数值字段", () => {
+    expect(autoFillErrorKeys({ id: "m", fields: { contextLimit: "1000000", reasoning: true } })).toEqual([
+      "contextLimit",
+    ])
+    expect(autoFillErrorKeys({ id: "m", fields: {} })).toEqual([])
   })
 })

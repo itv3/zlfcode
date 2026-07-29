@@ -19,7 +19,36 @@ const CUSTOM_PROVIDER_META: Record<
   "@ai-sdk/openai-compatible": { protocol: "openai", catalog: "openai" },
   "@ai-sdk/openai": { protocol: "openai", catalog: "openai" },
   "@ai-sdk/anthropic": { protocol: "anthropic", catalog: "anthropic", suffix: "/v1", suffixPattern: /\/v1$/i },
-  "@ai-sdk/google": { protocol: "gemini", catalog: "google", suffix: "/v1beta", suffixPattern: /\/v1(?:beta)?$/i },
+  // Gemini 同时提供 v1 / v1beta / v1alpha 三个 API 版本(v1alpha 是实验特性入口),
+  // 三者结尾的 baseURL 都视为已带版本段,不再追加默认的 /v1beta,
+  // 避免把 .../v1alpha 误补成 .../v1alpha/v1beta 导致请求 404。
+  "@ai-sdk/google": {
+    protocol: "gemini",
+    catalog: "google",
+    suffix: "/v1beta",
+    suffixPattern: /\/v1(?:beta|alpha)?$/i,
+  },
+}
+
+// 协议到代表性包名的映射:同一协议的多个包共享同一套 baseURL 规范化规则,
+// 供只知道协议(而非具体 npm 包名)的调用方(如模型发现)复用。
+const PROTOCOL_PACKAGE: Record<CustomProviderProtocol, CustomProviderPackage> = {
+  openai: "@ai-sdk/openai-compatible",
+  anthropic: "@ai-sdk/anthropic",
+  gemini: "@ai-sdk/google",
+}
+
+/**
+ * Kilo 网关"auto small"特殊模型的 ID 集合（kilo-auto/small 与历史别名 auto-small）。
+ * 该类模型默认不出现在模型选择器里，只有明确要求 includeSmall 的调用方才展示。
+ * 定义放在共享层：extension host 与 webview（context 层、组件层）都可能需要
+ * 这一判断，避免 context 层反向依赖组件层的工具模块。
+ */
+export const KILO_AUTO_SMALL_IDS = new Set(["kilo-auto/small", "auto-small"])
+
+/** 判断模型是否属于 Kilo 网关的 auto-small 特殊模型。 */
+export function isSmall(model: { providerID: string; id: string }): boolean {
+  return model.providerID === KILO_PROVIDER_ID && KILO_AUTO_SMALL_IDS.has(model.id)
 }
 
 // Legacy/static fallback for provider objects created before backend metadata is available.
@@ -50,6 +79,15 @@ export function normalizeCustomProviderBaseURL(npm: CustomProviderPackage, value
   const meta = CUSTOM_PROVIDER_META[npm]
   if (meta.suffix && meta.suffixPattern && !meta.suffixPattern.test(url)) return `${url}${meta.suffix}`
   return url
+}
+
+/**
+ * 按协议规范化 baseURL:内部复用 normalizeCustomProviderBaseURL 的包名规则,
+ * 保证扩展端与 webview 端对同一 baseURL 的处理结果一致。
+ * 规范化是幂等的:已带版本段的 URL 原样返回,重复调用不会叠加后缀。
+ */
+export function normalizeProtocolBaseURL(protocol: CustomProviderProtocol, value: string) {
+  return normalizeCustomProviderBaseURL(PROTOCOL_PACKAGE[protocol], value)
 }
 
 export function parseModelString(raw: string | undefined | null) {

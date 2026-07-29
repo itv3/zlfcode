@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import {
   MASKED_CUSTOM_PROVIDER_KEY,
+  customProviderConfigPatches,
   parseCustomProviderSecret,
   resolveCustomProviderKey,
   resolveCustomProviderAuth,
@@ -607,5 +608,49 @@ describe("withCustomProviderDeletions", () => {
       baseURL: "https://example.com/v1",
       headers: { "X-Keep": "yes", Authorization: null },
     })
+  })
+})
+
+describe("customProviderConfigPatches", () => {
+  const baseNext = {
+    npm: "@ai-sdk/openai-compatible" as const,
+    name: "My Provider",
+    options: { baseURL: "https://example.com/v1" },
+    models: { keep: { name: "Keep" } },
+  }
+
+  it("returns both the reset and the main patch when child fields are removed", () => {
+    // 旧 limit 有 input,新 limit 没有:必须先应用 reset(limit 整体置 null)再应用 patch,
+    // 否则深合并后 limit.input 会残留在磁盘配置中。
+    const existing = { models: { keep: { name: "Keep", limit: { context: 128000, input: 128000, output: 8192 } } } }
+    const next = {
+      ...baseNext,
+      models: { keep: { name: "Keep", limit: { context: 128000, output: 8192 } } },
+    }
+
+    const { reset, patch } = customProviderConfigPatches(existing, next)
+    // 两个补丁必须与旧的成对入口输出完全一致,保证既有调用方迁移后行为不变。
+    expect(reset).toEqual(providerReset(existing, next))
+    expect(reset).toEqual({ models: { keep: { limit: null } } })
+    expect(patch).toEqual(withCustomProviderDeletions(existing, next))
+    expect(patch.models.keep).toEqual({ name: "Keep", limit: { context: 128000, output: 8192 } })
+  })
+
+  it("omits the reset key when no reset is needed", () => {
+    const result = customProviderConfigPatches(undefined, baseNext)
+    expect("reset" in result).toBe(false)
+    expect(result.patch).toEqual(baseNext)
+  })
+
+  it("returns a reset when a cost child field is removed", () => {
+    const existing = { models: { keep: { name: "Keep", cost: { input: 3, output: 15, cache_read: 0.3 } } } }
+    const next = {
+      ...baseNext,
+      models: { keep: { name: "Keep", cost: { input: 3, output: 15 } } },
+    }
+
+    const { reset, patch } = customProviderConfigPatches(existing, next)
+    expect(reset).toEqual({ models: { keep: { cost: null } } })
+    expect(patch.models.keep).toEqual({ name: "Keep", cost: { input: 3, output: 15 } })
   })
 })

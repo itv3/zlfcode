@@ -50,7 +50,8 @@ const script = `
     fail("权威快照没有应用新增模型")
   }
   if (added.connected.join(",") !== "13") fail("连接列表没有去重")
-  if (Object.keys(added.optimistic).length !== 0) fail("Provider 乐观状态没有清空")
+  // optimistic 乐观状态字段从未有过消费方，已作为死代码删除；断言其不回潮。
+  if (added.optimistic !== undefined) fail("已删除的 optimistic 死状态字段不应重新出现")
 
   const ignored = applyProviderMessage(
     added,
@@ -102,7 +103,8 @@ const script = `
     loaded(3, { "13": provider("13", "Provider 13", ["gpt-5.5"]) }, ["13"]),
   )
   if (Object.keys(auth.authStates).length !== 0) fail("权威认证状态没有生效")
-  if (Object.keys(auth.optimisticAuth).length !== 0) fail("认证乐观状态没有清空")
+  // optimisticAuth 乐观认证字段从未有过消费方，已作为死代码删除；断言其不回潮。
+  if (auth.optimisticAuth !== undefined) fail("已删除的 optimisticAuth 死状态字段不应重新出现")
 
   let state = applyProviderMessage(
     initialProviderState(),

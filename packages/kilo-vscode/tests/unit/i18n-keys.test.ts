@@ -521,3 +521,20 @@ describe("i18n locale completeness — every English key exists in all locales",
     expect(missing).toEqual([])
   })
 })
+
+// ── 品牌一致性（F53）────────────────────────────────────────────────────────
+// 三份主要维护语言（en / zh / zht）的聊天窗口欢迎语必须统一使用 ZLF Code 品牌，
+// 与扩展显示名一致，避免首屏出现 Kilo Code 造成品牌混淆（见 README「ZLF 身份维护」）。
+
+describe("i18n 品牌一致性 — session.messages.welcome 使用 ZLF Code 品牌", () => {
+  const maintainedLocales = ["en", "zh", "zht"] as const
+
+  it("en / zh / zht 的欢迎语包含 ZLF Code 且不含 Kilo Code", () => {
+    for (const locale of maintainedLocales) {
+      const welcome = appLocales[locale]!["session.messages.welcome"]
+      expect(welcome, `[${locale}] session.messages.welcome 缺失`).toBeDefined()
+      expect(welcome, `[${locale}] 欢迎语应使用 ZLF Code 品牌`).toContain("ZLF Code")
+      expect(welcome, `[${locale}] 欢迎语不应再出现 Kilo Code 品牌`).not.toContain("Kilo Code")
+    }
+  })
+})

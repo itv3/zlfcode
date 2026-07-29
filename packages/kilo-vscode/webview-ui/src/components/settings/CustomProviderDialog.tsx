@@ -40,16 +40,23 @@ import { validateCustomProvider } from "./CustomProviderValidation"
 import type { FormErrors, FormState, HeaderRow } from "./CustomProviderValidation"
 import { prioritizeVariants } from "./CustomProviderVariants"
 import {
+  autoFillErrorKeys,
+  autoFillModel,
   defaultsForModel,
   hasDefaults,
   mergeModelDefaults,
+  MODEL_VALUE_ERROR_KEYS,
   parseDefaults,
   parseVariant,
   replaceModelDefaults,
   resolveSuggestion,
+  revertAutoFill,
+  stripReasoningDefaults,
+  type AutoFillRecord,
   type CustomProviderDefaults,
   type DefaultCandidate,
   type DefaultSuggestion,
+  type ModelValueErrorKey,
 } from "./CustomProviderDefaults"
 const DEBOUNCE_MS = 500
 const SEARCH_DEBOUNCE_MS = 150
@@ -258,7 +265,9 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
 
   const editing = () => !!props.existing
 
-  const auth = resolveAuth(props.existing, provider.authStates())
+  // 用 createMemo 保持响应式:authStates 可能在对话框打开后才到达,
+  // 一次性快照会让"已保存 key"占位提示在这种时序下丢失。
+  const auth = createMemo(() => resolveAuth(props.existing, provider.authStates()))
   const [form, setForm] = createStore<FormState>(initForm(props.existing))
 
   const [errors, setErrors] = createStore<FormErrors>({
@@ -459,46 +468,66 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     })
   }
 
-  function flag(i: number, key: "supportsImages" | "reasoning", value: boolean | undefined, current: boolean) {
-    if (value !== undefined && !current) setForm("models", i, key, value)
+  // 每个模型行最近一次精确命中自动填充的记录,key 为行索引,行增删时同步迁移。
+  // 放在表单 store 之外:它只服务于回收判断,不需要驱动任何 UI 响应式更新。
+  const autoFill = new Map<number, AutoFillRecord>()
+  // 用户显式取消过 reasoning 勾选的行;之后精确命中默认值时不再强制重新勾选。
+  const reasoningDeclined = new Set<number>()
+
+  /** 行删除后,把行级局部状态(自动填充记录/reasoning 取消标记)对齐到新的行索引。 */
+  function shiftRowState(index: number) {
+    const entries = [...autoFill].filter(([key]) => key !== index)
+    autoFill.clear()
+    for (const [key, value] of entries) autoFill.set(key > index ? key - 1 : key, value)
+    const declined = [...reasoningDeclined].filter((key) => key !== index)
+    reasoningDeclined.clear()
+    for (const key of declined) reasoningDeclined.add(key > index ? key - 1 : key)
   }
 
-  function field(
-    i: number,
-    key: "contextLimit" | "outputLimit" | "inputCost" | "outputCost" | "cacheReadCost" | "cacheWriteCost",
-    value: number | undefined,
-    current: string,
-  ) {
-    if (value !== undefined && !current.trim()) setForm("models", i, key, text(value))
+  /** 清除模型行上指定字段的旧校验错误,让错误提示与刚写入的新值保持一致。 */
+  function clearModelErrors(i: number, keys: readonly ModelValueErrorKey[]) {
+    if (!errors.models[i]) return
+    for (const key of keys) setErrors("models", i, key, undefined)
   }
 
-  function apply(i: number, defaults: CustomProviderDefaults) {
+  function apply(i: number, id: string, defaults: CustomProviderDefaults) {
     const model = form.models[i]
     if (!model) return
 
-    const variants = parseDefaults(defaults)
-    flag(i, "supportsImages", defaults.image, model.supportsImages)
-    flag(i, "reasoning", defaults.reasoning, model.reasoning)
-    if (variants.length > 0 && !model.reasoning) setForm("models", i, "reasoning", true)
-    field(i, "contextLimit", defaults.contextLimit, model.contextLimit)
-    field(i, "outputLimit", defaults.outputLimit, model.outputLimit)
+    // 合并语义统一走 mergeModelDefaults("只补空字段"),避免 dialog 内
+    // 出现第二套同义实现;同时记录本次实际写入的字段,供命中失效时回收。
+    // 用户显式取消过 reasoning 的行,不再通过默认值强制勾回,也不注入 variants。
+    const effective = reasoningDeclined.has(i) ? stripReasoningDefaults(defaults) : defaults
+    const { next, record } = autoFillModel(model, id, effective)
+    if (!record) return
 
-    const prices = [defaults.inputCost, defaults.outputCost, defaults.cacheReadCost, defaults.cacheWriteCost]
-    const priced = prices.some((value) => value !== undefined)
-    if (priced && !model.costEnabled) setForm("models", i, "costEnabled", true)
-    field(i, "inputCost", defaults.inputCost, model.inputCost)
-    field(i, "outputCost", defaults.outputCost, model.outputCost)
-    field(i, "cacheReadCost", defaults.cacheReadCost, model.cacheReadCost)
-    field(i, "cacheWriteCost", defaults.cacheWriteCost, model.cacheWriteCost)
-    if (variants.length > 0 && model.variants.length === 0) {
-      setForm("models", i, "variants", variants)
+    const variantsChanged = next.variants !== model.variants
+    setForm("models", i, next)
+    autoFill.set(i, record)
+    if (variantsChanged) {
       setErrors(
         "models",
         i,
         "variants",
-        variants.map(() => ({})),
+        next.variants.map(() => ({})),
       )
     }
+    clearModelErrors(i, autoFillErrorKeys(record))
+  }
+
+  /** 当前行的精确命中已失效或指向了别的模型时,回收仍保持自动填充值的字段。 */
+  function revert(i: number, record: AutoFillRecord) {
+    autoFill.delete(i)
+    const model = form.models[i]
+    if (!model) return
+
+    const next = revertAutoFill(model, record)
+    if (next === model) return
+
+    const variantsChanged = next.variants !== model.variants
+    setForm("models", i, next)
+    if (variantsChanged) setErrors("models", i, "variants", [])
+    clearModelErrors(i, autoFillErrorKeys(record))
   }
 
   function derive(item: DefaultSuggestion | undefined) {
@@ -525,9 +554,15 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
 
   function fill(i: number, id: string) {
     setForm("models", i, "id", id)
+    // ID 变化后,上一次精确命中已失效或指向其他模型(例如输入 glm-5.2-max
+    // 途经前缀 glm-5.2):先回收仍保持自动填充值的字段,用户手改过的保留,
+    // 避免错误模型的成本/limit/variants 残留在表单里被静默保存。
+    const record = autoFill.get(i)
+    if (record && record.id !== id) revert(i, record)
+
     const direct = defaultsForModel(provider.catalogProviders(), form.npm, id)
     if (hasDefaults(direct)) {
-      apply(i, direct)
+      apply(i, id, direct)
       setSuggestion(undefined)
       return
     }
@@ -538,6 +573,11 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     const model = form.models[i]
     if (!model) return
 
+    // 候选覆盖属于用户显式选择:写入值不再视为自动填充,不参与后续回收;
+    // 用户此前对 reasoning 的取消也被这次显式选择取代。
+    autoFill.delete(i)
+    reasoningDeclined.delete(i)
+
     const next = replaceModelDefaults(model, defaults)
     setForm("models", i, next)
     setErrors(
@@ -546,6 +586,8 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
       "variants",
       next.variants.map(() => ({})),
     )
+    // 字段值已被候选默认值整体覆盖,旧的字段级校验错误一并清除。
+    clearModelErrors(i, MODEL_VALUE_ERROR_KEYS)
     setSuggestion(undefined)
     setPreview(undefined)
   }
@@ -574,6 +616,8 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     const variants = prioritizeVariants(source, name)
     if (variants.length === 0) return
     if (model.variants.length > 0 && variants === source) return
+    // 用户显式选择变体意味着重新需要 reasoning,清除此前的取消标记。
+    reasoningDeclined.delete(i)
     if (!model.reasoning) setForm("models", i, "reasoning", true)
     setForm("models", i, "variants", variants)
     setErrors(
@@ -719,12 +763,16 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     const merged = empty ? toAdd.map(entry) : [...form.models, ...toAdd.map(entry)]
 
     if (toAdd.length > 0) {
+      // 替换唯一空行时行索引整体重排,行级局部状态一并清空(空行本就没有记录)。
+      if (empty) {
+        autoFill.clear()
+        reasoningDeclined.clear()
+      }
       setForm("models", merged)
       setErrors(
         "models",
         merged.map((m) => ({ variants: m.variants.map(() => ({})) })),
       )
-      setFetchStatus(language.t("provider.custom.models.fetch.added", { count: String(toAdd.length) }))
       const target = toAdd
         .map((m, offset) => ({ id: m.id, index: start + offset }))
         .find((m) => derive(m) !== undefined)
@@ -783,11 +831,14 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     setSuggestion(undefined)
     setPreview(undefined)
     if (form.models.length <= 1) {
+      autoFill.clear()
+      reasoningDeclined.clear()
       setForm("models", [blankModel()])
       setErrors("models", [{ variants: [] }])
       refreshModels()
       return
     }
+    shiftRowState(index)
     setForm("models", (v) => v.filter((_, i) => i !== index))
     setErrors("models", (v) => v.filter((_, i) => i !== index))
     refreshModels()
@@ -1026,7 +1077,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                   type="password"
                   label={language.t("provider.custom.field.apiKey.label")}
                   placeholder={
-                    editing() && auth === "api" && !apiTouched()
+                    editing() && auth() === "api" && !apiTouched()
                       ? language.t("provider.custom.field.apiKey.placeholder.saved")
                       : language.t("provider.custom.field.apiKey.placeholder")
                   }
@@ -1088,7 +1139,12 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                     onChangeOutputCost={(v) => setForm("models", i(), "outputCost", v)}
                     onChangeCacheReadCost={(v) => setForm("models", i(), "cacheReadCost", v)}
                     onChangeCacheWriteCost={(v) => setForm("models", i(), "cacheWriteCost", v)}
-                    onChangeReasoning={(v) => setForm("models", i(), "reasoning", v)}
+                    onChangeReasoning={(v) => {
+                      // 记录用户显式取消 reasoning 的行为;之后精确命中默认值时不再强制勾回。
+                      if (v) reasoningDeclined.delete(i())
+                      else reasoningDeclined.add(i())
+                      setForm("models", i(), "reasoning", v)
+                    }}
                     onSelectVariant={(v) => selectVariant(i(), v)}
                     onAddVariant={() => addVariant(i())}
                     onRemoveVariant={(vi) => removeVariant(i(), vi)}

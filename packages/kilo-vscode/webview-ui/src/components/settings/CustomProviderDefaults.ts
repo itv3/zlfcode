@@ -170,6 +170,143 @@ export function replaceModelDefaults(model: ModelEntry, defaults: CustomProvider
   }
 }
 
+// ── 精确命中默认值的自动填充与回收 ──────────────────────────────────────
+//
+// 模型 ID 输入框每次按键都会尝试精确匹配内置默认值并"只补空字段"。当目标
+// ID 的某个前缀本身是完整 catalog ID 时(例如输入 glm-5.2-max 途经 glm-5.2),
+// 中途命中会把错误模型的成本、token limit、variants 写进表单;继续输入后
+// 命中失效,这些值若不回收就会被静默保存。下面这组纯函数负责:
+// 1. autoFillModel  — 基于 mergeModelDefaults 填充,并记录本次实际写入的字段快照;
+// 2. revertAutoFill — 命中失效或命中目标变化时,把仍保持自动填充值的字段恢复为
+//    空值,用户手改过的字段原样保留;
+// 3. stripReasoningDefaults — 用户显式取消 reasoning 勾选后,默认值不再强制勾回;
+// 4. autoFillErrorKeys — 写入/回收字段后需要同步清除旧校验错误的字段列表。
+
+/** 自动填充可以写入并在命中失效时回收的字段集合;id 与 name 永远不会被自动填充。 */
+const AUTO_FILL_KEYS = [
+  "supportsImages",
+  "reasoning",
+  "costEnabled",
+  "contextLimit",
+  "outputLimit",
+  "inputCost",
+  "outputCost",
+  "cacheReadCost",
+  "cacheWriteCost",
+  "variants",
+] as const
+
+type AutoFillKey = (typeof AUTO_FILL_KEYS)[number]
+
+export type AutoFillRecord = {
+  /** 精确命中默认值时的模型 ID 输入值;ID 再变化时用于判断这次命中是否已失效。 */
+  id: string
+  /** 本次自动填充实际写入的字段与写入值快照;回收时用它识别用户是否手改过。 */
+  fields: Partial<Pick<ModelEntry, AutoFillKey>>
+}
+
+/** 回收自动填充时各字段恢复的"空值",与 blankModel 的初始值保持一致。 */
+const AUTO_FILL_EMPTY: Pick<ModelEntry, AutoFillKey> = {
+  supportsImages: false,
+  reasoning: false,
+  costEnabled: false,
+  contextLimit: "",
+  outputLimit: "",
+  inputCost: "",
+  outputCost: "",
+  cacheReadCost: "",
+  cacheWriteCost: "",
+  variants: [],
+}
+
+/** 过滤掉显式 undefined 的键,VariantEntry 会携带大量显式 undefined 字段。 */
+function definedKeys(value: object) {
+  return Object.keys(value).filter((key) => (value as Record<string, unknown>)[key] !== undefined)
+}
+
+/**
+ * 结构化深比较。回收判断不能用引用比较:填充值写入 Solid store 后再读出来
+ * 是 proxy 包装,与记录里保存的原始数组/对象引用不同,但结构仍然相等。
+ */
+function same(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  const ka = definedKeys(a)
+  const kb = definedKeys(b)
+  if (ka.length !== kb.length) return false
+  return ka.every((key) => same((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
+}
+
+/**
+ * 精确命中默认值时的自动填充入口:合并语义完全复用 mergeModelDefaults
+ * ("只补空字段、不覆盖已填写值"),并额外记录本次实际写入的字段快照。
+ * 没有任何字段被写入时返回原模型引用且不产生记录。
+ */
+export function autoFillModel(
+  model: ModelEntry,
+  id: string,
+  defaults: CustomProviderDefaults,
+): { next: ModelEntry; record?: AutoFillRecord } {
+  const next = mergeModelDefaults(model, defaults)
+  const fields: AutoFillRecord["fields"] = {}
+  for (const key of AUTO_FILL_KEYS) {
+    if (next[key] !== model[key]) (fields as Record<string, unknown>)[key] = next[key]
+  }
+  if (definedKeys(fields).length === 0) return { next: model }
+  return { next, record: { id, fields } }
+}
+
+/**
+ * 回收一次已失效的自动填充:记录中的字段若仍保持当初的填充值就恢复为空值,
+ * 用户手改过的字段(值已不同)原样保留。没有任何字段需要回收时返回原模型引用。
+ *
+ * 已知限制(F73):回收判据是"当前值与填充值结构相等",无法区分"从未手改"与
+ * "用户清空后手动输入了与填充值恰好相同的值"——后者也会被回收。这是不引入
+ * 逐字段来源标记的深比较方案的固有取舍;触发场景罕见,且回收结果在表单中
+ * 直接可见、可立即重输,不影响"错误默认值不被静默保存"的核心目标。
+ */
+export function revertAutoFill(model: ModelEntry, record: AutoFillRecord): ModelEntry {
+  const next = { ...model }
+  let changed = false
+  for (const key of AUTO_FILL_KEYS) {
+    if (!(key in record.fields)) continue
+    if (!same(model[key], record.fields[key])) continue
+    // variants 每次生成新数组,避免多个模型行共享同一个可变数组实例。
+    ;(next as Record<string, unknown>)[key] = key === "variants" ? [] : AUTO_FILL_EMPTY[key]
+    changed = true
+  }
+  return changed ? next : model
+}
+
+/**
+ * 剥离默认值中的 reasoning 与 variants:用户显式取消过 reasoning 勾选的模型行,
+ * 精确命中默认值时不得把勾选强制改回来(variants 会连带强制 reasoning,一并剥离)。
+ */
+export function stripReasoningDefaults(defaults: CustomProviderDefaults): CustomProviderDefaults {
+  const next = { ...defaults }
+  delete next.reasoning
+  delete next.variants
+  return next
+}
+
+/** 模型行上存在字段级校验错误文案的数值字段集合。 */
+export const MODEL_VALUE_ERROR_KEYS = [
+  "contextLimit",
+  "outputLimit",
+  "inputCost",
+  "outputCost",
+  "cacheReadCost",
+  "cacheWriteCost",
+] as const
+
+export type ModelValueErrorKey = (typeof MODEL_VALUE_ERROR_KEYS)[number]
+
+/** 自动填充写入(或回收)过的数值字段,其旧校验错误需要同步清除,保证提示与当前值一致。 */
+export function autoFillErrorKeys(record: AutoFillRecord): ModelValueErrorKey[] {
+  return MODEL_VALUE_ERROR_KEYS.filter((key) => key in record.fields)
+}
+
 export function catalogDefaults(model: ProviderModel | undefined): CustomProviderDefaults {
   if (!model) return {}
   const variants = model.variants && Object.keys(model.variants).length > 0 ? model.variants : undefined

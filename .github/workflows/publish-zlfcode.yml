@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "发布批次，例如 7.4.1-v0.01；留空则使用市场版本。"
+        description: "发布批次，例如 7.4.16-v0.03；留空则使用 README 中的当前发布批次。"
         required: false
         type: string
       pre_release:
@@ -49,7 +49,10 @@ jobs:
           elif [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == zlfcode-v* ]]; then
             label="${GITHUB_REF_NAME#zlfcode-v}"
           else
-            label="$(bun -e 'console.log(require("./packages/kilo-vscode/package.json").version)')"
+            # 手动触发且留空 version 时，从 README 的「发布批次」表格行推导 label。
+            # 之前这里取 package.json 的市场版本（如 7.4.1603），与 check-release.ts
+            # 要求的 `A.B.C-v0.NN` 批次格式不匹配，prepare job 必然失败。
+            label="$(bun -e 'const m = require("fs").readFileSync("README.md", "utf8").match(/\| 发布批次 \| `([^`]+)` \|/); if (!m) { console.error("README.md 缺少「发布批次」表格行"); process.exit(1) } console.log(m[1])')"
           fi
 
           version="$(bun -e 'console.log(require("./packages/kilo-vscode/package.json").version)')"
@@ -59,7 +62,8 @@ jobs:
             exit 1
           fi
           if [[ -z "$label" ]]; then
-            label="$version"
+            echo "无法解析发布批次 label" >&2
+            exit 1
           fi
 
           bun run script/zlfcode/check-release.ts "zlfcode-v$label"

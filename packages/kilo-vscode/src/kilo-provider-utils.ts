@@ -218,13 +218,44 @@ export function indexProvidersById(all: ProviderInfo[]): Record<string, Provider
   return normalized
 }
 
+/**
+ * 比较两份 providersLoaded 快照在 revision 之外的内容是否完全一致（F22）。
+ *
+ * 用途：Kilo provider 长期缺失时 scheduleProviderRetry 会周期性重拉快照，
+ * 后端状态未变化时每轮结果只有 revision 可能不同。此时重复向 webview
+ * postMessage 一份相同的全量快照只会触发无意义的信号更新与整体重渲染，
+ * 调用方可用本函数判定后跳过推送。
+ *
+ * 两份快照都由 fetchAndSendProviders 的同一条代码路径构造，字段顺序稳定，
+ * 因此用 JSON.stringify 归一化 revision 后直接比较即可。任一侧不是对象
+ *（如缓存为 null）时视为不同，交由调用方正常推送。
+ */
+export function sameProvidersSnapshot(a: unknown, b: unknown): boolean {
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false
+  const strip = (value: object) => JSON.stringify({ ...(value as Record<string, unknown>), revision: 0 })
+  return strip(a) === strip(b)
+}
+
 export function filterAgents(agents: Agent[]): Agent[] {
   return agents.filter((agent) => agent.native === false || !HIDDEN_AGENT_NAMES.has(agent.name))
 }
 
 export function filterVisibleAgents(agents: Agent[]): { visible: Agent[]; defaultAgent: string } {
   const visible = filterAgents(agents).filter((agent) => agent.mode !== "subagent" && !agent.hidden)
-  const defaultAgent = visible.length > 0 ? visible[0]!.name : "code"
+  // 后端 Agent.list() 会把 config.default_agent 匹配的 agent 排在首位（未配置时优先 code），
+  // 因此正常情况下 visible[0] 就是后端认定的默认智能体（过滤保持相对顺序）。
+  // 但当用户配置的默认智能体（如 default_agent = "orchestrator"）被本扩展隐藏时，
+  // 直接取 visible[0] 会得到按字母序排第一的 agent（通常是 ask），与后端 defaultInfo()
+  // 的回退语义（优先 code）不一致。此时优先回退到 visible 中的 "code"，找不到再取 visible[0]。
+  const defaultAgent = (() => {
+    if (visible.length === 0) return "code"
+    const first = visible[0]!
+    const backendDefault = agents[0]?.name
+    // 排在首位的 agent 未被过滤：它就是后端默认，直接沿用。
+    if (backendDefault === undefined || first.name === backendDefault) return first.name
+    // 排在首位的 agent 被隐藏/过滤（如 orchestrator）：优先回退到 code。
+    return visible.find((agent) => agent.name === "code")?.name ?? first.name
+  })()
   return { visible, defaultAgent }
 }
 

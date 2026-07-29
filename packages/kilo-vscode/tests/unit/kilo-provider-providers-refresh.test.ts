@@ -11,6 +11,7 @@ type Internal = {
   providersRetry: ReturnType<typeof setTimeout> | null
   fetchAndSendProviders: (mode?: Mode) => Promise<void>
   handleProvidersChange: (source: string | undefined, revision: number, message?: unknown) => void
+  takeProviderFetch: () => Mode | null
 }
 
 function provider(id: string) {
@@ -188,6 +189,72 @@ describe("KiloProvider Provider 权威快照", () => {
 
     expect(item.calls.connected).toBe(2)
     expect(loaded(item.messages)).toEqual([expect.objectContaining({ mode: "connected" })])
+  })
+
+  // F19：task 返回（advance 判空）与 finally 清理之间的微任务窗口内，
+  // handleProvidersChange 只能向 providersQueued 排队；finally 兜底必须补发拉取，
+  // 确保排队请求总有消费者，webview 不会停留在过期 Provider 状态。
+  it("排队窗口内的变更由任务收尾兜底补拉", async () => {
+    const item = subject({
+      connected: async () => connected("kilo"),
+    })
+    const original = item.internal.takeProviderFetch.bind(item.internal)
+    let injected = false
+    item.internal.takeProviderFetch = () => {
+      const result = original()
+      if (result === null && !injected) {
+        injected = true
+        // 模拟窗口：advance 判空后（任务即将 settle、finally 尚未执行）
+        // 另一实例广播 provider 变更——此时 providersRefresh 仍非空，
+        // handleProvidersChange 只能排队且不主动发起新 fetch。
+        item.internal.handleProvidersChange("other", 1, undefined)
+        return null
+      }
+      return result
+    }
+
+    await item.internal.fetchAndSendProviders("connected")
+    await waitFor(() => item.calls.connected === 2)
+    await waitFor(() => loaded(item.messages).length === 2)
+
+    expect(item.calls.connected).toBe(2)
+    expect(loaded(item.messages)).toHaveLength(2)
+  })
+
+  // F22：Kilo 长期缺失时后台自愈重试会周期性重拉快照；后端状态未变化时
+  // 不应重复向 webview 推送相同的全量快照（仅 revision 之外内容一致即视为相同）。
+  it("自愈重试结果与缓存快照一致时跳过重复推送但继续重试", async () => {
+    const item = subject({
+      connected: async () => connected("other"),
+      expectsKilo: true,
+    })
+
+    await item.internal.fetchAndSendProviders("connected")
+    expect(loaded(item.messages)).toHaveLength(1)
+    expect(item.internal.providersRetry).not.toBeNull()
+
+    // 第一次自愈重试延迟 1 秒；结果仍缺 kilo 且内容与缓存一致。
+    await Bun.sleep(1_100)
+    await waitFor(() => item.calls.connected === 2)
+    await Bun.sleep(0)
+
+    expect(loaded(item.messages)).toHaveLength(1)
+    // 缺 kilo 时重试必须继续排期（不破坏缺失自愈语义），只是不再重复推送。
+    expect(item.internal.providersRetry).not.toBeNull()
+    expect(item.internal.cachedProvidersMessage).toEqual(expect.objectContaining({ mode: "connected" }))
+  })
+
+  it("webview 主动请求即使内容与缓存一致也总能收到快照", async () => {
+    const item = subject({
+      connected: async () => connected("kilo"),
+    })
+
+    await item.internal.fetchAndSendProviders("connected")
+    await item.internal.fetchAndSendProviders("connected")
+
+    // 两次结果内容完全一致，但均为主动请求（非自愈重试），必须各推送一次，
+    // 否则冷启动的 webview 会因扩展端缓存命中而永远拿不到快照。
+    expect(loaded(item.messages)).toHaveLength(2)
   })
 
   it("首轮成功但缺少 Kilo 时会自动退避重试直到免费模型出现", async () => {

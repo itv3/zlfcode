@@ -251,7 +251,9 @@ export const layer: Layer.Layer<
       Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const cached = entry.cached
-          if (cached && cached.expires > Date.now()) {
+          // kilocode_change - 下一行与 get/commit 统一使用 Clock 作为时间源（支持 TestClock），
+          // 避免 view.timestamp 与 entry.cached 两套过期判定在测试时钟下互相矛盾（审核条目 F45）
+          if (cached && cached.expires > (yield* Clock.currentTimeMillis)) {
             yield* commit(entry.providerID, version, entry, cached.result)
             return cached.result
           }
@@ -271,7 +273,12 @@ export const layer: Layer.Layer<
               if (entry.flight === flight) {
                 entry.flight = undefined
                 if (Exit.isSuccess(exit)) {
-                  entry.cached = { result: exit.value, expires: Date.now() + Duration.toMillis(ttl) }
+                  // kilocode_change start - 过期时间同样基于 Clock 计算，保持单一时间源（审核条目 F45）
+                  entry.cached = {
+                    result: exit.value,
+                    expires: (yield* Clock.currentTimeMillis) + Duration.toMillis(ttl),
+                  }
+                  // kilocode_change end
                   yield* commit(entry.providerID, flight.version, entry, exit.value)
                 }
               }
@@ -323,7 +330,11 @@ export const layer: Layer.Layer<
       const previous = active.get(providerID)?.view.models
       const cached = yield* get(providerID)
       if (cached) return cached
-      if (previous) {
+      // kilocode_change - 下一行 stale 快速路径只对非空的历史结果生效：一次失败
+      // （或空结果）也会把 view.models 写为 {}，若把空对象当可用缓存，TTL 过期后
+      // 前台请求会一直拿到空列表、只能等后台刷新恢复。空结果过期后与上游语义
+      // 一致，走下方的同步 evaluate 重新拉取（审核条目 F08）。
+      if (previous && Object.keys(previous).length > 0) {
         log.info("using stale models while refreshing", { providerID, count: Object.keys(previous).length })
         yield* background(providerID, options)
         return previous

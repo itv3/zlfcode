@@ -2,7 +2,9 @@ import { Config } from "@/config/config"
 import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
+import { EffectBridge } from "@/effect/bridge" // kilocode_change
 import { disconnect } from "@/kilocode/server/sse" // kilocode_change
+import * as ConfigRefresh from "@/kilocode/provider/config-refresh" // kilocode_change
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { Effect, Queue, Schema } from "effect"
@@ -76,6 +78,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
   Effect.gen(function* () {
     const config = yield* Config.Service
     const installation = yield* Installation.Service
+    const bridge = yield* EffectBridge.make() // kilocode_change
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
       return { healthy: true as const, version: InstallationVersion }
@@ -91,10 +94,28 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
+      // kilocode_change start - 审核条目 F06/F35：按变更内容区分销毁语义。
+      // 仅 provider 段变化时不销毁实例（自定义 Provider 保存不重启的核心特性，
+      // Provider 域经 current() 的配置快照比较自愈，销毁反而会在慢速 Remote-SSH
+      // 主机上与保存流程竞态）；其他配置键（mcp/lsp/agent 等）变化时保留上游
+      // v7.4.16 的 disposeAllInstancesAndEmitGlobalDisposed 语义——MCP 等服务在
+      // 实例构建期快照配置且没有独立失效通道，必须靠实例重建感知新配置。
+      // 前后快照均取自 getGlobal()（同一加载管道），保证 diff 的形状可比。
+      const before = yield* config.getGlobal()
       const result = yield* config.updateGlobal(ctx.payload)
-      // kilocode_change - Config.updateGlobal already invalidates caches and emits global.config.updated.
-      // Disposing every instance here races provider saves on slower Remote-SSH hosts.
+      if (result.changed) {
+        const after = yield* config.getGlobal()
+        const providerOnly = ConfigRefresh.diff(before, after) !== undefined
+        if (!providerOnly) {
+          yield* bridge.run(
+            disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }).pipe(
+              Effect.catchCause(() => Effect.void),
+            ),
+          )
+        }
+      }
       return result.info
+      // kilocode_change end
     })
 
     // kilocode_change start

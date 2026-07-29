@@ -16,6 +16,7 @@ import { openFileInEditor, getWorkspaceRoot } from "../review-utils"
 import { TelemetryProxy, type TelemetryEventName } from "../services/telemetry"
 import type { AutoApproveController } from "../commands/toggle-auto-approve"
 import type { RemoteStatusService } from "../services/RemoteStatusService"
+import { self as extensionSelf } from "../extension-info"
 
 export class VscodeHost implements Host {
   private diffVirtual: DiffVirtualProvider | undefined
@@ -212,7 +213,11 @@ export class VscodeHost implements Host {
   }
 
   extensionKeybindings(): Array<{ command: string; key?: string; mac?: string }> {
-    const ext = vscode.extensions.getExtension("kilocode.kilo-code")
+    // F18：改用 extension-info 的 self() 解析当前扩展，消除硬编码的上游扩展 ID
+    // kilocode.kilo-code——在 itv3.zlfcode 身份下硬编码 ID 恒返回 undefined，
+    // 会导致 Agent Manager 的快捷键提示功能失效。this.context 由构造函数持有，
+    // self() 优先取 ctx.extension，无需依赖任何 ID 查找。
+    const ext = extensionSelf(this.context)
     return ext?.packageJSON?.contributes?.keybindings ?? []
   }
 

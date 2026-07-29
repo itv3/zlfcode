@@ -330,7 +330,12 @@ export function buildFileAttachments(
     }
     const absolute = isAbsolutePath(path)
     if (!dir) {
-      if (absolute || escapesWorkspace(path)) continue
+      // 相对路径若带 ../ 逃逸仍在此排除，避免解析后跳出会话目录。
+      if (!absolute && escapesWorkspace(path)) continue
+      // 相对路径与绝对路径都以 path 原样交给扩展端，由 resolveMessageFile 结合
+      // 会话目录（worktree/远程场景各不相同）解析并做归属校验：位于会话目录内
+      // 的绝对路径 mention 恢复为可自动附加，目录外的路径在扩展端被丢弃
+      // （模型仍可通过 Read 工具在正常权限检查下读取）。
       result.push({ mime: "text/plain", path, source })
       continue
     }

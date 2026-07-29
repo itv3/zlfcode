@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test"
 import {
   sessionToWebview,
   indexProvidersById,
+  sameProvidersSnapshot,
   filterAgents,
   filterVisibleAgents,
   buildSettingPath,
@@ -204,12 +205,40 @@ describe("indexProvidersById", () => {
   })
 })
 
+// F22：自愈重试轮次用本函数判定快照内容是否变化，未变化则跳过重复推送。
+describe("sameProvidersSnapshot", () => {
+  const snapshot = (revision: number, providers: Record<string, unknown> = { kilo: { id: "kilo" } }) => ({
+    type: "providersLoaded",
+    mode: "connected",
+    revision,
+    providers,
+    connected: ["kilo"],
+    authStates: {},
+  })
+
+  it("revision 之外内容一致时视为相同", () => {
+    expect(sameProvidersSnapshot(snapshot(1), snapshot(2))).toBe(true)
+  })
+
+  it("providers 内容变化时视为不同", () => {
+    expect(sameProvidersSnapshot(snapshot(1), snapshot(1, { other: { id: "other" } }))).toBe(false)
+  })
+
+  it("任一侧非对象（如缓存为 null）时视为不同", () => {
+    expect(sameProvidersSnapshot(null, snapshot(1))).toBe(false)
+    expect(sameProvidersSnapshot(snapshot(1), undefined)).toBe(false)
+  })
+})
+
 describe("filterAgents", () => {
   it("drops orchestrator from webview agent lists", () => {
     const agents = [makeAgent({ name: "code" }), makeAgent({ name: "orchestrator" })]
     expect(filterAgents(agents).map((agent) => agent.name)).toEqual(["code"])
   })
 
+  // 注意（F52）：这是防御分支的行为锁定，并非真实数据流——当前后端会把用户自定义的
+  // 同名 orchestrator 与内置定义合并且 native 恒为 true，实际不会下发 native: false 的
+  // orchestrator；详见 webview-ui/src/utils/agent-display.ts 中 isHiddenAgent 的注释。
   it("keeps custom orchestrator agents", () => {
     const agents = [makeAgent({ name: "orchestrator", native: false }), makeAgent({ name: "code" })]
     expect(filterAgents(agents).map((agent) => agent.name)).toEqual(["orchestrator", "code"])
@@ -247,6 +276,30 @@ describe("filterVisibleAgents", () => {
     const agents = [makeAgent({ mode: "subagent" }), makeAgent({ hidden: true })]
     const { defaultAgent } = filterVisibleAgents(agents)
     expect(defaultAgent).toBe("code")
+  })
+
+  // F51：后端把 config.default_agent 排在首位；当它（如 orchestrator）被本扩展隐藏时，
+  // 默认智能体应优先回退到 code，而不是静默变成字母序第一个可见 agent（通常是 ask）。
+  it("falls back to 'code' when the backend default agent is hidden", () => {
+    const agents = [
+      makeAgent({ name: "orchestrator" }), // default_agent 配置为 orchestrator 时后端排首位
+      makeAgent({ name: "ask" }),
+      makeAgent({ name: "code" }),
+    ]
+    const { defaultAgent } = filterVisibleAgents(agents)
+    expect(defaultAgent).toBe("code")
+  })
+
+  it("falls back to the first visible agent when the backend default is hidden and 'code' is absent", () => {
+    const agents = [makeAgent({ name: "orchestrator" }), makeAgent({ name: "ask" }), makeAgent({ name: "debug" })]
+    const { defaultAgent } = filterVisibleAgents(agents)
+    expect(defaultAgent).toBe("ask")
+  })
+
+  it("keeps the backend default when it is visible even if 'code' exists later in the list", () => {
+    const agents = [makeAgent({ name: "ask" }), makeAgent({ name: "code" })]
+    const { defaultAgent } = filterVisibleAgents(agents)
+    expect(defaultAgent).toBe("ask")
   })
 
   it("handles empty agent list", () => {

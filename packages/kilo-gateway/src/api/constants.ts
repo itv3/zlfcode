@@ -60,8 +60,10 @@ export const ANONYMOUS_API_KEY = "anonymous"
 /** Fetch timeout for model requests in milliseconds (10 seconds) */
 export const MODELS_FETCH_TIMEOUT_MS = 10 * 1000
 
+// kilocode_change start - 为默认模型请求增加超时保护
 /** 默认模型请求超时时间，避免阻塞 Provider 初始化 */
 export const DEFAULT_MODEL_FETCH_TIMEOUT_MS = 5 * 1000
+// kilocode_change end
 
 /**
  * Header constants for KiloCode API requests

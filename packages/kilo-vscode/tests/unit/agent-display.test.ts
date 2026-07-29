@@ -39,6 +39,9 @@ describe("agent display", () => {
     expect(isHiddenAgent("code")).toBe(false)
   })
 
+  // 注意（F52）：这是防御分支的行为锁定，并非真实数据流——当前后端会把用户自定义的
+  // 同名 orchestrator 与内置定义合并且 native 恒为 true，因此实际下发的数据不会命中
+  // native: false 分支；详见 agent-display.ts 中 isHiddenAgent 的注释。
   it("keeps custom orchestrator agents visible", () => {
     expect(isHiddenAgent(agent({ name: "orchestrator", native: false }))).toBe(false)
   })

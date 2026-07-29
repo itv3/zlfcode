@@ -1,4 +1,6 @@
 import { describe, it, expect } from "bun:test"
+import { readFileSync as fsReadFileSync } from "node:fs"
+import { join as pathJoin } from "node:path"
 import {
   providerSortKey,
   buildTriggerLabel,
@@ -13,6 +15,8 @@ import {
   isAuto,
   autoSummary,
   autoChoices,
+  isSmall,
+  KILO_AUTO_SMALL_IDS,
 } from "../../webview-ui/src/components/shared/model-selector-utils"
 
 const labels = { select: "Select model", noProviders: "No providers", notSet: "Not set" }
@@ -185,6 +189,23 @@ describe("hasByok", () => {
   })
 })
 
+describe("isSmall", () => {
+  // isSmall / KILO_AUTO_SMALL_IDS 的实现已下沉到 src/shared/provider-model.ts，
+  // 此处经 model-selector-utils 的 re-export 路径验证导出兼容与行为不变。
+  it("matches only Kilo gateway auto-small ids", () => {
+    expect(isSmall({ providerID: KILO_GATEWAY_ID, id: "kilo-auto/small" })).toBe(true)
+    expect(isSmall({ providerID: KILO_GATEWAY_ID, id: "auto-small" })).toBe(true)
+    expect(isSmall({ providerID: KILO_GATEWAY_ID, id: "kilo-auto/free" })).toBe(false)
+    expect(isSmall({ providerID: "openai", id: "kilo-auto/small" })).toBe(false)
+  })
+
+  it("keeps the exported id set in sync with isSmall", () => {
+    for (const id of KILO_AUTO_SMALL_IDS) {
+      expect(isSmall({ providerID: KILO_GATEWAY_ID, id })).toBe(true)
+    }
+  })
+})
+
 describe("buildTriggerLabel", () => {
   it("returns resolved model name for non-kilo provider unchanged", () => {
     expect(buildTriggerLabel("GPT-4o", "openai", undefined, null, false, "", true, labels)).toBe("GPT-4o")
@@ -243,9 +264,54 @@ describe("buildTriggerLabel", () => {
     expect(buildTriggerLabel("Claude Sonnet", undefined, undefined, raw, false, "", true, labels)).toBe("Claude Sonnet")
   })
 
-  it("ignores unresolved raw selection after providers are available", () => {
+  // 默认语义＝"configured"（上游 v7.4.16 的原始行为，F65）：不传语义参数的
+  // 调用（例如未来上游合并新增的调用点）保持 raw 兜底显示，不被本 fork 的
+  // 语义收窄静默影响。
+  it("defaults to the upstream configured semantics when the parameter is omitted (F65)", () => {
     const raw = { providerID: "sg", modelID: "gpt-5.5" }
-    expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", true, labels)).toBe("Select model")
+    expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", true, labels)).toBe("sg / gpt-5.5")
+  })
+
+  // "resolved" 语义（聊天选择器，显式传入）：providers 加载完成后仍无法解析的
+  // raw 选择会被模型回退逻辑忽略，因此不显示 raw 兜底。
+  it("ignores unresolved raw selection after providers are available (explicit resolved semantics)", () => {
+    const raw = { providerID: "sg", modelID: "gpt-5.5" }
+    expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", true, labels, "resolved")).toBe(
+      "Select model",
+    )
+  })
+
+  // "configured" 语义（设置页）：展示的是配置值本身。即使 providers 已加载而
+  // 选择不可解析（provider 未连接等），也要按上游行为原样显示配置值，
+  // 不能落入 allowClear 分支显示 "Not set" 掩盖真实配置状态。
+  it("keeps unresolved raw selection visible with configured semantics", () => {
+    const raw = { providerID: "sg", modelID: "gpt-5.5" }
+    expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", true, labels, "configured")).toBe(
+      "sg / gpt-5.5",
+    )
+    expect(buildTriggerLabel(undefined, undefined, undefined, raw, true, "Not set", true, labels, "configured")).toBe(
+      "sg / gpt-5.5",
+    )
+  })
+
+  it("shows only the model id for unresolved kilo raw selection with configured semantics", () => {
+    const raw = { providerID: KILO_GATEWAY_ID, modelID: "anthropic/claude-sonnet" }
+    expect(buildTriggerLabel(undefined, undefined, undefined, raw, true, "Not set", true, labels, "configured")).toBe(
+      "anthropic/claude-sonnet",
+    )
+  })
+
+  it("still falls back to clearLabel with configured semantics when nothing is configured", () => {
+    expect(buildTriggerLabel(undefined, undefined, undefined, null, true, "Not set", true, labels, "configured")).toBe(
+      "Not set",
+    )
+  })
+
+  it("prefers resolved name over raw with configured semantics", () => {
+    const raw = { providerID: "anthropic", modelID: "claude-3-5-sonnet" }
+    expect(
+      buildTriggerLabel("Claude Sonnet", "anthropic", "Anthropic", raw, true, "Not set", true, labels, "configured"),
+    ).toBe("Anthropic / Claude Sonnet")
   })
 
   it("ignores partial raw selection (only providerID)", () => {
@@ -256,5 +322,22 @@ describe("buildTriggerLabel", () => {
   it("ignores partial raw selection (only modelID)", () => {
     const raw = { providerID: "", modelID: "claude-3-5-sonnet" }
     expect(buildTriggerLabel(undefined, undefined, undefined, raw, false, "", true, labels)).toBe("Select model")
+  })
+})
+
+// ── F65 源码守卫 ────────────────────────────────────────────────────────────
+// buildTriggerLabel/ModelSelectorBase 的默认语义是 "configured"（上游行为），
+// "resolved" 收窄必须由聊天路径显式声明。此守卫防止上游三方合并时丢失显式
+// 传参导致聊天选择器静默回到 raw 兜底显示。
+describe("chat-path labelSemantics guard (F65)", () => {
+  const read = (rel: string) => fsReadFileSync(pathJoin(import.meta.dir, "../../webview-ui", rel), "utf8")
+
+  it("chat ModelSelector and NewWorktreeDialog explicitly pass resolved semantics", () => {
+    expect(read("src/components/shared/ModelSelector.tsx")).toContain('labelSemantics="resolved"')
+    expect(read("agent-manager/NewWorktreeDialog.tsx")).toContain('labelSemantics="resolved"')
+  })
+
+  it("ModelSelectorBase falls back to the upstream configured semantics", () => {
+    expect(read("src/components/shared/ModelSelector.tsx")).toContain('props.labelSemantics ?? "configured"')
   })
 })

@@ -37,9 +37,11 @@ export const invalidatePresence = Effect.fn("KiloServer.invalidatePresence")(fun
 })
 // kilocode_change end
 
+// 审核条目 F36/F41：移除从未被消费的 _options.timeout 死参数（本函数已不再销毁
+// 实例，只做内存级缓存清理，无需超时保护）。移除可选参数不改变导出符号，调用方
+// 不传参即兼容。
 export const invalidateAfterProviderAuthChange = Effect.fn("KiloServer.invalidateAfterProviderAuthChange")(function* (
   providerID: string,
-  _options?: { timeout?: Duration.Input },
 ) {
   const cache = yield* ModelCache.Service
   yield* cache.clear(providerID)
