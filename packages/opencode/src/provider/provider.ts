@@ -40,6 +40,8 @@ import {
   patchKiloProviderPrivacy,
   kiloSmallModelPriority,
   buildTimeoutSignal,
+  requestTimeout,
+  wrapFirstByte,
 } from "@/kilocode/provider/provider"
 import * as ModelsRefresh from "@/kilocode/provider/models-refresh"
 import * as ConfigRefresh from "@/kilocode/provider/config-refresh"
@@ -475,7 +477,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://kilo.ai/", // kilocode_change
+            "HTTP-Referer": "https://kilo.ai/",
             "X-Title": "Kilo Code", // kilocode_change
             "X-Source": "kilo", // kilocode_change
           },
@@ -486,7 +488,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://kilo.ai/", // kilocode_change
+            "HTTP-Referer": "https://kilo.ai/",
             "X-Title": "Kilo Code", // kilocode_change
           },
         },
@@ -496,7 +498,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: provider.source === "config",
         options: {
           headers: {
-            "HTTP-Referer": "https://kilo.ai/", // kilocode_change
+            "HTTP-Referer": "https://kilo.ai/",
             "X-Title": "Kilo Code", // kilocode_change
             "X-BILLING-INVOKE-ORIGIN": "KiloCode", // kilocode_change
           },
@@ -507,7 +509,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "http-referer": "https://kilo.ai/", // kilocode_change
+            "http-referer": "https://kilo.ai/",
             "x-title": "Kilo Code", // kilocode_change
           },
         },
@@ -613,7 +615,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://kilo.ai/", // kilocode_change
+            "HTTP-Referer": "https://kilo.ai/",
             "X-Title": "Kilo Code", // kilocode_change
           },
         },
@@ -813,7 +815,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
       if (!apiToken) {
         throw new Error(
           "CLOUDFLARE_API_TOKEN (or CF_AIG_TOKEN) is required for Cloudflare AI Gateway. " +
-            "Set it via environment variable or run `kilo auth cloudflare-ai-gateway`.", // kilocode_change
+            "Set it via environment variable or run `kilo auth cloudflare-ai-gateway`.",
         )
       }
 
@@ -846,7 +848,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         apiKey: apiToken,
         ...(Object.values(opts).some((v) => v !== undefined) ? { options: opts } : {}),
       })
-      const unified = createUnified()
+      const unified = createUnified({ apiKey: apiToken })
 
       return {
         autoload: true,
@@ -871,7 +873,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://kilo.ai/", // kilocode_change
+            "HTTP-Referer": "https://kilo.ai/",
             "X-Title": "Kilo Code", // kilocode_change
           },
         },
@@ -1079,7 +1081,7 @@ export const Info = Schema.Struct({
   description: optionalOmitUndefined(Schema.String), // kilocode_change
   source: Schema.Literals(["env", "config", "custom", "api"]),
   env: Schema.Array(Schema.String),
-  key: optionalOmitUndefined(Schema.String), // kilocode_change
+  key: optionalOmitUndefined(Schema.String),
   metadata: optionalOmitUndefined(ProviderMetadata), // kilocode_change
   options: Schema.Record(Schema.String, Schema.Any),
   models: Schema.Record(Schema.String, Model),
@@ -1741,9 +1743,9 @@ export const layer = Layer.effect(
         // 同一个 Promise，避免两个并发 getLanguage 都走完加载流程后互相覆盖缓存
         // （被覆盖一方创建的 WebSocket transport 将永远不会被 close 而泄漏）。
         // 加载结束后（无论成败）由创建方清除条目，失败后下一次调用可重试。
-        // 说明：块内的 options.fetch 构建与 bundled/npm 加载逻辑与上游 v7.4.16
-        // 一致，仅结构上移入 single-flight 的 loadPromise 中；升级上游时请对照
-        // 上游 resolveSDK 的对应片段同步。
+        // 说明：块内的 options.fetch 构建与 bundled/npm 加载逻辑与上游 v7.4.17
+        // 一致（含 first-byte guard），仅结构上移入 single-flight 的 loadPromise 中；
+        // 升级上游时请对照上游 resolveSDK 的对应片段同步。
         const inflight = s.sdkLoads.get(key)
         if (inflight) return await inflight
         const version = s.version.get(model.providerID) ?? 0
@@ -1767,6 +1769,10 @@ export const layer = Layer.effect(
               const chunkAbortCtl =
                 typeof chunkTimeout === "number" && chunkTimeout > 0 ? new AbortController() : undefined
               const timeout = buildTimeoutSignal(options) // use cancellable timeout for connection phase
+              // 上游 v7.4.17 - 将同一截止时间延伸到首个响应字节（first-byte guard）
+              const firstByteMs = requestTimeout(options)
+              const firstByteCtl = firstByteMs === undefined ? undefined : new AbortController()
+              const deadline = firstByteMs === undefined ? undefined : Date.now() + firstByteMs
               const headerTimeoutMs = headerTimeout === false ? undefined : headerTimeout
               const headerTimeoutCtl =
                 typeof headerTimeoutMs === "number" ? timeoutController(headerTimeoutMs) : undefined
@@ -1776,6 +1782,7 @@ export const layer = Layer.effect(
               if (chunkAbortCtl) signals.push(chunkAbortCtl.signal)
               if (headerTimeoutCtl) signals.push(headerTimeoutCtl.signal)
               if (timeout.signal) signals.push(timeout.signal)
+              if (firstByteCtl) signals.push(firstByteCtl.signal) // 上游 v7.4.17 first-byte guard
 
               const combined =
                 signals.length === 0 ? null : signals.length === 1 ? signals[0] : AbortSignal.any(signals)
@@ -1789,8 +1796,12 @@ export const layer = Layer.effect(
                   timeout: false,
                 }).finally(() => headerTimeoutCtl?.clear())
                 timeout.clear()
-                if (!chunkAbortCtl) return res
-                return wrapSSE(res, chunkTimeout, chunkAbortCtl)
+                // 上游 v7.4.17 - 把剩余截止时间交给 first-byte guard
+                const remaining = deadline !== undefined ? deadline - Date.now() : undefined
+                const live =
+                  remaining !== undefined && firstByteCtl ? wrapFirstByte(res, Math.max(remaining, 1), firstByteCtl) : res
+                if (!chunkAbortCtl) return live
+                return wrapSSE(live, chunkTimeout, chunkAbortCtl)
               } catch (err) {
                 timeout.clear()
                 throw err

@@ -2,19 +2,42 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { Telemetry } from "@kilocode/kilo-telemetry"
 import { KiloCli } from "../../src/kilocode/cli/setup"
 import { KiloShutdown } from "../../src/kilocode/cli/shutdown"
+import { KiloSessions } from "../../src/kilo-sessions/kilo-sessions"
 import { SessionExport } from "../../src/kilocode/session-export"
 import { InstanceRuntime } from "../../src/project/instance-runtime"
 
 const calls: string[] = []
 const timeouts: Array<number | undefined> = []
 let err: unknown
+let drainErr: unknown
+let drainCalls = 0
 let exit: string | number | null | undefined
+
+// 上游 v7.4.17：setup.ts 在模块作用域一次性注册 ingest drain 任务，
+// KiloShutdown.run() 执行后注册表即被清空。本函数按同样行为为单个测试
+// 重新注册 drain 任务（对应上游测试的 registerDrain，改为 spyOn 风格）。
+function registerDrain() {
+  KiloShutdown.register(async () => {
+    await KiloSessions.drainIngestForShutdown()
+  })
+}
+
+// 先清空注册表（setup.ts 导入时的一次性注册，或上一个测试的遗留），
+// 再注册本测试自己的 drain 任务，使断言不依赖测试声明顺序。
+async function installDrain() {
+  await KiloShutdown.run()
+  calls.length = 0
+  drainCalls = 0
+  registerDrain()
+}
 
 describe("KiloCli.shutdown", () => {
   beforeEach(() => {
     calls.length = 0
     timeouts.length = 0
     err = undefined
+    drainErr = undefined
+    drainCalls = 0
     exit = process.exitCode
     process.exitCode = undefined
 
@@ -32,6 +55,13 @@ describe("KiloCli.shutdown", () => {
     spyOn(InstanceRuntime, "disposeAllInstances").mockImplementation(async () => {
       calls.push("dispose")
     })
+    // setup.ts 的 drain 任务通过动态 import 取 KiloSessions 单例，
+    // 这里 spy 真实模块方法即可拦截到同一实例上的调用。
+    spyOn(KiloSessions, "drainIngestForShutdown").mockImplementation(async () => {
+      drainCalls += 1
+      calls.push("drain")
+      if (drainErr) throw drainErr
+    })
   })
 
   afterEach(() => {
@@ -39,24 +69,41 @@ describe("KiloCli.shutdown", () => {
     mock.restore()
   })
 
-  test("keeps telemetry shutdown timeout best-effort and still disposes instances", async () => {
-    err = "Timeout while shutting down PostHog. Some events may not have been sent."
+  // 必须保持为本文件第一个测试：setup.ts 导入时只在模块作用域注册一次 drain 任务，
+  // KiloShutdown.run() 执行后即清空。仅此测试锚定该一次性注册（以及它带来的
+  // drain 先于 dispose 的顺序）；后续测试通过 installDrain() 自行注册，不依赖顺序。
+  test("rejects drain without blocking dispose", async () => {
+    drainErr = new Error("ingest drain failed")
     process.exitCode = 0
 
     await expect(KiloCli.shutdown()).resolves.toBeUndefined()
 
+    expect(drainCalls).toBe(1)
     expect(timeouts).toEqual([2000])
-    expect(calls).toEqual(["track:0", "session", "telemetry", "dispose"])
+    expect(calls).toEqual(["track:0", "session", "telemetry", "drain", "dispose"])
+    expect(process.exitCode).toBe(0)
+  })
+
+  test("keeps telemetry shutdown timeout best-effort and still disposes instances", async () => {
+    err = "Timeout while shutting down PostHog. Some events may not have been sent."
+    process.exitCode = 0
+    await installDrain()
+
+    await expect(KiloCli.shutdown()).resolves.toBeUndefined()
+
+    expect(timeouts).toEqual([2000])
+    expect(calls).toEqual(["track:0", "session", "telemetry", "drain", "dispose"])
     expect(process.exitCode).toBe(0)
   })
 
   test("preserves failing command exit status", async () => {
     process.exitCode = 1
+    await installDrain()
 
     await KiloCli.shutdown()
 
     expect(timeouts).toEqual([2000])
-    expect(calls).toEqual(["track:1", "session", "telemetry", "dispose"])
+    expect(calls).toEqual(["track:1", "session", "telemetry", "drain", "dispose"])
     expect(process.exitCode).toBe(1)
   })
 })
@@ -77,6 +124,9 @@ describe("KiloShutdown.waitForServer", () => {
 
   beforeEach(() => {
     spyOn(InstanceRuntime, "disposeAllInstances").mockImplementation(async () => {})
+    // waitForServer 停机序列（合并上游 v7.4.17 后）会先排空 ingest 再 dispose，
+    // 测试中替换为空实现，避免触碰真实 ingest 队列。
+    spyOn(KiloSessions, "drainIngestForShutdown").mockImplementation(async () => {})
   })
 
   afterEach(() => {
@@ -129,6 +179,8 @@ describe("KiloShutdown.waitForServer", () => {
     ])
 
     expect(stops).toEqual([true])
+    // 合并上游 v7.4.17 后：停机序列先排空 ingest，再 dispose 实例
+    expect(KiloSessions.drainIngestForShutdown).toHaveBeenCalledTimes(1)
     expect(InstanceRuntime.disposeAllInstances).toHaveBeenCalledTimes(1)
   })
 })

@@ -32,7 +32,10 @@ export namespace KiloShutdown {
         }
         stopWatchdog()
         try {
-          // 延迟加载运行时，避免后台进程 schema 初始化时形成工具注册循环依赖。
+          // 上游 v7.4.17：停机前先排空 sessions ingest 队列，避免丢失未落盘的会话数据。
+          // 与运行时一样延迟加载，避免后台进程 schema 初始化时形成工具注册循环依赖。
+          const sessions = await import("@/kilo-sessions/kilo-sessions")
+          await sessions.KiloSessions.drainIngestForShutdown()
           const runtime = await import("@/project/instance-runtime")
           await runtime.InstanceRuntime.disposeAllInstances()
           await server.stop(true)

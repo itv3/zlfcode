@@ -761,6 +761,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private setSidebarVisible(visible: boolean): void {
     this.setStreamVisibility(visible)
     vscode.commands.executeCommand("setContext", "kilo-code.new.sidebarVisible", visible)
+    if (!visible && this.opts.focusContext) {
+      void vscode.commands.executeCommand("setContext", this.opts.focusContext, false)
+    }
   }
 
   /** Resolve a WebviewPanel for displaying Kilo in an editor tab. */
@@ -969,6 +972,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           dir: this.getWorkspaceDirectory(this.currentSession?.id),
           post: (msg) => this.postMessage(msg),
           exportTranscript: (sessionID) => this.handleExportSessionTranscript(sessionID),
+          copy: (text) => vscode.env.clipboard.writeText(text),
           openSessions: (ids) => this.trackOpenSessions(ids),
         })
       ) {
@@ -1001,6 +1005,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         return
       }
       if (await this.handleModelSelectorExpandedMessage(message)) return
+      this.handleWebviewFocusMessage(message)
       this.visibleTaskStreams.handle(message)
       if (await this.handleMemoryMessage(message)) return
       if (this.handleLegacyMigrationMessage(message)) return
@@ -1483,6 +1488,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     })
     this.webviewMessageDisposable = watchFontSizeConfig((msg) => this.postMessage(msg), this.webviewMessageDisposable)
     this.webviewMessageDisposable = watchWorkStyleConfig((msg) => this.postMessage(msg), this.webviewMessageDisposable)
+  }
+
+  private handleWebviewFocusMessage(message: TypedWebviewMessage & { focused?: unknown }): void {
+    if (message.type !== "webviewFocusChanged") return
+    if (this.opts.focusContext) {
+      void vscode.commands.executeCommand("setContext", this.opts.focusContext, message.focused === true)
+    }
   }
 
   private handleEditorOpenMessage(message: Parameters<typeof handleEditorAction>[0]): boolean {
@@ -4834,6 +4846,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.providersQueued.clear()
     this.providersAbort?.abort()
     this.clearProviderRetry()
+    if (this.opts.focusContext) {
+      void vscode.commands.executeCommand("setContext", this.opts.focusContext, false)
+    }
     this.unsubscribeRemote?.()
     this.streams.focus(undefined)
     this.connectionService.unregisterVisible(this.instanceId)
