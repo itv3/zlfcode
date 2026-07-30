@@ -529,6 +529,9 @@ export const dict = {
   "provider.custom.models.variants.outputEffort.max": "max",
   "provider.custom.models.remove": "Eliminar modelo",
   "provider.custom.models.add": "Añadir modelo",
+  // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
+  // CustomProviderDialog.tsx 仍在用它，合并 v7.4.17 时恢复。
+  "provider.custom.models.fetch.error": "Error al obtener modelos: {{error}}",
   "provider.custom.models.fetch.authError":
     "Autenticación fallida. Verifica la clave de API arriba e intenta de nuevo.",
   "provider.custom.models.fetch.empty": "No se encontraron modelos en este servidor.",

@@ -478,6 +478,9 @@ export const dict = {
   "provider.custom.models.variants.outputEffort.max": "max",
   "provider.custom.models.remove": "移除模型",
   "provider.custom.models.add": "新增模型",
+  // kilocode_change: 上游 #12602 按"未使用"清理掉了該鍵，但 ZLF 定制的
+  // CustomProviderDialog.tsx 仍在用它兜底擴充功能無回應/逾時，合併 v7.4.17 時恢復。
+  "provider.custom.models.fetch.error": "取得模型失敗：{{error}}",
   "provider.custom.models.fetch.authError": "驗證失敗。請檢查上方的 API 金鑰後重試。",
   "provider.custom.models.fetch.empty": "此伺服器上未找到模型。",
   "provider.custom.models.fetch.privateHost": "此次模型發現請求會存取本機或內網位址。請僅對可信供應商繼續操作。",

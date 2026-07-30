@@ -478,6 +478,9 @@ export const dict = {
   "provider.custom.models.variants.outputEffort.max": "max",
   "provider.custom.models.remove": "Видалити модель",
   "provider.custom.models.add": "Додати модель",
+  // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
+  // CustomProviderDialog.tsx 仍在用它，合并 v7.4.17 时恢复。
+  "provider.custom.models.fetch.error": "Не вдалося отримати моделі: {{error}}",
   "provider.custom.models.fetch.authError": "Автентифікація не вдалася. Перевірте API-ключ вище і спробуйте ще раз.",
   "provider.custom.models.fetch.empty": "На цьому сервері моделей не знайдено.",
   "provider.custom.models.fetch.added": "Додано {{count}} моделей.",

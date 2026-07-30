@@ -474,6 +474,9 @@ export const dict = {
   "provider.custom.models.variants.outputEffort.max": "max",
   "provider.custom.models.remove": "إزالة النموذج",
   "provider.custom.models.add": "إضافة نموذج",
+  // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
+  // CustomProviderDialog.tsx 仍在用它，合并 v7.4.17 时恢复。
+  "provider.custom.models.fetch.error": "فشل جلب النماذج: {{error}}",
   "provider.custom.models.fetch.authError": "فشلت المصادقة. تحقق من مفتاح API أعلاه وحاول مرة أخرى.",
   "provider.custom.models.fetch.empty": "لم يتم العثور على نماذج على هذا الخادم.",
   "provider.custom.models.fetch.added": "تمت إضافة {{count}} نموذج(نماذج).",
