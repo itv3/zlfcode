@@ -54,6 +54,10 @@ export const ServerProvider: ParentComponent = (props) => {
   })
 
   onMount(() => {
+    // kilocode_change: 上游内联 switch 的复杂度恰为上限 21，下方 connectionState case 内
+    // 的单行行为补丁使其达到 22；按仓库既有先例（ModelSelector.tsx）就地豁免，
+    // 保持与上游一致的结构以最小化合并冲突面（见 F12/F76）。
+    // eslint-disable-next-line complexity
     const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
       switch (message.type) {
         case "ready":

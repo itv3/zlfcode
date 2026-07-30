@@ -265,6 +265,7 @@ cd packages/kilo-vscode
 bun test ./tests/unit/custom-provider-defaults.test.ts ./tests/unit/custom-provider-dialog-validate.test.ts ./tests/unit/custom-provider-variants.test.ts ./tests/unit/custom-provider-model-fetch.test.ts ./tests/unit/custom-provider.test.ts ./tests/unit/fetch-models.test.ts ./tests/unit/provider-actions-save.test.ts
 bun test ./tests/unit/provider-actions-validate.test.ts ./tests/unit/i18n-keys.test.ts ./tests/unit/agent-display.test.ts ./tests/unit/kilo-provider-utils.test.ts ./tests/unit/model-selection.test.ts ./tests/unit/provider-utils.test.ts
 bun run typecheck
+bun run lint
 
 cd ../opencode
 bun test ./test/kilocode/custom-provider-delete.test.ts ./test/kilocode/provider-transform.test.ts ./test/kilocode/provider-variant-order.test.ts ./test/kilocode/server/provider-auth-lifecycle.test.ts ./test/kilocode/provider-config-refresh.test.ts ./test/kilocode/model-cache-effect.test.ts

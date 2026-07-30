@@ -1483,3 +1483,20 @@
 | `test/kilocode/server/` 整目录连跑（F69 声明验证） | 83 通过 / 6 失败（预期内，见 F69 处理记录；污染源文件单独运行 3 通过 / 0 失败） |
 
 说明：自动测试不等于完整验收。第二轮中行为有变化的路径需在下次发布前于 Cursor 人工确认：设置页与聊天选择器的标签语义（F65，聊天选择器行为应与修复前一致、设置页继续显示原始配置值）、workspace 内以 `..` 开头命名文件的 mention 附加（F60）、自定义 Provider 模型发现对异常分页端点的终止行为（F64/F70）。
+
+---
+
+## 发布回归（2026-07-30，v0.04 首次发布失败）
+
+### F76【低/流程】F12 恢复上游 switch 后 lint 复杂度超标，发布构建失败；发布前检查清单缺 lint 步骤
+
+- **域**：model-visibility / misc-infra
+- **位置**：`packages/kilo-vscode/webview-ui/src/context/server.tsx:57`；`README.md` 发布前检查清单
+- **来源**：tag `zlfcode-v7.4.16-v0.04` 首次触发的 publish workflow 在「构建全部 VSIX」（`bun script/build.ts` 内的 `bun run lint`）失败：`Arrow function has a complexity of 22. Maximum allowed is 21`
+- **处理状态**：**已修复**
+
+**处理记录**：根因——上游 v7.4.16 内联 switch 的圈复杂度恰为上限 21，F12 的单行行为补丁（connectionState 非 connected 时清空 serverInfo）使其达到 22。这也事后解释了 fork 当初拆分六个 handler 函数的动机（当时为容纳补丁而过 lint），第一轮 F12 判定「纯结构重组无技术必要性」漏掉了该约束；两轮验证清单均未含 lint 步骤故本地漏检。修复：按仓库既有先例（ModelSelector.tsx 的同款豁免）在该箭头函数上方添加 `eslint-disable-next-line complexity` 与中文说明注释，保持上游 switch 结构不变——相对上游净差异从 3 行增至 7 行（3 行补丁 + 4 行注释），仍为最小量级；未回退到六函数拆分（187 行 diff）。流程修复：README 发布前检查清单在 kilo-vscode 段补充 `bun run lint`，防止同类漏检。
+
+**修改文件**：`packages/kilo-vscode/webview-ui/src/context/server.tsx`、`README.md`
+
+**测试**：cd packages/kilo-vscode && bun run lint → 通过（0 错误）；bun test ./tests/unit/server-context-source.test.ts → 2 pass（F12 补丁守卫不受影响）；git diff v7.4.16 -- server.tsx → 7+/0-
