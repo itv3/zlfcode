@@ -5,6 +5,7 @@ import { KiloShutdown } from "../../src/kilocode/cli/shutdown"
 import { KiloSessions } from "../../src/kilo-sessions/kilo-sessions"
 import { SessionExport } from "../../src/kilocode/session-export"
 import { InstanceRuntime } from "../../src/project/instance-runtime"
+import { KiloLog } from "../../src/kilocode/log"
 
 const calls: string[] = []
 const timeouts: Array<number | undefined> = []
@@ -105,6 +106,25 @@ describe("KiloCli.shutdown", () => {
     expect(timeouts).toEqual([2000])
     expect(calls).toEqual(["track:1", "session", "telemetry", "drain", "dispose"])
     expect(process.exitCode).toBe(1)
+  })
+
+  // 上游 v7.4.19（#12659）：--help/--version 等信息型命令跳过全部启动/停机生命周期。
+  // 上游 mock.module 版给 bootstrap 的每一步 mock 记录调用来断言；spyOn 版用
+  // KiloLog.init（bootstrap 的首个动作）加 beforeEach 里的 shutdown 系列 spy
+  // 达到同等断言强度。注意：本测试会把 setup.ts 模块级 info 标志置为 true，
+  // 必须保持为本 describe 的最后一个测试，避免后续 KiloCli.shutdown() 变成 no-op。
+  test("skips lifecycle work for parsed informational flags", async () => {
+    await installDrain()
+    const logInit = spyOn(KiloLog, "init").mockImplementation(() => {})
+
+    for (const flag of ["help", "version"] as const) {
+      await KiloCli.bootstrap({ [flag]: true })
+      await KiloCli.shutdown()
+    }
+
+    expect(logInit).not.toHaveBeenCalled()
+    expect(calls).toEqual([])
+    expect(timeouts).toEqual([])
   })
 })
 

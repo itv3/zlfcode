@@ -4,12 +4,14 @@ import path from "path"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import os from "os"
 import { KiloSessionPrompt } from "@/kilocode/session/prompt" // kilocode_change
+import { SKILL_SHELL_DISABLED, SKILL_SHELL_UNTRUSTED } from "@/kilocode/skills/display" // kilocode_change
 import { KiloSessionMessageOrder } from "@/kilocode/session/message-order" // kilocode_change
 import { KiloSessionPromptQueue } from "@/kilocode/session/prompt-queue" // kilocode_change
 import { KiloSession } from "@/kilocode/session" // kilocode_change
 import { SessionTranscript } from "@/kilocode/session/transcript" // kilocode_change
 import { KiloCostPropagation } from "@/kilocode/session/cost-propagation" // kilocode_change
 import { KiloSessionProcessor } from "@/kilocode/session/processor" // kilocode_change
+import * as KiloWorkflowVariant from "@/kilocode/session/workflow-variant" // kilocode_change
 import { KiloSessionOverflow } from "@/kilocode/session/overflow" // kilocode_change
 import { KiloReference } from "@/kilocode/reference/contains" // kilocode_change
 import { KiloReadObject } from "@/kilocode/tool/read-object" // kilocode_change
@@ -316,9 +318,24 @@ export const layer = Layer.effect(
         .find((line) => line.length > 0)
       if (!cleaned) return
       const t = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
-      yield* sessions
-        .setTitle({ sessionID: input.session.id, title: t })
-        .pipe(Effect.catchCause((cause) => Effect.logError("failed to generate title", { error: Cause.squash(cause) })))
+      // kilocode_change start - auto-title mark/re-check owned by KiloSessionPrompt
+      const fresh = yield* sessions.get(input.session.id).pipe(Effect.orElseSucceed(() => null))
+      if (
+        !KiloSessionPrompt.prepareAutoTitle({
+          sessionID: input.session.id,
+          title: t,
+          fresh,
+          isDefaultTitle: Session.isDefaultTitle,
+        })
+      )
+        return
+      yield* sessions.setTitle({ sessionID: input.session.id, title: t }).pipe(
+        Effect.catchCause((cause) => {
+          KiloSessionPrompt.clearAutoTitleMark(input.session.id, t)
+          return Effect.logError("failed to generate title", { error: Cause.squash(cause) })
+        }),
+      )
+      // kilocode_change end
     })
 
     const handleSubtask = Effect.fn("SessionPrompt.handleSubtask")(function* (input: {
@@ -334,6 +351,7 @@ export const layer = Layer.effect(
       const promptOps = yield* ops()
       const { task: taskTool } = yield* registry.named()
       const taskModel = task.model ? yield* getModel(task.model.providerID, task.model.modelID, sessionID) : model
+      const taskVariant = task.variant ?? lastUser.model.variant // kilocode_change
       const assistantMessage: SessionV1.Assistant = yield* sessions.updateMessage({
         id: MessageID.ascending(),
         role: "assistant",
@@ -341,7 +359,7 @@ export const layer = Layer.effect(
         sessionID,
         mode: task.agent,
         agent: task.agent,
-        variant: lastUser.model.variant,
+        variant: taskVariant, // kilocode_change
         path: { cwd: ctx.directory, root: ctx.worktree },
         cost: 0,
         tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
@@ -388,6 +406,19 @@ export const layer = Layer.effect(
         throw error
       }
 
+      // kilocode_change start - distinguish explicit workflow model selection from the effective subtask model
+      const workflow = yield* Effect.gen(function* () {
+        if (!task.command) return undefined
+        const command = yield* commands.get(task.command)
+        if (!command) return undefined
+        if (!command.model && !command.variant && !(command.agent && taskAgent.model)) return undefined
+        return {
+          model: task.model ?? { providerID: taskModel.providerID, modelID: taskModel.id },
+          variant: task.variant,
+        }
+      })
+      // kilocode_change end
+
       let error: Error | undefined
       const taskAbort = new AbortController()
       // kilocode_change start - shared reader for the child session id written by task.ts ctx.metadata (#6321)
@@ -403,7 +434,13 @@ export const layer = Layer.effect(
           sessionID,
           abort: taskAbort.signal,
           callID: part.callID,
-          extra: { bypassAgentCheck: true, promptOps },
+          // kilocode_change start
+          extra: {
+            bypassAgentCheck: true,
+            promptOps,
+            workflow, // kilocode_change
+          },
+          // kilocode_change end
           messages: msgs,
           metadata: (val: { title?: string; metadata?: Record<string, any> }) =>
             Effect.gen(function* () {
@@ -2035,7 +2072,15 @@ export const layer = Layer.effect(
       }
 
       const shellMatches = ConfigMarkdown.shell(template)
-      if (shellMatches.length > 0) {
+      // kilocode_change start - skill templates run !`cmd`` only when trusted and the kill-switch is off,
+      // mirroring the skill tool's gate (the slash-command path is user-initiated, so it is not prompted).
+      const skillTemplate = cmd.source === "skill"
+      const skillShellBlocked = skillTemplate && (cmd.trusted !== true || flags.disableSkillShell)
+      if (shellMatches.length > 0 && skillShellBlocked) {
+        const note = cmd.trusted !== true ? SKILL_SHELL_UNTRUSTED : SKILL_SHELL_DISABLED
+        template = template.replace(bashRegex, () => note)
+      } else if (shellMatches.length > 0) {
+        // kilocode_change end
         const cfg = yield* config.get()
         const sh = Shell.preferred(cfg.shell)
         // kilocode_change start
@@ -2059,7 +2104,7 @@ export const layer = Layer.effect(
         return yield* currentModel(input.sessionID)
       })
 
-      yield* getModel(taskModel.providerID, taskModel.modelID, input.sessionID)
+      const task = yield* getModel(taskModel.providerID, taskModel.modelID, input.sessionID) // kilocode_change
 
       const agent = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
       if (!agent) {
@@ -2070,6 +2115,16 @@ export const layer = Layer.effect(
         throw error
       }
       yield* agents.guardRequirements(agent) // kilocode_change - command agent overrides must satisfy requirements
+
+      // kilocode_change start
+      const variant = KiloWorkflowVariant.resolve({
+        command: cmd,
+        agent,
+        model: taskModel,
+        selected: task,
+        input: input.variant,
+      })
+      // kilocode_change end
 
       const templateParts = yield* resolvePromptParts(template)
       KiloSessionProcessor.markReviewTelemetry(templateParts, input.command) // kilocode_change - mark review commands for completion telemetry
@@ -2088,6 +2143,7 @@ export const layer = Layer.effect(
               description: cmd.description ?? "",
               command: input.command,
               model: { providerID: taskModel.providerID, modelID: taskModel.modelID },
+              variant, // kilocode_change
               prompt: templateParts.find((y) => y.type === "text")?.text ?? "",
             },
           ]
@@ -2112,7 +2168,7 @@ export const layer = Layer.effect(
         model: userModel,
         agent: userAgent,
         parts,
-        variant: input.variant,
+        variant: isSubtask ? input.variant : variant, // kilocode_change
         snapshotInitialization: input.snapshotInitialization, // kilocode_change
       })
       yield* events.publish(Command.Event.Executed, {

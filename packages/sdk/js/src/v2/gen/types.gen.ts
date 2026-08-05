@@ -34,6 +34,7 @@ export type Event =
   | EventMemoryError1
   | EventIndexingStatus
   | EventIndexingWarning
+  | EventModelsDevRefreshed
   | EventServerConnected
   | EventGlobalDisposed
   | EventGlobalConfigUpdated
@@ -90,7 +91,6 @@ export type Event =
   | EventMessagePartDelta
   | EventSessionDiff
   | EventSessionError
-  | EventModelsDevRefreshed
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
   | EventFileEdited
@@ -281,7 +281,19 @@ export type AgentManagerStopRequest = {
   targetSessionID: string
 }
 
-export type AgentManagerRequest = AgentManagerOverviewRequest | AgentManagerPromptRequest | AgentManagerStopRequest
+export type AgentManagerMoveRequest = {
+  id: AgentManagerRequestId
+  sessionID: string
+  operation: "move"
+  targetSessionID: string
+  sectionID: string | null
+}
+
+export type AgentManagerRequest =
+  | AgentManagerOverviewRequest
+  | AgentManagerPromptRequest
+  | AgentManagerStopRequest
+  | AgentManagerMoveRequest
 
 export type NotebookRequestId = string
 
@@ -621,6 +633,7 @@ export type SubtaskPart = {
     providerID: string
     modelID: string
   }
+  variant?: string
   command?: string
 }
 
@@ -1087,6 +1100,7 @@ export type GlobalEvent = {
     | EventMemoryError
     | EventIndexingStatus
     | EventIndexingWarning
+    | EventModelsDevRefreshed
     | EventServerConnected
     | EventGlobalDisposed
     | EventGlobalConfigUpdated
@@ -1143,7 +1157,6 @@ export type GlobalEvent = {
     | EventMessagePartDelta
     | EventSessionDiff
     | EventSessionError
-    | EventModelsDevRefreshed
     | EventInstallationUpdated
     | EventInstallationUpdateAvailable
     | EventFileEdited
@@ -1309,6 +1322,7 @@ export type PermissionConfig =
       bash?: PermissionRuleConfig
       task?: PermissionRuleConfig
       external_directory?: PermissionRuleConfig
+      markdown_source?: PermissionRuleConfig
       todowrite?: PermissionActionConfig
       question?: PermissionActionConfig
       webfetch?: PermissionActionConfig
@@ -1543,7 +1557,7 @@ export type Config = {
   server?: ServerConfig
   command?: {
     [key: string]: {
-      template: string
+      template?: string
       description?: string
       agent?: string
       model?: string
@@ -1698,6 +1712,7 @@ export type Config = {
   tools?: {
     [key: string]: boolean
   }
+  web_search?: boolean
   attachment?: AttachmentConfig
   enterprise?: {
     url?: string
@@ -2104,7 +2119,9 @@ export type Command = {
   description?: string
   agent?: string
   model?: string
+  variant?: string
   source?: "command" | "mcp" | "skill"
+  trusted?: boolean
   template: string
   subtask?: boolean
   hints: Array<string>
@@ -2758,6 +2775,7 @@ export type SubtaskPartInput = {
     providerID: string
     modelID: string
   }
+  variant?: string
   command?: string
 }
 
@@ -2978,9 +2996,36 @@ export type ConfigOverlayResponse = {
     reason?: string
   }>
   targets: {
-    global?: string
-    project?: string
-    active?: string
+    global: {
+      scope: "global" | "project"
+      path: string
+      revision: string
+      exists: boolean
+      writable: boolean
+      raw: {
+        [key: string]: unknown
+      }
+    }
+    project: {
+      scope: "global" | "project"
+      path: string
+      revision: string
+      exists: boolean
+      writable: boolean
+      raw: {
+        [key: string]: unknown
+      }
+    }
+    active: {
+      scope: "global" | "project"
+      path: string
+      revision: string
+      exists: boolean
+      writable: boolean
+      raw: {
+        [key: string]: unknown
+      }
+    }
   }
   fields: {
     [key: string]: {
@@ -3024,6 +3069,21 @@ export type ConfigSourcesResponse = {
     editable: boolean
     reason?: string
   }>
+}
+
+export type ConfigOverlayConflictError = {
+  code: "target-changed" | "revision-conflict"
+  message: string
+  target: {
+    scope: "global" | "project"
+    path: string
+    revision: string
+    exists: boolean
+    writable: boolean
+    raw: {
+      [key: string]: unknown
+    }
+  }
 }
 
 export type ConfigRulesResponse = {
@@ -3349,7 +3409,18 @@ export type AgentManagerStopResult = {
   stopped: true
 }
 
-export type AgentManagerResult = AgentManagerOverviewResult | AgentManagerPromptResult | AgentManagerStopResult
+export type AgentManagerMoveResult = {
+  operation: "move"
+  sessionID: string
+  sectionID: string | null
+  moved: true
+}
+
+export type AgentManagerResult =
+  | AgentManagerOverviewResult
+  | AgentManagerPromptResult
+  | AgentManagerStopResult
+  | AgentManagerMoveResult
 
 export type AgentManagerFailure = {
   code:
@@ -3360,6 +3431,7 @@ export type AgentManagerFailure = {
     | "stale_session"
     | "timeout"
     | "unavailable_session"
+    | "unknown_section"
     | "unknown_session"
     | "workspace_unavailable"
   message: string
@@ -3898,6 +3970,14 @@ export type EventIndexingWarning = {
   id: string
   type: "indexing.warning"
   properties: IndexingWarning
+}
+
+export type EventModelsDevRefreshed = {
+  id: string
+  type: "models-dev.refreshed"
+  properties: {
+    [key: string]: unknown
+  }
 }
 
 export type EventServerConnected = {
@@ -4578,14 +4658,6 @@ export type EventSessionError = {
       | ContentFilterError
       | ApiError
       | AgentRequirementError
-  }
-}
-
-export type EventModelsDevRefreshed = {
-  id: string
-  type: "models-dev.refreshed"
-  properties: {
-    [key: string]: unknown
   }
 }
 
@@ -6139,6 +6211,7 @@ export type CommandV2Info = {
     providerID: string
     variant?: string
   }
+  variant?: string
   subtask?: boolean
 }
 
@@ -7720,6 +7793,7 @@ export type AppSkillsResponses = {
     description?: string
     location: string
     content: string
+    trusted?: boolean
   }>
 }
 
@@ -8631,6 +8705,7 @@ export type PermissionReplyData = {
   body?: {
     reply: "once" | "always" | "reject"
     message?: string
+    interactive?: boolean
   }
   path: {
     requestID: string
@@ -11124,11 +11199,15 @@ export type ConfigOverlayResponse2 = ConfigOverlayResponses[keyof ConfigOverlayR
 
 export type ConfigOverlayUpdateData = {
   body?: {
-    scope?: "global" | "project"
+    scope: "global" | "project"
     set?: {
       [key: string]: unknown
     }
     unset?: Array<Array<string>>
+    expected?: {
+      path: string
+      revision: string
+    }
   }
   path?: never
   query?: {
@@ -11143,15 +11222,19 @@ export type ConfigOverlayUpdateErrors = {
    * Bad request
    */
   400: BadRequestError
+  /**
+   * ConfigOverlayConflictError
+   */
+  409: ConfigOverlayConflictError
 }
 
 export type ConfigOverlayUpdateError = ConfigOverlayUpdateErrors[keyof ConfigOverlayUpdateErrors]
 
 export type ConfigOverlayUpdateResponses = {
   /**
-   * Effective configuration after patch
+   * Resolved config overlay after patch
    */
-  200: Config
+  200: ConfigOverlayResponse
 }
 
 export type ConfigOverlayUpdateResponse = ConfigOverlayUpdateResponses[keyof ConfigOverlayUpdateResponses]
@@ -11570,6 +11653,36 @@ export type IndexingModelsResponses = {
 }
 
 export type IndexingModelsResponse = IndexingModelsResponses[keyof IndexingModelsResponses]
+
+export type IndexingConsentData = {
+  body?: {
+    enabled: boolean
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/indexing/consent"
+}
+
+export type IndexingConsentErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type IndexingConsentError = IndexingConsentErrors[keyof IndexingConsentErrors]
+
+export type IndexingConsentResponses = {
+  /**
+   * Indexing status
+   */
+  200: IndexingStatus
+}
+
+export type IndexingConsentResponse = IndexingConsentResponses[keyof IndexingConsentResponses]
 
 export type InstanceReloadData = {
   body?: never
@@ -12072,6 +12185,38 @@ export type KiloModelsImagesResponses = {
 }
 
 export type KiloModelsImagesResponse = KiloModelsImagesResponses[keyof KiloModelsImagesResponses]
+
+export type KiloModelsTranscriptionsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kilo/models/transcriptions"
+}
+
+export type KiloModelsTranscriptionsErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type KiloModelsTranscriptionsError = KiloModelsTranscriptionsErrors[keyof KiloModelsTranscriptionsErrors]
+
+export type KiloModelsTranscriptionsResponses = {
+  /**
+   * Speech-to-text model list
+   */
+  200: Array<{
+    id: string
+    name: string
+  }>
+}
+
+export type KiloModelsTranscriptionsResponse =
+  KiloModelsTranscriptionsResponses[keyof KiloModelsTranscriptionsResponses]
 
 export type KiloNotificationsData = {
   body?: never
@@ -15948,6 +16093,7 @@ export type V2PtyConnectData = {
     "location[workspace]"?: string
     cursor?: string
     ticket?: string
+    replayExited?: string
   }
   url: "/api/pty/{ptyID}/connect"
 }

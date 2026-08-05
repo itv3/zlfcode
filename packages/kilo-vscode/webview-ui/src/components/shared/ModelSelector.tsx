@@ -197,7 +197,6 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     setLocalExpanded(value)
   }
   const [search, setSearch] = createSignal("")
-  const [debouncedSearch, setDebouncedSearch] = createSignal("")
   const [selectedKey, setSelectedKey] = createSignal(CLEAR_KEY)
   const [browsing, setBrowsing] = createSignal(false)
   const [navigating, setNavigating] = createSignal(false)
@@ -219,6 +218,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   let listRef: HTMLDivElement | undefined
   let bodyRef: HTMLDivElement | undefined
   let previewTimer: ReturnType<typeof setTimeout> | undefined
+  let scrollFrame: number | undefined
+  let pointerX: number | undefined
+  let pointerY: number | undefined
+  let previousSearch: string | undefined
   const [virtualizer, setVirtualizer] = createSignal<VirtualizerHandle>()
   const [pointer, setPointer] = createSignal(true)
 
@@ -259,16 +262,9 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   const hasProviders = () => visibleModels().length > 0
   const canOpen = () => hasProviders() || ((props.allowClear ?? false) && !!props.value)
 
-  // Debounce search input to avoid re-filtering on every keystroke
-  createEffect(() => {
-    const q = search()
-    const t = setTimeout(() => setDebouncedSearch(q), 250)
-    onCleanup(() => clearTimeout(t))
-  })
-
   // Flat filtered list for keyboard navigation
   const filtered = createMemo(() => {
-    const q = debouncedSearch().trim()
+    const q = search().trim()
     if (!q) {
       return visibleModels()
     }
@@ -287,7 +283,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
 
   const favoriteModels = createMemo(() => {
     if (props.favorites === false) return []
-    if (!session || debouncedSearch()) return []
+    if (!session || search()) return []
     const map = new Map(visibleModels().map((m) => [modelKey(m.providerID, m.id), m]))
     const list = session
       .favoriteModels()
@@ -452,7 +448,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     if (!m) return props.allowClear ? CLEAR_KEY : defaultKey()
     const key = modelKey(m.providerID, m.id)
     const favorite = favoriteKey(m)
-    if (!debouncedSearch() && favoriteKeys().has(key) && rowMap().has(favorite)) return favorite
+    if (!search() && favoriteKeys().has(key) && rowMap().has(favorite)) return favorite
     return canonicalKey(m)
   }
   const chosen = (row: ModelRow) => {
@@ -505,7 +501,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   // which would cause star/unstar to reset selection mid-interaction.
   // Falls back to defaultKey when the active model is filtered out.
   createEffect(() => {
+    const query = search()
     const list = filtered()
+    const searchChanged = query !== previousSearch
+    previousSearch = query
     untrack(() => {
       const active = activeModel()
       const canon = active ? canonicalKey(active) : null
@@ -520,10 +519,16 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
               ? CLEAR_KEY
               : defaultKey()
       setSelectedKey(next)
-      setBrowsing(!!debouncedSearch() && nodeMap().has(next))
+      setBrowsing(!!search() && nodeMap().has(next))
       setNavigating(false)
       setPreActiveKey(next)
       setPreviewKey(next)
+      if (!open() || !searchChanged) return
+      if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame)
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = undefined
+        scrollRow(next, "nearest")
+      })
     })
   })
 
@@ -552,9 +557,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     setBrowsing(false)
     setNavigating(false)
     setSearch("")
-    setDebouncedSearch("")
-    if (props.initialExpanded !== undefined) setExpanded(props.initialExpanded)
+    if (props.initialExpanded !== undefined) setExpanded(props.initialExpanded) // kilocode_change: ZLF initialExpanded 定制
     clearTimeout(previewTimer)
+    if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame)
+    scrollFrame = undefined
   })
 
   // Register before the popover mounts so programmatic slash-command opens
@@ -572,6 +578,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     window.removeEventListener("openModelPicker", onTrigger)
     window.removeEventListener("keydown", onEscape, true)
     clearTimeout(previewTimer)
+    if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame)
   })
 
   function pick(model: EnrichedModel) {
@@ -603,6 +610,20 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   function schedulePreview(key: string | null) {
     clearTimeout(previewTimer)
     previewTimer = setTimeout(() => setPreviewKey(key), 200)
+  }
+
+  function pointerMove(e: MouseEvent) {
+    const target = e.target
+    if (!(target instanceof Element)) return
+    const item = target.closest<HTMLElement>('[role="treeitem"][data-key]')
+    const key = item?.dataset.key
+    if (!key) return
+    const moved = pointerX !== undefined && pointerY !== undefined && (e.clientX !== pointerX || e.clientY !== pointerY)
+    pointerX = e.clientX
+    pointerY = e.clientY
+    if (!moved) return
+    setPointer(true)
+    setSelectedKey(key)
   }
 
   function scrollRow(key: string | null | undefined, block: ScrollLogicalPosition = "nearest") {
@@ -864,6 +885,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                     placeholder={language.t("dialog.model.search.placeholder")}
                     value={search()}
                     onInput={(e) => {
+                      setPointer(false)
                       setBrowsing(false)
                       setNavigating(false)
                       setSearch(e.currentTarget.value)
@@ -902,7 +924,14 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                   </Tooltip>
                 </div>
 
-                <div id={listID} class="model-selector-list" role="tree" aria-label={label()} ref={listRef}>
+                <div
+                  id={listID}
+                  class="model-selector-list"
+                  role="tree"
+                  aria-label={label()}
+                  ref={listRef}
+                  onMouseMove={pointerMove}
+                >
                   <Show when={groups().length === 0}>
                     <div class="model-selector-empty" role="status" aria-live="polite">
                       {language.t("dialog.model.empty")}
@@ -927,16 +956,13 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                             return (
                               <div
                                 id={optionID(key)}
+                                data-key={key}
                                 class={`model-selector-group-label${props.allowClear || group.key !== groups()[0]?.key ? " model-selector-group-label--divided" : ""}${isSelected(key) ? " selected" : ""}${isSelected(key) && !pointer() ? " keyboard-focused" : ""}`}
                                 role="treeitem"
                                 aria-level={1}
                                 aria-expanded={shown()}
                                 onMouseDown={(e) => e.preventDefault()}
                                 onClick={() => toggleGroup(group.key)}
-                                onMouseMove={() => setPointer(true)}
-                                onMouseEnter={() => {
-                                  if (pointer()) setSelectedKey(key)
-                                }}
                               >
                                 <svg
                                   class={`model-selector-group-chevron${shown() ? "" : " model-selector-group-chevron--collapsed"}`}
@@ -949,7 +975,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                   <path d="M4 6l4 5 4-5H4z" />
                                 </svg>
                                 <span>{group.label}</span>
-                                <Show when={!shown() && !!debouncedSearch()}>
+                                <Show when={!shown() && !!search()}>
                                   <span class="model-selector-group-match-dot" aria-hidden="true" />
                                 </Show>
                               </div>
@@ -962,15 +988,12 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                             return (
                               <div
                                 id={optionID(CLEAR_KEY)}
+                                data-key={CLEAR_KEY}
                                 class={`model-selector-item${isSelected(CLEAR_KEY) && !pointer() ? " keyboard-focused" : ""}${isSelected(CLEAR_KEY) ? " selected" : ""}${!props.value?.providerID ? " active" : ""}`}
                                 role="treeitem"
                                 aria-level={1}
                                 aria-selected={!props.value?.providerID}
                                 onClick={() => pickClear()}
-                                onMouseMove={() => setPointer(true)}
-                                onMouseEnter={() => {
-                                  if (pointer()) setSelectedKey(CLEAR_KEY)
-                                }}
                               >
                                 <span class="model-selector-item-name" style={{ "font-style": "italic", opacity: 0.7 }}>
                                   {props.clearLabel ?? language.t("dialog.model.notSet")}
@@ -1003,6 +1026,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                             >
                               <div
                                 id={optionID(row.key)}
+                                data-key={row.key}
                                 class={`model-selector-item${(hovered() && !pointer()) || preActive() ? " keyboard-focused" : ""}${hovered() || preActive() ? " selected" : ""}${chosen(row) ? " active" : ""}`}
                                 role="treeitem"
                                 aria-level={2}
@@ -1018,10 +1042,6 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                 }}
                                 onDblClick={() => {
                                   if (expanded()) selectRow(row)
-                                }}
-                                onMouseMove={() => setPointer(true)}
-                                onMouseEnter={() => {
-                                  if (pointer()) setSelectedKey(row.key)
                                 }}
                               >
                                 <div class="model-selector-item-left">

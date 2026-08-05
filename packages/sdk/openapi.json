@@ -3137,6 +3137,9 @@
                       },
                       "content": {
                         "type": "string"
+                      },
+                      "trusted": {
+                        "type": "boolean"
                       }
                     },
                     "required": ["name", "location", "content"],
@@ -5312,6 +5315,9 @@
                   },
                   "message": {
                     "type": "string"
+                  },
+                  "interactive": {
+                    "type": "boolean"
                   }
                 },
                 "required": ["reply"],
@@ -11549,11 +11555,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Effective configuration after patch",
+            "description": "Resolved config overlay after patch",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Config"
+                  "$ref": "#/components/schemas/ConfigOverlayResponse"
                 }
               }
             }
@@ -11564,6 +11570,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConfigOverlayConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigOverlayConflictError"
                 }
               }
             }
@@ -11579,8 +11595,7 @@
                 "properties": {
                   "scope": {
                     "type": "string",
-                    "enum": ["global", "project"],
-                    "default": "project"
+                    "enum": ["global", "project"]
                   },
                   "set": {
                     "type": "object"
@@ -11593,8 +11608,22 @@
                         "type": "string"
                       }
                     }
+                  },
+                  "expected": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string"
+                      },
+                      "revision": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["path", "revision"],
+                    "additionalProperties": false
                   }
                 },
+                "required": ["scope"],
                 "additionalProperties": false
               }
             }
@@ -12549,6 +12578,76 @@
           {
             "lang": "js",
             "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.indexing.models({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/indexing/consent": {
+      "put": {
+        "tags": ["indexing"],
+        "operationId": "indexing.consent",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Indexing status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexingStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Set machine-local code indexing consent for the active project.",
+        "summary": "Set indexing consent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["enabled"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.indexing.consent({\n  ...\n})"
           }
         ]
       }
@@ -13850,6 +13949,81 @@
           {
             "lang": "js",
             "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.kilo.models.images({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/kilo/models/transcriptions": {
+      "get": {
+        "tags": ["kilo"],
+        "operationId": "kilo.models.transcriptions",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Speech-to-text model list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["id", "name"],
+                    "additionalProperties": false
+                  },
+                  "description": "Speech-to-text model list"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "List transcription-capable models from the Kilo Gateway catalog",
+        "summary": "Speech-to-text models",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.kilo.models.transcriptions({\n  ...\n})"
           }
         ]
       }
@@ -23781,6 +23955,13 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "replayExited",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "security": [],
@@ -24677,6 +24858,9 @@
             "$ref": "#/components/schemas/EventIndexingWarning"
           },
           {
+            "$ref": "#/components/schemas/EventModels-devRefreshed"
+          },
+          {
             "$ref": "#/components/schemas/EventServerConnected"
           },
           {
@@ -24843,9 +25027,6 @@
           },
           {
             "$ref": "#/components/schemas/EventSessionError"
-          },
-          {
-            "$ref": "#/components/schemas/EventModels-devRefreshed"
           },
           {
             "$ref": "#/components/schemas/EventInstallationUpdated"
@@ -25459,6 +25640,40 @@
         "required": ["id", "sessionID", "operation", "targetSessionID"],
         "additionalProperties": false
       },
+      "AgentManagerMoveRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/AgentManagerRequestID"
+          },
+          "sessionID": {
+            "type": "string",
+            "pattern": "^ses"
+          },
+          "operation": {
+            "type": "string",
+            "enum": ["move"]
+          },
+          "targetSessionID": {
+            "type": "string",
+            "pattern": "^ses"
+          },
+          "sectionID": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["id", "sessionID", "operation", "targetSessionID", "sectionID"],
+        "additionalProperties": false
+      },
       "AgentManagerRequest": {
         "anyOf": [
           {
@@ -25469,6 +25684,9 @@
           },
           {
             "$ref": "#/components/schemas/AgentManagerStopRequest"
+          },
+          {
+            "$ref": "#/components/schemas/AgentManagerMoveRequest"
           }
         ]
       },
@@ -26512,6 +26730,9 @@
             },
             "required": ["providerID", "modelID"],
             "additionalProperties": false
+          },
+          "variant": {
+            "type": "string"
           },
           "command": {
             "type": "string"
@@ -27870,6 +28091,9 @@
                 "$ref": "#/components/schemas/EventIndexingWarning"
               },
               {
+                "$ref": "#/components/schemas/EventModels-devRefreshed"
+              },
+              {
                 "$ref": "#/components/schemas/EventServerConnected"
               },
               {
@@ -28036,9 +28260,6 @@
               },
               {
                 "$ref": "#/components/schemas/EventSessionError"
-              },
-              {
-                "$ref": "#/components/schemas/EventModels-devRefreshed"
               },
               {
                 "$ref": "#/components/schemas/EventInstallationUpdated"
@@ -28519,6 +28740,9 @@
                 "$ref": "#/components/schemas/PermissionRuleConfig"
               },
               "external_directory": {
+                "$ref": "#/components/schemas/PermissionRuleConfig"
+              },
+              "markdown_source": {
                 "$ref": "#/components/schemas/PermissionRuleConfig"
               },
               "todowrite": {
@@ -29180,7 +29404,6 @@
                   "type": "boolean"
                 }
               },
-              "required": ["template"],
               "additionalProperties": false
             }
           },
@@ -29596,6 +29819,9 @@
             "additionalProperties": {
               "type": "boolean"
             }
+          },
+          "web_search": {
+            "type": "boolean"
           },
           "attachment": {
             "$ref": "#/components/schemas/AttachmentConfig"
@@ -30829,9 +31055,15 @@
           "model": {
             "type": "string"
           },
+          "variant": {
+            "type": "string"
+          },
           "source": {
             "type": "string",
             "enum": ["command", "mcp", "skill"]
+          },
+          "trusted": {
+            "type": "boolean"
           },
           "template": {
             "type": "string"
@@ -32873,6 +33105,9 @@
             "required": ["providerID", "modelID"],
             "additionalProperties": false
           },
+          "variant": {
+            "type": "string"
+          },
           "command": {
             "type": "string"
           }
@@ -33582,15 +33817,85 @@
             "type": "object",
             "properties": {
               "global": {
-                "type": "string"
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": ["global", "project"]
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "string"
+                  },
+                  "exists": {
+                    "type": "boolean"
+                  },
+                  "writable": {
+                    "type": "boolean"
+                  },
+                  "raw": {
+                    "type": "object"
+                  }
+                },
+                "required": ["scope", "path", "revision", "exists", "writable", "raw"],
+                "additionalProperties": false
               },
               "project": {
-                "type": "string"
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": ["global", "project"]
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "string"
+                  },
+                  "exists": {
+                    "type": "boolean"
+                  },
+                  "writable": {
+                    "type": "boolean"
+                  },
+                  "raw": {
+                    "type": "object"
+                  }
+                },
+                "required": ["scope", "path", "revision", "exists", "writable", "raw"],
+                "additionalProperties": false
               },
               "active": {
-                "type": "string"
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": ["global", "project"]
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "string"
+                  },
+                  "exists": {
+                    "type": "boolean"
+                  },
+                  "writable": {
+                    "type": "boolean"
+                  },
+                  "raw": {
+                    "type": "object"
+                  }
+                },
+                "required": ["scope", "path", "revision", "exists", "writable", "raw"],
+                "additionalProperties": false
               }
             },
+            "required": ["global", "project", "active"],
             "additionalProperties": false
           },
           "fields": {
@@ -33738,6 +34043,46 @@
           }
         },
         "required": ["sources"],
+        "additionalProperties": false
+      },
+      "ConfigOverlayConflictError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": ["target-changed", "revision-conflict"]
+          },
+          "message": {
+            "type": "string"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "scope": {
+                "type": "string",
+                "enum": ["global", "project"]
+              },
+              "path": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "string"
+              },
+              "exists": {
+                "type": "boolean"
+              },
+              "writable": {
+                "type": "boolean"
+              },
+              "raw": {
+                "type": "object"
+              }
+            },
+            "required": ["scope", "path", "revision", "exists", "writable", "raw"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["code", "message", "target"],
         "additionalProperties": false
       },
       "ConfigRulesResponse": {
@@ -34746,6 +35091,37 @@
         "required": ["operation", "sessionID", "stopped"],
         "additionalProperties": false
       },
+      "AgentManagerMoveResult": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": ["move"]
+          },
+          "sessionID": {
+            "type": "string",
+            "pattern": "^ses"
+          },
+          "sectionID": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "moved": {
+            "type": "boolean",
+            "enum": [true]
+          }
+        },
+        "required": ["operation", "sessionID", "sectionID", "moved"],
+        "additionalProperties": false
+      },
       "AgentManagerResult": {
         "anyOf": [
           {
@@ -34756,6 +35132,9 @@
           },
           {
             "$ref": "#/components/schemas/AgentManagerStopResult"
+          },
+          {
+            "$ref": "#/components/schemas/AgentManagerMoveResult"
           }
         ]
       },
@@ -34772,6 +35151,7 @@
               "stale_session",
               "timeout",
               "unavailable_session",
+              "unknown_section",
               "unknown_session",
               "workspace_unavailable"
             ]
@@ -37150,6 +37530,24 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventModels-devRefreshed": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["models-dev.refreshed"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventServerConnected": {
         "type": "object",
         "properties": {
@@ -39187,24 +39585,6 @@
               }
             },
             "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventModels-devRefreshed": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["models-dev.refreshed"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {}
           }
         },
         "required": ["id", "type", "properties"],
@@ -44292,6 +44672,9 @@
             },
             "required": ["id", "providerID"],
             "additionalProperties": false
+          },
+          "variant": {
+            "type": "string"
           },
           "subtask": {
             "type": "boolean"
