@@ -2,6 +2,12 @@
  * Session context
  * Manages session state, messages, SSE events, and global model selection.
  */
+// kilocode_change start: 上游文件本体约 3076 行已逼近 max-lines 上限 3100，ZLF 的
+// 模型可用性防御与偏好恢复接线净增 35 行使其超限（合并 v7.4.20 时 3111 行）。按
+// F76 先例（server.tsx 的 complexity 豁免）就地豁免行数规则并保持上游结构，不为
+// 行数反复腾挪定制代码——上游后续自身膨胀也不再触发该规则。
+/* eslint-disable max-lines */
+// kilocode_change end
 
 import {
   createContext,
