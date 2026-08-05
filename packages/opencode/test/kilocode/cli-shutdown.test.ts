@@ -115,7 +115,7 @@ describe("KiloCli.shutdown", () => {
   // 必须保持为本 describe 的最后一个测试，避免后续 KiloCli.shutdown() 变成 no-op。
   test("skips lifecycle work for parsed informational flags", async () => {
     await installDrain()
-    const logInit = spyOn(KiloLog, "init").mockImplementation(() => {})
+    const logInit = spyOn(KiloLog, "init").mockImplementation(async () => {})
 
     for (const flag of ["help", "version"] as const) {
       await KiloCli.bootstrap({ [flag]: true })
