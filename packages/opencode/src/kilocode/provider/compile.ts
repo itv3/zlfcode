@@ -10,7 +10,7 @@
 // 注意：本模块必须保持纯函数（不访问服务、不做 IO），使增量刷新产物与
 // 全量重建产物可以逐字段对拍（见 provider-config-refresh.test.ts）。
 
-import { orderedVariants, patchConfigModel } from "@/kilocode/provider/provider"
+import { customProviderVariants, orderedVariants, patchConfigModel } from "@/kilocode/provider/provider"
 import type { Info, Model } from "@/provider/provider"
 import * as ProviderTransform from "@/provider/transform"
 import { ModelV2 } from "@opencode-ai/core/model"
@@ -139,8 +139,13 @@ export function compileConfigModels(input: {
       release_date: configModel.release_date ?? existing?.release_date ?? "",
       ...patchConfigModel(configModel, existing),
     }
-    // 保留配置中的 variants 顺序，供自定义默认值使用
-    model.variants = orderedVariants(ProviderTransform.variants(model), configModel.variants ?? {})
+    // 保留配置中的 variants 顺序，供自定义默认值使用。
+    // 上游 v7.4.21（#12941）：用户手写了 variants 时不再叠加自动生成的档位；
+    // 未手写时经 customProviderVariants 为 custom provider 自动推断 reasoning effort。
+    const generated = Object.keys(configModel.variants ?? {}).length
+      ? {}
+      : customProviderVariants(model, configModel.provider?.npm ?? config.npm, ProviderTransform.variants)
+    model.variants = orderedVariants(generated, configModel.variants ?? {})
     input.models[modelID] = model
   }
 }

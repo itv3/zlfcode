@@ -1,6 +1,7 @@
 import * as path from "path"
 import { existsSync } from "fs"
 import * as vscode from "vscode"
+import { TRANSIENT as MEMORY_TRANSIENT } from "@kilocode/kilo-memory/schema"
 import type {
   KiloClient,
   Session,
@@ -17,7 +18,7 @@ import type { EditorContext, IndexingStatus } from "./services/cli-backend/types
 import { FileIgnoreController } from "./services/autocomplete/shims/FileIgnoreController"
 import { ChatTextAreaAutocomplete } from "./services/autocomplete/chat-autocomplete/ChatTextAreaAutocomplete"
 import { notebookUri } from "./services/autocomplete/continuedev/core/autocomplete/notebook"
-import { buildWebviewHtml, getWebviewFontSize } from "./utils"
+import { buildWebviewHtml, getWebviewFontSize, isCursorHost } from "./utils"
 import { saveImage } from "./kilo-provider/save-image"
 import { handleEditorAction } from "./kilo-provider/editor-actions"
 import { exportTranscript } from "./kilo-provider/export-transcript"
@@ -51,8 +52,6 @@ import {
 } from "./kilo-provider-utils"
 import { GitOps } from "./agent-manager/GitOps"
 import { GitStatsPoller, type LocalStats } from "./agent-manager/GitStatsPoller"
-import { diffSummary as localDiffSummary } from "./agent-manager/local-diff"
-import { getWorkspaceRoot } from "./review-utils"
 import { createMarketplaceRemover, removeMcp } from "./kilo-provider/remove-config-item"
 import { AgentRequirementsController } from "./kilo-provider/agent-requirements-controller"
 import type { RemoteStatusService } from "./services/RemoteStatusService"
@@ -93,6 +92,7 @@ import {
 } from "./services/autocomplete/settings"
 import { routeEarlyMessage } from "./kilo-provider/early-message"
 import * as ModelState from "./kilo-provider/model-state"
+import { handleModelUsageMessage } from "./kilo-provider/model-usage"
 import { handleForkSession } from "./kilo-provider/fork-session"
 import { openConfig } from "./kilo-provider/open-config"
 import {
@@ -194,6 +194,10 @@ import {
 import { canonicalizePath, projectIdFor, samePath } from "./agent-manager/project/paths"
 import { validChatSetting, watchChatConfig } from "./kilo-provider/chat-settings"
 import { buildThroughputSettingMessage, watchThroughputConfig } from "./kilo-provider/throughput-settings"
+import {
+  buildAutoApprovalReasonSettingMessage,
+  watchAutoApprovalReasonConfig,
+} from "./kilo-provider/auto-approval-reason-settings"
 
 let maxCost = 0
 
@@ -439,6 +443,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private indexingConfigDisposable: vscode.Disposable | null = null
   private chatConfigDisposable: vscode.Disposable | null = null
   private throughputConfigDisposable: vscode.Disposable | null = null
+  private autoApprovalReasonConfigDisposable: vscode.Disposable | null = null
   private telemetryStateDisposable: vscode.Disposable | null = null
   private viewStateDisposable: vscode.Disposable | null = null
   private visibilityDisposable: vscode.Disposable | null = null
@@ -460,6 +465,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private statsGitOps: GitOps | null = null
   private cachedStats: unknown = null
   private cachedGitRepo = false
+  private cachedGitDirectory: string | undefined
+  private gitStatusRevision = 0
+  private sessionRefreshRevision = 0
 
   private onBeforeMessage: ((msg: Record<string, unknown>) => Promise<Record<string, unknown> | null>) | null = null
 
@@ -1020,6 +1028,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.chatConfigDisposable = watchChatConfig((msg) => this.postMessage(msg))
     this.throughputConfigDisposable?.dispose()
     this.throughputConfigDisposable = watchThroughputConfig((msg) => this.postMessage(msg))
+    this.autoApprovalReasonConfigDisposable?.dispose()
+    this.autoApprovalReasonConfigDisposable = watchAutoApprovalReasonConfig((msg) => this.postMessage(msg))
     this.telemetryStateDisposable?.dispose()
     this.telemetryStateDisposable = watchTelemetryState((msg) => this.postMessage(msg))
     this.webviewMessageDisposable = webview.onDidReceiveMessage(async (message) => {
@@ -1044,6 +1054,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           copy: (text) => vscode.env.clipboard.writeText(text),
           openSessions: (ids) => this.trackOpenSessions(ids),
           speechToTextModels: () => this.fetchAndSendSpeechToTextModels(),
+          modelUsage: (msg) => handleModelUsageMessage(msg, this.extensionContext, (value) => this.postMessage(value)),
         })
       ) {
         return
@@ -1065,6 +1076,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           openAdvancedWorktree: () => vscode.commands.executeCommand("kilo-code.new.agentManager.advancedWorktree"),
           openChanges: (sessionId?: string, turnId?: string) =>
             vscode.commands.executeCommand("kilo-code.new.showChanges", { sessionId, turnId }),
+          openProfile: () => vscode.commands.executeCommand("kilo-code.new.profileButtonClicked"),
           currentSessionId: this.currentSession?.id,
           createWorktree: async (baseBranch, branchName) => {
             await this.createWorktreeHandler?.(baseBranch, branchName)
@@ -1667,6 +1679,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       // Subscribe to SSE events for this webview (filtered by tracked sessions)
       this.unsubscribeEvent = this.connectionService.onEventFiltered(
         (payload, directory) => {
+          if (directory && directory !== "global" && !this.isCurrentProjectDirectory(directory)) return false
+          if (!directory && isEventFromForeignProject(payload, this.projectID)) return false
           const event = unwrapSyncEvent(payload)
           if (!event) return false
 
@@ -1678,6 +1692,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
           // message.part.* events are always session-scoped; drop if session unknown.
           if (!sessionId) return !isSessionScopedPartEvent(event.type)
+          if (!directory && !this.isCurrentProjectSession(sessionId)) return false
 
           if (event.type === "session.created" && this.matchesPendingFollowup(event.properties.info)) {
             return true
@@ -1869,18 +1884,18 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       return
     }
 
-    this.cachedGitRepo = await hasGit(client, this.getWorkspaceDirectory())
+    // 上游 v7.4.21 起 git 状态统一走 refreshGitStatus（内部维护 cachedGitRepo、
+    // gitStatus 消息与 stats 轮询的启停），不再在此处手动管理。
+    await this.refreshGitStatus(this.getWorkspaceDirectory())
     if (this.connectionState !== "connected" || this.connectionGeneration !== generation || this.client !== client) {
       return
     }
 
-    this.postMessage({ type: "gitStatus", repo: this.cachedGitRepo })
     this.sendNotificationSettings()
     this.sendTimelineSetting()
     this.postMessage(buildThroughputSettingMessage())
+    this.postMessage(buildAutoApprovalReasonSettingMessage())
     this.postMessage({ type: "extensionDataReady" })
-
-    if (this.cachedGitRepo) this.startStatsPolling()
   }
 
   private sessionToWebview(session: Session) {
@@ -1927,6 +1942,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   /** Non-blocking: refresh session metadata + status for the webview after switching. */
   private refreshSessionDetails(sessionID: string, dir: string, signal?: AbortSignal): void {
     if (!this.client) return
+    void this.refreshGitStatus(dir)
     const revision = this.revisions.get(sessionID)
     const refresh = (this.refreshes.get(sessionID) ?? 0) + 1
     this.refreshes.set(sessionID, refresh)
@@ -2120,7 +2136,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   /**
    * Build the context object used by the extracted session-refresh helpers.
    */
-  private get sessionRefreshContext(): SessionRefreshContext {
+  private getSessionRefreshContext(revision: number): SessionRefreshContext {
     const client = this.client
     return {
       pendingSessionRefresh: this.pendingSessionRefresh,
@@ -2132,6 +2148,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       sessionDirectories: this.sessionDirectories,
       worktreeDirectories: this.opts.worktreeDirectories,
       workspaceDirectory: this.getWorkspaceDirectory(),
+      isCurrent: () => revision === this.sessionRefreshRevision,
       postMessage: (msg: unknown) => this.postMessage(msg),
     }
   }
@@ -2142,10 +2159,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private async flushPendingSessionRefresh(reason: string): Promise<void> {
     if (!this.pendingSessionRefresh) return
     console.log("[Kilo New] KiloProvider: 🔄 Flushing deferred sessions refresh", { reason })
-    const ctx = this.sessionRefreshContext
+    const revision = ++this.sessionRefreshRevision
+    const scope = this.opts.projectQualifier?.()?.projectId
+    if (scope !== undefined) this.projectID = undefined
+    const ctx = this.getSessionRefreshContext(revision)
     try {
       const resolved = await flushPendingSessionRefreshUtil(ctx)
-      if (resolved) this.projectID = resolved
+      if (resolved && scope === this.opts.projectQualifier?.()?.projectId) this.projectID = resolved
     } catch (error) {
       console.error("[Kilo New] KiloProvider: Failed to flush session refresh:", error)
     }
@@ -2156,10 +2176,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
    * Handle loading all sessions.
    */
   private async handleLoadSessions(): Promise<void> {
-    const ctx = this.sessionRefreshContext
+    const revision = ++this.sessionRefreshRevision
+    const scope = this.opts.projectQualifier?.()?.projectId
+    if (scope !== undefined) this.projectID = undefined
+    const ctx = this.getSessionRefreshContext(revision)
     try {
       const resolved = await loadSessionsUtil(ctx)
-      if (resolved) this.projectID = resolved
+      if (resolved && scope === this.opts.projectQualifier?.()?.projectId) this.projectID = resolved
     } catch (error) {
       console.error("[Kilo New] KiloProvider: Failed to load sessions:", error)
       this.postMessage({
@@ -4319,6 +4342,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     // Clear globalState items that are not part of the configuration
     await this.extensionContext?.globalState.update("variantSelections", undefined)
     await this.extensionContext?.globalState.update("recentModels", undefined)
+    await this.extensionContext?.globalState.update("modelUsage", undefined)
     await this.extensionContext?.globalState.update("kilo.dismissedNotificationIds", undefined)
     await this.extensionContext?.globalState.update("kilo.agentMigrationBannerDismissed", undefined)
     await this.extensionContext?.globalState.update("kilo.marketplace.dismissedSuggestions", undefined)
@@ -4330,12 +4354,14 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.sendNotificationSettings()
     this.sendTimelineSetting()
     this.postMessage(buildThroughputSettingMessage())
+    this.postMessage(buildAutoApprovalReasonSettingMessage())
     this.sendWorkStyle()
     await ModelState.reset(this.client, (msg) => this.postMessage(msg))
 
     // Re-send globalState items to the webview
     this.postMessage({ type: "variantsLoaded", variants: {} })
     this.postMessage({ type: "recentsLoaded", recents: [] })
+    this.postMessage({ type: "modelUsageLoaded", usage: {} })
 
     // Re-fetch notifications to reflect cleared dismissed IDs
     await this.fetchAndSendNotifications()
@@ -4555,8 +4581,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       for (const sid of trackedByDir) targets.add(sid)
       if (local && active) targets.add(active)
       if (targets.size === 0 && local) targets.add(undefined)
-      const detail =
-        props.detail && typeof props.detail === "object"
+      const transient = event.type === "memory.error" && props.reason === MEMORY_TRANSIENT
+      const detail = transient
+        ? undefined
+        : props.detail && typeof props.detail === "object"
           ? props.detail
           : event.type === "memory.error" && typeof props.reason === "string"
             ? { type: "error", message: props.reason, reason: props.reason }
@@ -4577,9 +4605,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     // Drop session events from other projects before any tracking logic.
     // This must come first: the trackedSessionIds guard below would otherwise
     // let a foreign session through if it was accidentally tracked.
-    if (!isLegacySyncEvent(event) && isEventFromForeignProject(event, this.projectID)) return
+    if (directory && directory !== "global" && !this.isCurrentProjectDirectory(directory)) return
     if (
       this.projectID &&
+      (!this.opts.projectQualifier || !directory) &&
       (event.type === "session.created" || event.type === "session.updated") &&
       event.properties.info.projectID !== undefined &&
       event.properties.info.projectID !== null &&
@@ -4637,6 +4666,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       !this.trackedSessionIds.has(sessionID)
     )
       return
+
+    if (event.type === "message.part.updated") this.refreshGitStatusFromPart(event, sessionID)
 
     if (event.type === "session.updated" && typeof event.properties.info.cost === "number") {
       const cost = this.costs.setSessionCost(event.properties.sessionID, event.properties.info.cost)
@@ -5008,6 +5039,87 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     return undefined
   }
 
+  private isCurrentProjectDirectory(directory: string): boolean {
+    if (!this.opts.projectQualifier?.()) return true
+    const dirs = [this.getRootDirectory(), ...(this.opts.worktreeDirectories?.() ?? [])]
+    return dirs.some((dir) => sameDirectory(dir, directory))
+  }
+
+  private isCurrentProjectSession(sessionID: string): boolean {
+    if (!this.opts.projectQualifier || !this.opts.routeService) return true
+    if (this.isSessionRouteAmbiguous(sessionID)) return false
+    const directory = this.opts.routeService.trySessionDirectory(sessionID)
+    return !directory || this.isCurrentProjectDirectory(directory)
+  }
+
+  private refreshGitStatusFromPart(
+    event: Extract<ProviderEvent, { type: "message.part.updated" }>,
+    sessionID?: string,
+  ) {
+    const part = event.properties.part as {
+      type?: string
+      metadata?: Record<string, unknown>
+      state?: { status?: string; input?: Record<string, unknown>; metadata?: Record<string, unknown> }
+    }
+    if (part.type !== "tool" || part.state?.status !== "completed") return
+    const values = [part.metadata?.filepath, part.state?.metadata?.filepath, part.state?.input?.filePath]
+    const file = values.find((value): value is string => typeof value === "string" && value.length > 0)
+    if (!file) return
+    const base = this.getWorkspaceDirectory(sessionID)
+    const value = file.split(",")[0].trim()
+    const pathName = path.isAbsolute(value) ? value : path.resolve(base, value)
+    const directory = path.dirname(pathName)
+    if (!this.isCurrentProjectGitDirectory(directory, sessionID)) return
+    void this.refreshGitStatus(directory)
+  }
+
+  private isCurrentProjectGitDirectory(directory: string, sessionID?: string): boolean {
+    const roots = this.opts.projectQualifier?.()
+      ? [this.getRootDirectory(), ...(this.opts.worktreeDirectories?.() ?? [])]
+      : [this.getWorkspaceDirectory(sessionID)]
+    return roots.some((root) => {
+      const rel = path.relative(canonicalizePath(root), canonicalizePath(directory))
+      return rel === "" || (!path.isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${path.sep}`))
+    })
+  }
+
+  public async refreshGitStatus(directory = this.getWorkspaceDirectory()): Promise<void> {
+    const client = this.client
+    if (!client) return
+    const revision = ++this.gitStatusRevision
+    const repo = await hasGit(client, directory)
+    const root = await this.resolveGitRoot(directory)
+    if (revision !== this.gitStatusRevision) return
+    const found = repo || root !== undefined
+    const target = root ?? directory
+    const changed = !this.cachedGitDirectory || !sameDirectory(this.cachedGitDirectory, target)
+    if (changed) {
+      this.cachedStats = null
+      this.statsPoller?.stop()
+      this.statsPoller = null
+      this.statsGitOps?.dispose()
+      this.statsGitOps = null
+    }
+    this.cachedGitDirectory = target
+    this.cachedGitRepo = found
+    this.postMessage({ type: "gitStatus", repo: found })
+    if (found) {
+      if (!this.statsPoller) this.startStatsPolling()
+      return
+    }
+    this.statsPoller?.stop()
+    this.statsGitOps?.dispose()
+    this.statsPoller = null
+    this.statsGitOps = null
+  }
+
+  private async resolveGitRoot(directory: string): Promise<string | undefined> {
+    const git = this.statsGitOps ?? new GitOps({ log: () => {} })
+    const root = await git.root(directory)
+    if (!this.statsGitOps) git.dispose()
+    return root
+  }
+
   private getContextDirectory(): string {
     return resolveContextDirectory({
       currentSessionID: this.currentSession?.id,
@@ -5082,6 +5194,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       title: "Kilo Code",
       port: this.connectionService.getServerInfo()?.port,
       extraStyles: `.container { height: 100vh; }`,
+      // Dedicated single-purpose panels (Settings, Profile, Sub-Agent Viewer)
+      // never show the bar. Sidebar and "Open in Tab" only need it in Cursor —
+      // VS Code's native toolbar (restored in package.json) works everywhere.
+      topBar: this.opts.hideTopBar !== true && isCursorHost(),
+      topBarSurface: this.opts.topBarSurface === "tab" ? "tab_title" : "sidebar_title",
     })
   }
 
@@ -5117,8 +5234,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.statsGitOps = git
     this.statsPoller = new GitStatsPoller({
       getWorktrees: () => [],
-      getWorkspaceRoot: () => getWorkspaceRoot(),
-      localDiff: (dir, base) => localDiffSummary(git, dir, base),
+      getWorkspaceRoot: () => this.cachedGitDirectory ?? this.getWorkspaceDirectory(this.currentSession?.id),
       git,
       onStats: () => {},
       onLocalStats: (stats: LocalStats) => {
@@ -5175,6 +5291,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.indexingConfigDisposable?.dispose()
     this.chatConfigDisposable?.dispose()
     this.throughputConfigDisposable?.dispose()
+    this.autoApprovalReasonConfigDisposable?.dispose()
     this.telemetryStateDisposable?.dispose()
     this.autoApproveBridge?.dispose()
     this.visibleTaskStreams.clear()

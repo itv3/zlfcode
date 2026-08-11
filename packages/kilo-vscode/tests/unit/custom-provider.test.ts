@@ -283,6 +283,7 @@ describe("sanitizeCustomProviderConfig", () => {
     })
   })
 
+  // kilocode_change start - ZLF 早于上游为 schema 放宽写的等价测试，与上游新用例互补，两个都保留
   it("preserves provider-native variant fields through extension-side sanitization", () => {
     const result = sanitizeCustomProviderConfig({
       name: "Native Provider",
@@ -318,6 +319,36 @@ describe("sanitizeCustomProviderConfig", () => {
             },
           },
         },
+      },
+    })
+  })
+  // kilocode_change end
+
+  it("preserves opaque options on existing variants", () => {
+    const variant = {
+      thinking: { type: "adaptive", display: "summarized" },
+      reasoningEffort: "max",
+      reasoningSummary: "auto",
+      include: ["reasoning.encrypted_content"],
+      customOption: { enabled: true },
+    }
+    const result = sanitizeCustomProviderConfig({
+      name: "Thinking Provider",
+      options: { baseURL: "https://example.com/v1" },
+      models: {
+        "model-1": {
+          name: "Model One",
+          variants: { high: variant },
+        },
+      },
+    })
+
+    expect(result).toEqual({
+      value: {
+        npm: "@ai-sdk/openai-compatible",
+        name: "Thinking Provider",
+        options: { baseURL: "https://example.com/v1" },
+        models: { "model-1": { name: "Model One", variants: { high: variant } } },
       },
     })
   })

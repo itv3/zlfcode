@@ -12,19 +12,7 @@ export const EnvSchema = z
   .trim()
   .regex(/^[A-Z_][A-Z0-9_]*$/, INVALID_ENV)
 
-const VariantConfigSchema = z
-  .object({
-    enable_thinking: z.boolean().optional(),
-    thinking: z
-      .object({ type: z.enum(["enabled", "disabled", "adaptive"]) })
-      .passthrough()
-      .optional(),
-    reasoning_split: z.boolean().optional(),
-    reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max"]).optional(),
-    effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
-    chat_template_args: z.object({ enable_thinking: z.boolean() }).passthrough().optional(),
-  })
-  .passthrough()
+const VariantConfigSchema = z.record(z.string(), z.unknown())
 
 export type VariantConfig = z.infer<typeof VariantConfigSchema>
 

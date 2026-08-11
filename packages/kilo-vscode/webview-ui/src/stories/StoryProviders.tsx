@@ -256,6 +256,8 @@ export function mockSessionValue(overrides?: {
     revertSession: noop,
     unrevertSession: noop,
     favoriteModels: () => [],
+    recentModels: () => [],
+    modelUsageHistory: () => ({}),
     toggleFavorite: noop,
     variantList: () => [],
     currentVariant: () => undefined,

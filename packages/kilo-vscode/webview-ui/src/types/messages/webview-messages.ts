@@ -23,6 +23,7 @@ import type { MemoryShowMessage, MemoryOperationMessage, RequestMemoryMessage } 
 
 export interface SendMessageRequest {
   type: "sendMessage"
+  projectId?: string
   text: string
   messageID?: string
   sessionID?: string
@@ -200,6 +201,10 @@ export interface CompactRequest {
 export interface OpenSettingsPanelRequest {
   type: "openSettingsPanel"
   tab?: string
+}
+
+export interface OpenProfilePanelRequest {
+  type: "openProfilePanel"
 }
 
 export interface OpenVSCodeSettingsRequest {
@@ -453,6 +458,10 @@ export interface RequestTimelineSettingMessage {
 
 export interface RequestThroughputSettingMessage {
   type: "requestThroughputSetting"
+}
+
+export interface RequestAutoApprovalReasonSettingMessage {
+  type: "requestAutoApprovalReasonSetting"
 }
 
 export interface RequestWorkStyleMessage {
@@ -801,10 +810,12 @@ export interface ShowExistingLocalTerminalRequest {
 // Create a new xterm terminal in the given worktree context (null = workspace root)
 export interface AgentManagerTerminalCreateRequest {
   type: "agentManager.terminal.create"
-  /** Webview-generated correlation id, echoed back in created/error. */
+  /** Webview-generated logical terminal id, echoed back in created/error. */
   createId: string
   placement: TerminalPlacement
   worktreeId: string | null
+  cols?: number
+  rows?: number
 }
 
 // Close a terminal tab
@@ -978,6 +989,7 @@ export interface OpenPRMessage {
   type: "agentManager.openPR"
   projectId?: string
   worktreeId: string
+  url?: string
 }
 
 export interface ApplyWorktreeDiffMessage {
@@ -1242,6 +1254,16 @@ export interface RequestRecentsMessage {
   type: "requestRecents"
 }
 
+export interface RecordModelUsageMessage {
+  type: "recordModelUsage"
+  providerID: string
+  modelID: string
+}
+
+export interface RequestModelUsageMessage {
+  type: "requestModelUsage"
+}
+
 export interface PersistModelSelectorExpandedRequest {
   type: "persistModelSelectorExpanded"
   value: boolean
@@ -1378,6 +1400,7 @@ export type WebviewMessage =
   | RefreshProfileRequest
   | OpenExternalRequest
   | OpenSettingsPanelRequest
+  | OpenProfilePanelRequest
   | OpenVSCodeSettingsRequest
   | OpenConfigFileRequest
   | OpenMarketplacePanelRequest
@@ -1429,6 +1452,7 @@ export type WebviewMessage =
   | UpdateSettingRequest
   | RequestTimelineSettingMessage
   | RequestThroughputSettingMessage
+  | RequestAutoApprovalReasonSettingMessage
   | RequestWorkStyleMessage
   | SetWorkStyleMessage
   | ApplyWorkStyleMessage
@@ -1559,6 +1583,8 @@ export type WebviewMessage =
   | FetchCustomProviderModelsMessage
   | PersistRecentsRequest
   | RequestRecentsMessage
+  | RecordModelUsageMessage
+  | RequestModelUsageMessage
   | PersistModelSelectorExpandedRequest
   | RequestModelSelectorExpandedMessage
   | ToggleFavoriteRequest

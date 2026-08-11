@@ -120,7 +120,7 @@ describe("validateCustomProvider – variant name validation", () => {
     ]
     const out = validateCustomProvider(args(form))
     expect(out.result).toBeUndefined()
-    expect(out.errors.models[0].variants?.[0]?.name).toBe("provider.custom.error.required")
+    expect(out.errors.models[0].variants?.[0]?.name).toBe('variants[""]: provider.custom.error.required')
   })
 
   it("blocks submit and reports error when reasoning is enabled with a whitespace-only variant name", () => {
@@ -139,7 +139,7 @@ describe("validateCustomProvider – variant name validation", () => {
     ]
     const out = validateCustomProvider(args(form))
     expect(out.result).toBeUndefined()
-    expect(out.errors.models[0].variants?.[0]?.name).toBe("provider.custom.error.required")
+    expect(out.errors.models[0].variants?.[0]?.name).toBe('variants["   "]: provider.custom.error.required')
   })
 
   it("blocks submit and reports duplicate error for two variants with the same name", () => {
@@ -167,7 +167,7 @@ describe("validateCustomProvider – variant name validation", () => {
     ]
     const out = validateCustomProvider(args(form))
     expect(out.result).toBeUndefined()
-    expect(out.errors.models[0].variants?.[1]?.name).toBe("provider.custom.error.duplicate")
+    expect(out.errors.models[0].variants?.[1]?.name).toBe('variants["fast"]: provider.custom.error.duplicate')
   })
 
   it("ignores variants entirely when reasoning is disabled, even if they have empty names", () => {
@@ -231,79 +231,6 @@ describe("validateCustomProvider – variant name validation", () => {
         reasoning_split: false,
         effort: "max",
         reasoningEffort: "low",
-      },
-    })
-  })
-
-  it("preserves provider-native variant fields while saving known edits", () => {
-    const form = base()
-    form.models[0].reasoning = true
-    form.models[0].variants = [
-      {
-        name: "xhigh",
-        extras: { reasoning: { effort: "xhigh" } },
-        enableThinking: undefined,
-        thinking: undefined,
-        splitReasoning: undefined,
-        outputEffort: undefined,
-        reasoningEffort: undefined,
-        chatTemplateArgs: undefined,
-      },
-      {
-        name: "high",
-        extras: {
-          thinking: { display: "summarized" },
-          thinkingConfig: { includeThoughts: true, thinkingLevel: "high" },
-        },
-        enableThinking: undefined,
-        thinking: "adaptive",
-        splitReasoning: undefined,
-        outputEffort: undefined,
-        reasoningEffort: "high",
-        chatTemplateArgs: undefined,
-      },
-    ]
-
-    const out = validateCustomProvider(args(form))
-    expect(out.result).toBeDefined()
-    const saved = out.result!.config.models["model-1"] as { variants: Record<string, unknown> }
-    expect(saved.variants).toEqual({
-      xhigh: { reasoning: { effort: "xhigh" } },
-      high: {
-        thinking: { display: "summarized", type: "adaptive" },
-        thinkingConfig: { includeThoughts: true, thinkingLevel: "high" },
-        reasoningEffort: "high",
-      },
-    })
-  })
-
-  it("drops preserved object fragments when their required editable field is unset", () => {
-    const form = base()
-    form.models[0].reasoning = true
-    form.models[0].variants = [
-      {
-        name: "high",
-        extras: {
-          thinking: { display: "summarized" },
-          chat_template_args: { extra: true },
-          thinkingConfig: { includeThoughts: true, thinkingLevel: "high" },
-        },
-        enableThinking: undefined,
-        thinking: undefined,
-        splitReasoning: undefined,
-        outputEffort: undefined,
-        reasoningEffort: "high",
-        chatTemplateArgs: undefined,
-      },
-    ]
-
-    const out = validateCustomProvider(args(form))
-    expect(out.result).toBeDefined()
-    const saved = out.result!.config.models["model-1"] as { variants: Record<string, unknown> }
-    expect(saved.variants).toEqual({
-      high: {
-        thinkingConfig: { includeThoughts: true, thinkingLevel: "high" },
-        reasoningEffort: "high",
       },
     })
   })
@@ -525,6 +452,34 @@ describe("validateCustomProvider – variant name validation", () => {
     expect(out.errors.models[0].contextLimit).toBe("provider.custom.error.tokenLimit")
   })
 
+  it("preserves opaque variant options after the editor controls are removed", () => {
+    const form = base()
+    const raw = {
+      thinking: { type: "adaptive", display: "summarized" },
+      reasoningSummary: "auto",
+      include: ["reasoning.encrypted_content"],
+      customOption: { enabled: true },
+    }
+    form.models[0].reasoning = true
+    form.models[0].variants = [
+      {
+        name: "high",
+        raw,
+        enableThinking: undefined,
+        thinking: "adaptive",
+        splitReasoning: undefined,
+        outputEffort: undefined,
+        reasoningEffort: undefined,
+        chatTemplateArgs: undefined,
+      },
+    ]
+
+    const out = validateCustomProvider(args(form))
+    expect(out.result).toBeDefined()
+    const saved = out.result!.config.models["model-1"] as Record<string, unknown>
+    expect(saved.variants).toEqual({ high: raw })
+  })
+
   it("serializes image modality when supportsImages is set", () => {
     const form = base()
     form.models[0].supportsImages = true
@@ -582,5 +537,32 @@ describe("validateCustomProvider – variant name validation", () => {
     expect(out.result).toBeDefined()
     const saved = out.result!.config.models["model-1"] as Record<string, unknown>
     expect(saved.modalities).toEqual({ input: ["text", "audio", "video", "pdf"], output: ["text", "audio"] })
+  })
+
+  it("handles multiple models with reasoning and images toggled", () => {
+    const form = base()
+    // kilocode_change start - ZLF 的 ModelEntry 含 limit/cost 字段，上游测试的模型对象需补齐
+    const zlfFields = {
+      contextLimit: "",
+      outputLimit: "",
+      costEnabled: false,
+      inputCost: "",
+      outputCost: "",
+      cacheReadCost: "",
+      cacheWriteCost: "",
+    }
+    form.models = [
+      { id: "m1", name: "Model 1", reasoning: true, supportsImages: true, modalities: {}, variants: [], ...zlfFields },
+      { id: "m2", name: "Model 2", reasoning: true, supportsImages: false, modalities: {}, variants: [], ...zlfFields },
+    ]
+    // kilocode_change end
+    const out = validateCustomProvider(args(form))
+    expect(out.result).toBeDefined()
+    const m1 = out.result!.config.models["m1"] as Record<string, unknown>
+    const m2 = out.result!.config.models["m2"] as Record<string, unknown>
+    expect(m1.reasoning).toBe(true)
+    expect(m1.modalities).toEqual({ input: ["text", "image"] })
+    expect(m2.reasoning).toBe(true)
+    expect(m2.modalities).toBeUndefined()
   })
 })

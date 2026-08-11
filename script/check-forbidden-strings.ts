@@ -39,7 +39,8 @@ const forbidden: { pattern: string; reason: string; allow?: string[] }[] = [
   {
     pattern: "sst/opencode",
     reason: "old upstream org path -- should be Kilo-Org/kilocode",
-    allow: [".kilo/agent/upstream-merge.md", "script/upstream/"],
+    // docs/code-review-*：ZLF 审核文档叙述 fork 血缘时合法引用旧上游路径
+    allow: [".kilo/agent/upstream-merge.md", "script/upstream/", "docs/code-review-"],
   },
   { pattern: `"HTTP-Referer": "https://opencode.ai/"`, reason: "attributes outbound LLM traffic to upstream" },
   { pattern: `"http-referer": "https://opencode.ai/"`, reason: "attributes outbound LLM traffic to upstream" },

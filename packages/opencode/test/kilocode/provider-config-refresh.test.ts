@@ -2,6 +2,7 @@ import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Fiber, Layer } from "effect"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Global } from "@opencode-ai/core/global"
@@ -26,18 +27,23 @@ const auth = process.env.KILO_AUTH_CONTENT
 const id = ProviderV2.ID.make("13")
 const other = ProviderV2.ID.make("14")
 
-const deps = Layer.mergeAll(
-  CrossSpawnSpawner.defaultLayer,
-  FSUtil.defaultLayer,
-  Env.defaultLayer,
-  Config.defaultLayer,
-  Auth.defaultLayer,
-  Plugin.defaultLayer,
-  ModelsDev.defaultLayer,
-  RuntimeFlags.defaultLayer,
-  testInstanceStoreLayer,
+// 上游 v7.4.21 将测试层组织迁移到 LayerNode（defaultLayer/Provider.layer 已移除），
+// 依赖树由 compile 自动解析；testInstanceStoreLayer 继续提供 noop bootstrap 的 InstanceStore。
+const it = testEffect(
+  LayerNode.compile(
+    LayerNode.group([
+      Provider.node,
+      CrossSpawnSpawner.node,
+      FSUtil.node,
+      Env.node,
+      Config.node,
+      Auth.node,
+      Plugin.node,
+      ModelsDev.node,
+      RuntimeFlags.node,
+    ]),
+  ).pipe(Layer.provideMerge(testInstanceStoreLayer)),
 )
-const it = testEffect(Provider.layer.pipe(Layer.provideMerge(deps)))
 
 function config(input: {
   name?: string

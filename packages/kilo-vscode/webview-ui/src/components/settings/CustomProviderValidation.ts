@@ -67,8 +67,9 @@ type ValidateResult = {
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
 function checkVariant(v: VariantEntry, seen: Set<string>, t: Translator) {
   const n = v.name.trim()
-  if (!n) return { name: t("provider.custom.error.required") }
-  if (seen.has(n)) return { name: t("provider.custom.error.duplicate") }
+  const path = `variants[${JSON.stringify(v.name)}]`
+  if (!n) return { name: `${path}: ${t("provider.custom.error.required")}` }
+  if (seen.has(n)) return { name: `${path}: ${t("provider.custom.error.duplicate")}` }
   seen.add(n)
   return { name: undefined }
 }
@@ -161,7 +162,8 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 function serializeVariant(v: VariantEntry): [string, Record<string, unknown>] {
-  const cfg: Record<string, unknown> = { ...(v.extras ?? {}) }
+  if (v.raw) return [v.name.trim(), v.raw]
+  const cfg: Record<string, unknown> = {}
   if (v.enableThinking !== undefined) cfg.enable_thinking = v.enableThinking
   if (v.thinking !== undefined) cfg.thinking = { ...record(cfg.thinking), type: v.thinking }
   else delete cfg.thinking

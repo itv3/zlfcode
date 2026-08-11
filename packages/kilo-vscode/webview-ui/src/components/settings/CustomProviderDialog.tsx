@@ -16,6 +16,7 @@ import { useProvider } from "../../context/provider"
 import { useVSCode } from "../../context/vscode"
 import type { ExtensionMessage, ProviderAuthState, ProviderConfig } from "../../types/messages"
 import { createProviderAction } from "../../utils/provider-action"
+import { configMessage } from "../../utils/open-config"
 import {
   CUSTOM_PROVIDER_PACKAGE,
   customProviderProtocol,
@@ -38,7 +39,6 @@ import type {
 } from "./CustomProviderModelCard"
 import { validateCustomProvider } from "./CustomProviderValidation"
 import type { FormErrors, FormState, HeaderRow } from "./CustomProviderValidation"
-import { prioritizeVariants } from "./CustomProviderVariants"
 import {
   autoFillErrorKeys,
   autoFillModel,
@@ -154,18 +154,6 @@ function blankModel(): ModelEntry {
     cacheWriteCost: "",
     reasoning: false,
     variants: [],
-  }
-}
-
-function blankVariant(): VariantEntry {
-  return {
-    name: "",
-    enableThinking: undefined,
-    thinking: undefined,
-    splitReasoning: undefined,
-    reasoningEffort: undefined,
-    outputEffort: undefined,
-    chatTemplateArgs: undefined,
   }
 }
 
@@ -596,52 +584,6 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     return defaultsForModel(provider.catalogProviders(), form.npm, id)
   }
 
-  function variantNames(model: ModelEntry) {
-    const current = model.variants.map((item) => item.name.trim()).filter(Boolean)
-    if (current.length > 0) return current
-    if (!editing() || !model.reasoning || !model.id.trim()) return undefined
-    const variants = parseDefaults(defaults(model.id))
-      .map((item) => item.name.trim())
-      .filter(Boolean)
-    return variants.length > 0 ? variants : undefined
-  }
-
-  function selectVariant(i: number, name: string) {
-    const model = form.models[i]
-    if (!model) return
-
-    const source = model.variants.length > 0 ? model.variants : parseDefaults(defaults(model.id))
-    if (!source.some((item) => item.name.trim() === name.trim())) return
-
-    const variants = prioritizeVariants(source, name)
-    if (variants.length === 0) return
-    if (model.variants.length > 0 && variants === source) return
-    // 用户显式选择变体意味着重新需要 reasoning,清除此前的取消标记。
-    reasoningDeclined.delete(i)
-    if (!model.reasoning) setForm("models", i, "reasoning", true)
-    setForm("models", i, "variants", variants)
-    setErrors(
-      "models",
-      i,
-      "variants",
-      variants.map(() => ({})),
-    )
-  }
-
-  function addVariant(i: number) {
-    setForm("models", i, "variants", (items) => [...items, blankVariant()])
-    setErrors("models", i, "variants", (items) => [...(items ?? []), {}])
-  }
-
-  function removeVariant(i: number, vi: number) {
-    setForm("models", i, "variants", (items) => items.filter((_, index) => index !== vi))
-    setErrors("models", i, "variants", (items) => (items ?? []).filter((_, index) => index !== vi))
-  }
-
-  function setVariant<K extends keyof VariantEntry>(i: number, vi: number, key: K, value: VariantEntry[K]) {
-    setForm("models", i, "variants", vi, key, value)
-  }
-
   function value(item: number | undefined) {
     return item === undefined ? language.t("provider.custom.models.defaults.empty") : String(item)
   }
@@ -868,6 +810,18 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     )
   }
 
+  function toggleAllReasoning() {
+    const all = form.models.length > 0 && form.models.every((m) => m.reasoning)
+    const target = !all
+    form.models.forEach((_, i) => setForm("models", i, "reasoning", target))
+  }
+
+  function toggleAllImages() {
+    const all = form.models.length > 0 && form.models.every((m) => m.supportsImages)
+    const target = !all
+    form.models.forEach((_, i) => setForm("models", i, "supportsImages", target))
+  }
+
   function addHeader() {
     setForm("headers", (v) => [...v, { key: "", value: "" }])
     setErrors("headers", (v) => [...v, {}])
@@ -932,6 +886,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
 
   return (
     <Dialog
+      size="large"
       title={
         <IconButton
           tabIndex={-1}
@@ -948,14 +903,15 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
         style={{
           display: "flex",
           "flex-direction": "column",
-          gap: "24px",
-          padding: "0 10px 12px 10px",
+          gap: "20px",
+          padding: "0 16px 16px 16px",
           "overflow-y": "auto",
-          height: "min(calc(90vh - 72px), calc(100vh - 120px))",
-          "max-height": "min(calc(90vh - 72px), calc(100vh - 120px))",
+          flex: 1,
+          width: "100%",
+          "box-sizing": "border-box",
         }}
       >
-        <div style={{ padding: "0 10px", display: "flex", gap: "16px", "align-items": "center" }}>
+        <div style={{ display: "flex", gap: "16px", "align-items": "center" }}>
           <ProviderIcon id="synthetic" width={20} height={20} />
           <div
             style={{ "font-size": "var(--kilo-font-size-16)", "font-weight": "500", color: "var(--vscode-foreground)" }}
@@ -964,25 +920,37 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
           </div>
         </div>
 
-        <form
-          onSubmit={save}
-          style={{ padding: "0 10px 24px 10px", display: "flex", "flex-direction": "column", gap: "24px" }}
-        >
-          <div style={{ "font-size": "var(--kilo-font-size-14)", color: "var(--text-base)" }}>
-            {language.t("provider.custom.description.prefix")}
-            <a
-              href="https://kilo.ai/docs/ai-providers#custom-provider"
-              onClick={(e) => {
-                e.preventDefault()
-                vscode.postMessage({
-                  type: "openExternal",
-                  url: "https://kilo.ai/docs/ai-providers#custom-provider",
-                })
-              }}
-            >
-              {language.t("provider.custom.description.link")}
-            </a>
-            {language.t("provider.custom.description.suffix")}
+        <form onSubmit={save} style={{ display: "flex", "flex-direction": "column", gap: "20px" }}>
+          <div style={{ display: "flex", "flex-direction": "column", gap: "10px" }}>
+            <div style={{ "font-size": "var(--kilo-font-size-14)", color: "var(--text-base)" }}>
+              {language.t("provider.custom.description.prefix")}
+              <a
+                href="https://kilo.ai/docs/ai-providers#custom-provider"
+                onClick={(e) => {
+                  e.preventDefault()
+                  vscode.postMessage({
+                    type: "openExternal",
+                    url: "https://kilo.ai/docs/ai-providers#custom-provider",
+                  })
+                }}
+              >
+                {language.t("provider.custom.description.link")}
+              </a>
+              {language.t("provider.custom.description.suffix")}
+            </div>
+            <Show when={editing()}>
+              <div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="small"
+                  icon="edit"
+                  onClick={() => vscode.postMessage(configMessage("global", language.t))}
+                >
+                  {language.t("provider.custom.edit.advanced")}
+                </Button>
+              </div>
+            </Show>
           </div>
 
           <div style={{ display: "flex", "flex-direction": "column", gap: "16px" }}>
@@ -1105,30 +1073,58 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
 
           {/* 模型 */}
           <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
-            <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
-              <label
-                style={{
-                  "font-size": "var(--kilo-font-size-12)",
-                  "font-weight": "500",
-                  color: "var(--text-weak-base)",
-                }}
-              >
-                {language.t("provider.custom.models.label")}
-              </label>
-              <Show when={fetching()}>
-                <Spinner style={{ width: "12px", height: "12px" }} />
-              </Show>
+            <div
+              style={{
+                display: "flex",
+                "justify-content": "space-between",
+                "align-items": "center",
+                "flex-wrap": "wrap",
+                gap: "8px",
+              }}
+            >
+              <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+                <label
+                  style={{
+                    "font-size": "var(--kilo-font-size-12)",
+                    "font-weight": "500",
+                    color: "var(--text-weak-base)",
+                  }}
+                >
+                  {language.t("provider.custom.models.label")}
+                </label>
+                <Show when={fetching()}>
+                  <Spinner style={{ width: "12px", height: "12px" }} />
+                </Show>
+              </div>
+              <div style={{ display: "flex", gap: "8px", "align-items": "center", "flex-wrap": "wrap" }}>
+                <Button
+                  type="button"
+                  size="small"
+                  variant="ghost"
+                  onClick={toggleAllReasoning}
+                  disabled={form.models.length === 0}
+                >
+                  {language.t("provider.custom.models.toggleReasoning")}
+                </Button>
+                <Button
+                  type="button"
+                  size="small"
+                  variant="ghost"
+                  onClick={toggleAllImages}
+                  disabled={form.models.length === 0}
+                >
+                  {language.t("provider.custom.models.toggleImages")}
+                </Button>
+              </div>
             </div>
             <For each={form.models}>
               {(m, i) => (
                 <>
                   <ModelCard
                     m={m}
-                    i={i}
                     errors={errors.models[i()] ?? {}}
                     t={language.t}
                     canRemove={canRemoveModel(m)}
-                    variantNames={variantNames(m)}
                     onChangeId={(v) => fill(i(), v)}
                     onChangeName={(v) => setForm("models", i(), "name", v)}
                     onChangeSupportsImages={(v) => setForm("models", i(), "supportsImages", v)}
@@ -1145,18 +1141,6 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                       else reasoningDeclined.add(i())
                       setForm("models", i(), "reasoning", v)
                     }}
-                    onSelectVariant={(v) => selectVariant(i(), v)}
-                    onAddVariant={() => addVariant(i())}
-                    onRemoveVariant={(vi) => removeVariant(i(), vi)}
-                    onChangeVariantName={(vi, v) => setVariant(i(), vi, "name", v)}
-                    onChangeEnableThinking={(vi, v) => setVariant(i(), vi, "enableThinking", v)}
-                    onChangeThinking={(vi, v) => setVariant(i(), vi, "thinking", v)}
-                    onChangeSplitReasoning={(vi, v) => setVariant(i(), vi, "splitReasoning", v)}
-                    onChangeReasoningEffort={(vi, v) => setVariant(i(), vi, "reasoningEffort", v)}
-                    onChangeOutputEffort={(vi, v) => setVariant(i(), vi, "outputEffort", v)}
-                    onChangeChatTemplateArgs={(vi, v: ChatTemplateArgsValue) =>
-                      setVariant(i(), vi, "chatTemplateArgs", v)
-                    }
                     onRemove={() => removeModel(i())}
                   />
                   <Show when={shown(i())}>

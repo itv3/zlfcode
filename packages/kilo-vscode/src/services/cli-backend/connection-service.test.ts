@@ -500,3 +500,30 @@ describe("KiloConnectionService SSE disconnect fast probe", () => {
     expect(recovered).toBe(0)
   })
 })
+
+// kilocode_change start - 上游用例断言"置 error 等手动重试"（Retry to reconnect.），
+// ZLF 的 handleServerExit 已定制为自动恢复，改写为断言 recover 收到含退出原因的错误。
+describe("KiloConnectionService server exit handling", () => {
+  test("reports signal name when process is killed by signal", () => {
+    const service = new KiloConnectionService({} as any)
+    const svc = service as any
+    let recovered: Error | undefined
+    svc.recover = async (err: Error) => {
+      recovered = err
+    }
+    svc.handleServerExit(null, "SIGSEGV")
+    expect(recovered?.message).toBe("CLI background process exited with signal SIGSEGV. Reconnecting automatically.")
+  })
+
+  // kilocode_change end（下方用例同属改写，收尾闭合复用共享行）
+  test("reports exit code when process exits normally with code", () => {
+    const service = new KiloConnectionService({} as any)
+    const svc = service as any
+    let recovered: Error | undefined
+    svc.recover = async (err: Error) => {
+      recovered = err
+    }
+    svc.handleServerExit(1, null)
+    expect(recovered?.message).toBe("CLI background process exited with code 1. Reconnecting automatically.")
+  })
+})

@@ -174,7 +174,7 @@ export class KiloConnectionService {
         update: async () => undefined,
       } satisfies Pick<vscode.Memento, "get" | "update">)
     this.sandboxPreference = new SandboxPreference(state)
-    this.serverManager = new ServerManager(context, (code) => this.handleServerExit(code))
+    this.serverManager = new ServerManager(context, (code, signal) => this.handleServerExit(code, signal))
     this.active = vscode.window.state.focused
     this.windowStateDisposable = vscode.window.onDidChangeWindowState((ws) => {
       this.active = ws.focused
@@ -1001,12 +1001,12 @@ export class KiloConnectionService {
     this.healthFailures = 0
   }
 
-  private handleServerExit(code: number | null): void {
-    console.warn("[Kilo New] ConnectionService: CLI background process exited:", code)
-    // recover 内部带指数退避与连续失败上限：后端反复崩溃时不会形成无节流重启循环。
-    void this.recover(
-      new Error(`CLI background process exited with code ${code ?? "unknown"}. Reconnecting automatically.`),
-    )
+  private handleServerExit(code: number | null, signal: NodeJS.Signals | null): void {
+    const reason = signal ? `signal ${signal}` : `code ${code ?? "unknown"}`
+    console.warn(`[Kilo New] ConnectionService: CLI background process exited with ${reason}`)
+    // kilocode_change - ZLF：后端退出自动重连；recover 内部带指数退避与连续失败上限，
+    // 后端反复崩溃时不会形成无节流重启循环（上游为置 error 等用户手动重试）。
+    void this.recover(new Error(`CLI background process exited with ${reason}. Reconnecting automatically.`))
   }
 
   /**

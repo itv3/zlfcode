@@ -61,7 +61,21 @@ const WEBVIEW_ROOTS = [
 ]
 
 const pools = [
-  { name: "app", dict: appEn, roots: WEBVIEW_ROOTS, runtime: ["settings.providers.note."] },
+  {
+    name: "app",
+    dict: appEn,
+    roots: WEBVIEW_ROOTS,
+    runtime: [
+      "settings.providers.note.",
+      // kilocode_change start - 以下键由上游 en.ts 携带且上游组件引用；ZLF 定制版
+      // ProvidersTab/CustomProviderDialog 未采纳对应 UI 区块。从 locale 删除会在每次
+      // 上游合并时回流并制造冲突，故豁免而不删。
+      "settings.providers.section.popular",
+      "provider.custom.field.providerID.placeholder",
+      "provider.custom.field.apiKey.description",
+      // kilocode_change end
+    ],
+  },
   // kilo-i18n also overrides upstream ui.* keys consumed by components in
   // packages/ui/src (and the TUI), so those count as usage too.
   {

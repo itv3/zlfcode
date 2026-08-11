@@ -165,6 +165,7 @@ export const dict = {
   "model.group.auto": "Automatiske modeller",
   "model.group.recommended": "Anbefalt",
   "model.group.favorites": "Favoritter",
+  "model.group.mostUsed": "Mest brukt",
   "model.favorite.add": "Legg til i favoritter",
   "model.favorite.remove": "Fjern fra favoritter",
   "model.preview.label.released": "Utgitt",
@@ -310,6 +311,7 @@ export const dict = {
   "ui.approval.source.yolo": "av automatisk godkjenning (YOLO)",
   "ui.approval.source.session": "av en økt-autogodkjenningsregel",
   "ui.approval.source.default": "som standard",
+  "ui.approval.outsideWorkspace": "(utenfor arbeidsområdet ditt: {{file}})",
 
   "session.tab.review": "Gjennomgang",
   "session.review.filesChanged": "{{count}} filer endret",
@@ -319,6 +321,14 @@ export const dict = {
   "session.messages.loadEarlier": "Last inn tidligere meldinger",
   "session.messages.loading": "Laster meldinger...",
 
+  "sidebar.topBar.label": "Kilo Code-navigasjon",
+  "sidebar.topBar.newTask": "Ny Oppgave",
+  "sidebar.topBar.history": "Historikk",
+  "sidebar.topBar.agentManager": "Agent Manager",
+  "sidebar.topBar.kiloClaw": "KiloClaw",
+  "sidebar.topBar.marketplace": "Markedsplass",
+  "sidebar.topBar.profile": "Profil",
+  "sidebar.topBar.settings": "Innstillinger",
   "sidebar.session.newSession": "Ny Økt",
   "sidebar.session.newSession.tooltip": "Start en ny samtale mens den nåværende økten holdes intakt.",
   "sidebar.session.newWorktree": "Nytt Worktree",
@@ -449,46 +459,15 @@ export const dict = {
   "provider.custom.models.name.label": "Navn",
   "provider.custom.models.name.placeholder": "Visningsnavn",
   "provider.custom.models.reasoning.label": "Resonnering",
+  "provider.custom.models.modalities.image": "Bilde",
+  "provider.custom.models.toggleReasoning": "Veksle resonnering for alle",
+  "provider.custom.models.toggleImages": "Veksle bilde for alle",
+
+  // kilocode_change start - ZLF 自有键：limit/cost/image 配置与预设预览；
+  // variants.reasoningEffort.label 仍被预设悬停预览引用，其余变体编辑键已随上游 v7.4.21 退役
   "provider.custom.models.image.label": "Bilde",
-  "provider.custom.models.variants.label": "Varianter",
-  "provider.custom.models.variants.add": "Legg til variant",
-  "provider.custom.models.variants.remove": "Fjern variant",
-  "provider.custom.models.variants.name.label": "Navn",
-  "provider.custom.models.variants.name.placeholder": "f.eks. thinking",
-  "provider.custom.models.variants.option.unset": "(ikke angitt)",
-  "provider.custom.models.variants.enableThinking.label": "Aktiver tenkning (f.eks. Alibaba)",
-  "provider.custom.models.variants.enableThinking.placeholder": "enable_thinking",
-  "provider.custom.models.variants.enableThinking.true": "true",
-  "provider.custom.models.variants.enableThinking.false": "false",
-  "provider.custom.models.variants.thinking.label": "Tenkningstype (f.eks. Z.ai)",
-  "provider.custom.models.variants.thinking.placeholder": "thinking",
-  "provider.custom.models.variants.thinking.enabled": "enabled",
-  "provider.custom.models.variants.thinking.disabled": "disabled",
-  "provider.custom.models.variants.thinking.adaptive": "adaptive",
-  "provider.custom.models.variants.splitReasoning.label": "Split reasoning (required for e.g. MiniMax)",
-  "provider.custom.models.variants.splitReasoning.placeholder": "reasoning_split",
-  "provider.custom.models.variants.splitReasoning.true": "true",
-  "provider.custom.models.variants.splitReasoning.false": "false",
-  "provider.custom.models.variants.chatTemplateArgs.label":
-    "Aktiver tenkning via chat-malargumenter (f.eks. Hugging Face)",
-  "provider.custom.models.variants.chatTemplateArgs.placeholder": "chat_template_args",
-  "provider.custom.models.variants.chatTemplateArgs.true": "true",
-  "provider.custom.models.variants.chatTemplateArgs.false": "false",
   "provider.custom.models.variants.reasoningEffort.label": "Resonneringsinnsats",
-  "provider.custom.models.variants.reasoningEffort.placeholder": "reasoningEffort",
-  "provider.custom.models.variants.reasoningEffort.none": "none",
-  "provider.custom.models.variants.reasoningEffort.minimal": "minimal",
-  "provider.custom.models.variants.reasoningEffort.low": "low",
-  "provider.custom.models.variants.reasoningEffort.medium": "medium",
-  "provider.custom.models.variants.reasoningEffort.high": "high",
-  "provider.custom.models.variants.reasoningEffort.xhigh": "xhigh",
-  "provider.custom.models.variants.outputEffort.label": "Output effort (e.g. Anthropic)",
-  "provider.custom.models.variants.outputEffort.placeholder": "effort",
-  "provider.custom.models.variants.outputEffort.low": "low",
-  "provider.custom.models.variants.outputEffort.medium": "medium",
-  "provider.custom.models.variants.outputEffort.high": "high",
-  "provider.custom.models.variants.outputEffort.xhigh": "xhigh",
-  "provider.custom.models.variants.outputEffort.max": "max",
+  // kilocode_change end
   "provider.custom.models.remove": "Fjern modell",
   "provider.custom.models.add": "Legg til modell",
   // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
@@ -505,6 +484,7 @@ export const dict = {
   "provider.custom.models.fetch.search": "Søk etter modeller\u2026",
   "provider.custom.models.fetch.add": "Legg til {{count}} modell(er)",
   "provider.custom.edit.title": "Rediger leverandør",
+  "provider.custom.edit.advanced": "Rediger avanserte innstillinger i JSON-konfigurasjonsfilen",
   "provider.custom.headers.label": "Headere (valgfritt)",
   "provider.custom.headers.key.label": "Header",
   "provider.custom.headers.key.placeholder": "Header-Name",
@@ -853,7 +833,7 @@ export const dict = {
 
   "settings.sandboxing.allowedHosts.title": "Tillatte nettverksmål",
   "settings.sandboxing.allowedHosts.description":
-    "DNS-verts- og portdestinasjoner for HTTP- og HTTPS-proxytrafikk i sandkassen. GitHub CLI og HTTPS Git trenger vanligvis github.com:443 og api.github.com:443. Endringer gjelder for nye økter.",
+    "DNS-verts- og portdestinasjoner for HTTP- og HTTPS-proxytrafikk i sandkassen. GitHub CLI og HTTPS Git trenger vanligvis github.com:443 og api.github.com:443.",
   "settings.sandboxing.writablePaths.title": "Ytterligere skrivbare baner",
   "settings.sandboxing.writablePaths.description":
     "Ytterligere filsystembaner som sandkassen tillater skriving til (f.eks. /tmp, /var/log). Disse flettes med de standardskrivbare banene når sandkassen er aktiv.",
@@ -1129,10 +1109,11 @@ export const dict = {
   "settings.display.shiftTabCycle.title": "Bytt resonnementsinnsats med Shift+Tab",
   "settings.display.shiftTabCycle.description":
     "Trykk Shift+Tab i et promptinndatafelt for å bytte til neste nivå for resonnementsinnsats. Deaktiver for å beholde Shift+Tab for tastaturnavigering av fokus.",
-  "settings.display.terminalCommand.title": "Terminal Command Blocks",
-  "settings.display.terminalCommand.description": "Choose whether terminal command blocks start expanded or collapsed.",
-  "settings.display.terminalCommand.expanded": "Expanded",
-  "settings.display.terminalCommand.collapsed": "Collapsed",
+  "settings.display.terminalCommand.title": "Blokker for terminalkommandoer",
+  "settings.display.terminalCommand.description":
+    "Velg om blokker for terminalkommandoer skal være utvidet eller skjult fra start.",
+  "settings.display.terminalCommand.expanded": "Utvidet",
+  "settings.display.terminalCommand.collapsed": "Skjult",
   "settings.display.codeEdit.title": "Blokker for kodeendringer",
   "settings.display.codeEdit.description":
     "Velg om blokker for kodeendringer og forskjeller skal være utvidet eller skjult fra start.",
@@ -1142,6 +1123,9 @@ export const dict = {
   "settings.display.tokenThroughput.title": "Vis genereringshastighet",
   "settings.display.tokenThroughput.description":
     "Vis tekstgenereringshastighet (tokens/sek) på den siste assistentmeldingen og i oppgaveoverskriften. Skjult som standard for å holde chatten ryddig.",
+  "settings.display.autoApprovalReason.title": "Vis årsak til automatisk godkjenning",
+  "settings.display.autoApprovalReason.description":
+    "Viser en linje ved verktøykall som forklarer hvorfor de ble automatisk godkjent (samsvarende regel, agentstandard, YOLO-modus osv.).",
 
   "chat.throughput.tooltip":
     "Average {{speed}} tokens/s for this turn. Includes output and reasoning tokens; excludes tool execution and waiting time.",

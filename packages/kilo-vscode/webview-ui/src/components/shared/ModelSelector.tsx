@@ -44,11 +44,12 @@ import {
   autoSummary,
   buildTriggerLabel,
   sanitizeName,
+  mostUsedModels,
+  rankModelSearch,
   type TriggerLabelSemantics,
 } from "./model-selector-utils"
 import { isVisibleModel } from "../../context/provider-utils"
 import { ModelPreview } from "./ModelPreview"
-import { searchMatch } from "../../utils/search-match"
 
 // ---------------------------------------------------------------------------
 // Row / group key helpers — single source of truth for key formatting
@@ -58,6 +59,7 @@ const CLEAR_KEY = "clear"
 const FAVORITES_KEY = "favorites"
 const AUTO_KEY = "auto"
 const RECOMMENDED_KEY = "recommended"
+const MOST_USED_KEY = "most-used"
 
 function modelKey(providerID: string, modelID: string) {
   return `${providerID}/${modelID}`
@@ -101,8 +103,9 @@ interface ModelRow {
 
 interface ModelGroup {
   key: string
-  label: string
-  providers: number
+  label?: string
+  // kilocode_change - ZLF 按显示名分组需统计组内 provider 数；上游搜索结果组不带此字段，保持可选
+  providers?: number
   rows: ModelRow[]
 }
 
@@ -166,6 +169,8 @@ export interface ModelSelectorBaseProps {
   description?: string
   /** 选择器首次打开时是否显示模型详情预览。 */
   initialExpanded?: boolean
+  /** Only respond to picker events from this prompt scope. */
+  trigger?: string
 }
 
 export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
@@ -197,6 +202,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     setLocalExpanded(value)
   }
   const [search, setSearch] = createSignal("")
+  const hasSearch = () => search().trim().length > 0
   const [selectedKey, setSelectedKey] = createSignal(CLEAR_KEY)
   const [browsing, setBrowsing] = createSignal(false)
   const [navigating, setNavigating] = createSignal(false)
@@ -268,9 +274,11 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     if (!q) {
       return visibleModels()
     }
-    return visibleModels().filter(
-      (m) => searchMatch(q, m.name) || searchMatch(q, m.id) || searchMatch(q, m.providerName),
-    )
+    return rankModelSearch(visibleModels(), q, {
+      usage: session?.modelUsageHistory(),
+      favorites: new Set(session?.favoriteModels().map((item) => modelKey(item.providerID, item.modelID))),
+      recent: session?.recentModels(),
+    })
   })
 
   // Live set of favorited keys — drives star icon visual state (filled vs outline).
@@ -283,7 +291,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
 
   const favoriteModels = createMemo(() => {
     if (props.favorites === false) return []
-    if (!session || search()) return []
+    if (!session || hasSearch()) return []
     const map = new Map(visibleModels().map((m) => [modelKey(m.providerID, m.id), m]))
     const list = session
       .favoriteModels()
@@ -301,11 +309,28 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   const groups = createMemo<ModelGroup[]>(() => {
     const autos: EnrichedModel[] = []
     const recommended: EnrichedModel[] = []
+    const mostUsed: EnrichedModel[] = []
     const map = new Map<string, EnrichedModel[]>()
+
+    if (!hasSearch() && session) {
+      mostUsed.push(
+        ...mostUsedModels(
+          visibleModels().filter((model) => !isAuto(model) && model.recommendedIndex === undefined),
+          session.modelUsageHistory(),
+          favoriteKeys(),
+        ),
+      )
+    }
 
     for (const m of filtered()) {
       if (isAuto(m)) {
         autos.push(m)
+        continue
+      }
+      if (
+        !hasSearch() &&
+        mostUsed.some((item) => modelKey(item.providerID, item.id) === modelKey(m.providerID, m.id))
+      ) {
         continue
       }
       if (m.recommendedIndex !== undefined) {
@@ -356,6 +381,21 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         }
       })
 
+    if (hasSearch()) {
+      if (filtered().length === 0) return []
+      return [
+        {
+          key: "search-results",
+          rows: filtered().map((m) => ({
+            key: rowKey("model", m.providerID, m.id),
+            kind: "model",
+            model: m,
+          })),
+        },
+      ]
+    }
+
+    // kilocode_change start - ZLF 分组重排：自有 provider 在前，auto/recommended/mostUsed 居中，Kilo gateway 收尾
     const owned = rest.filter((group) => group.key !== KILO_GATEWAY_ID)
     const kilo = rest.filter((group) => group.key === KILO_GATEWAY_ID)
 
@@ -387,17 +427,32 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
           }
         : undefined
 
+    const mostUsedGroup: ModelGroup | undefined =
+      mostUsed.length > 0
+        ? {
+            key: MOST_USED_KEY,
+            label: language.t("model.group.mostUsed"),
+            providers: providerCount(mostUsed),
+            rows: mostUsed.map((m) => ({
+              key: rowKey("model", m.providerID, m.id),
+              kind: "model",
+              model: m,
+            })),
+          }
+        : undefined
+
     return [
       ...result,
       ...owned,
       ...(autoGroup ? [autoGroup] : []),
       ...(recommendedGroup ? [recommendedGroup] : []),
+      ...(mostUsedGroup ? [mostUsedGroup] : []),
       ...kilo,
     ]
+    // kilocode_change end
   })
 
-  // Collapse state is honored even during search so users can skip past
-  // large providers (e.g. Kilo Gateway) without scrolling through every match.
+  // Search results are flattened so matching provider variants stay adjacent.
   const isGroupOpen = (key: string) => !collapsed().has(key)
 
   function toggleGroup(key: string) {
@@ -416,7 +471,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
 
   const rows = createMemo<ModelRow[]>(() => {
     const c = collapsed()
-    const list = groups().flatMap((g) => (c.has(g.key) ? [] : g.rows))
+    const list = groups().flatMap((g) => (hasSearch() || !c.has(g.key) ? g.rows : []))
     if (!props.allowClear) return list
     return [{ key: CLEAR_KEY, kind: "clear" }, ...list]
   })
@@ -425,6 +480,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     const result: ModelNode[] = []
     if (props.allowClear) result.push({ key: CLEAR_KEY, kind: "row", row: { key: CLEAR_KEY, kind: "clear" } })
     for (const group of groups()) {
+      if (hasSearch()) {
+        result.push(...group.rows.map((row) => ({ key: row.key, kind: "row" as const, row, group })))
+        continue
+      }
       result.push({ key: groupKey(group.key), kind: "group", group })
       if (!isGroupOpen(group.key)) continue
       result.push(...group.rows.map((row) => ({ key: row.key, kind: "row" as const, row, group })))
@@ -448,7 +507,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     if (!m) return props.allowClear ? CLEAR_KEY : defaultKey()
     const key = modelKey(m.providerID, m.id)
     const favorite = favoriteKey(m)
-    if (!search() && favoriteKeys().has(key) && rowMap().has(favorite)) return favorite
+    if (!hasSearch() && favoriteKeys().has(key) && rowMap().has(favorite)) return favorite
     return canonicalKey(m)
   }
   const chosen = (row: ModelRow) => {
@@ -511,15 +570,17 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
       const match = list[0]
       const first = match ? canonicalKey(match) : null
       const next =
-        canon && rowMap().has(canon)
-          ? canon
-          : first && rowMap().has(first)
-            ? first
-            : props.allowClear
-              ? CLEAR_KEY
-              : defaultKey()
+        hasSearch() && first
+          ? first
+          : canon && rowMap().has(canon)
+            ? canon
+            : first && rowMap().has(first)
+              ? first
+              : props.allowClear
+                ? CLEAR_KEY
+                : defaultKey()
       setSelectedKey(next)
-      setBrowsing(!!search() && nodeMap().has(next))
+      setBrowsing(hasSearch() && (!!first || props.allowClear === true))
       setNavigating(false)
       setPreActiveKey(next)
       setPreviewKey(next)
@@ -565,7 +626,11 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
 
   // Register before the popover mounts so programmatic slash-command opens
   // always restore the prompt before the popover's own Escape handler runs.
-  const onTrigger = () => setOpen(true)
+  const onTrigger = (event: Event) => {
+    const source = (event as CustomEvent<{ source?: string }>).detail?.source
+    if (source !== props.trigger) return
+    setOpen(true)
+  }
   const onEscape = (e: KeyboardEvent) => {
     if (!open() || e.key !== "Escape") return
     e.preventDefault()
@@ -659,9 +724,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   }
 
   function horizontal(step: -1 | 1) {
+    if (hasSearch()) return
     const node = nodeMap().get(selectedKey())
     if (!node) return
-    if (node.kind === "group" && node.group) {
+    if (node.kind === "group" && node.group && node.group.label) {
       if (step === -1 && isGroupOpen(node.group.key)) {
         toggleGroup(node.group.key)
         return
@@ -975,7 +1041,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                   <path d="M4 6l4 5 4-5H4z" />
                                 </svg>
                                 <span>{group.label}</span>
-                                <Show when={!shown() && !!search()}>
+                                <Show when={!shown() && hasSearch()}>
                                   <span class="model-selector-group-match-dot" aria-hidden="true" />
                                 </Show>
                               </div>
@@ -1007,10 +1073,12 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                           const hovered = () => isSelected(row.key)
                           const preActive = () => isPreActive(row.key)
                           const starred = () => favoriteKeys().has(modelKey(model.providerID, model.id))
-                          // kilocode_change start - ZLF 按显示名分组：多 provider 组内显示来源标签
+                          // kilocode_change start - ZLF 按显示名分组：多 provider 组内显示来源标签；上游搜索态也显示 provider
                           const group = node.group
                           const showProvider = () =>
-                            row.kind === "favorite" || (props.groupByDisplayName === true && (group?.providers ?? 0) > 1)
+                            row.kind === "favorite" ||
+                            hasSearch() ||
+                            (props.groupByDisplayName === true && (group?.providers ?? 0) > 1)
                           const source = () =>
                             props.groupByDisplayName === true && row.kind !== "favorite" && (group?.providers ?? 0) > 1
                               ? model.providerID

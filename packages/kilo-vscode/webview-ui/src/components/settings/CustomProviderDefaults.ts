@@ -71,34 +71,11 @@ function field(current: string, value: number | undefined) {
   return text(value)
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
-}
-
-function rest(value: unknown, key: string) {
-  const item = record(value)
-  if (!item) return undefined
-  const next = { ...item }
-  delete next[key]
-  return Object.keys(next).length > 0 ? next : undefined
-}
-
 export function parseVariant([name, cfg]: [string, Record<string, unknown>]): VariantEntry {
-  const extras = { ...cfg }
-  delete extras.enable_thinking
-  delete extras.reasoning_split
-  delete extras.reasoningEffort
-  delete extras.effort
-  const thinking = rest(cfg.thinking, "type")
-  const args = rest(cfg.chat_template_args, "enable_thinking")
-  if (thinking) extras.thinking = thinking
-  else delete extras.thinking
-  if (args) extras.chat_template_args = args
-  else delete extras.chat_template_args
-
   return {
     name,
-    extras: Object.keys(extras).length > 0 ? extras : undefined,
+    // 变体编辑 UI 已随上游 v7.4.21 退役，原配置整体透传（raw），保存时原样写回。
+    raw: Object.keys(cfg).length > 0 ? cfg : undefined,
     enableThinking: typeof cfg.enable_thinking === "boolean" ? cfg.enable_thinking : undefined,
     thinking:
       typeof cfg.thinking === "object" && cfg.thinking !== null
@@ -126,7 +103,7 @@ export function parseDefaults(defaults: CustomProviderDefaults) {
         item.reasoningEffort !== undefined ||
         item.outputEffort !== undefined ||
         item.chatTemplateArgs !== undefined ||
-        item.extras !== undefined,
+        item.raw !== undefined,
     )
 }
 
