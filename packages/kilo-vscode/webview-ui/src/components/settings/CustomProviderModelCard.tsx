@@ -1,6 +1,7 @@
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
+import { Select } from "@kilocode/kilo-ui/select"
 import { TextField } from "@kilocode/kilo-ui/text-field"
-import { Show } from "solid-js"
+import { Show, createMemo } from "solid-js"
 import { useLanguage } from "../../context/language"
 
 export type Translator = ReturnType<typeof useLanguage>["t"]
@@ -73,6 +74,10 @@ type ModelCardProps = {
   }
   t: Translator
   canRemove: boolean
+  // kilocode_change start - ZLF 定制：「默认推理强度」选择器（把选中变体置顶为默认档）
+  variantNames?: string[]
+  onSelectVariant: (val: string) => void
+  // kilocode_change end
   onChangeId: (val: string) => void
   onChangeName: (val: string) => void
   onChangeReasoning: (val: boolean) => void
@@ -89,8 +94,19 @@ type ModelCardProps = {
   onRemove: () => void
 }
 
+// kilocode_change - 变体名首字母大写用于「默认推理强度」下拉展示
+function format(item: string) {
+  return item.charAt(0).toUpperCase() + item.slice(1)
+}
+
 export function ModelCard(props: ModelCardProps) {
   const issue = () => props.errors.variants?.find((error) => error.name)?.name
+  // kilocode_change start - ZLF 定制：可选默认档位 = 已有变体名，否则由 Dialog 传入预设档位名
+  const opts = createMemo(() =>
+    (props.variantNames ?? props.m.variants.map((item) => item.name)).map((item) => item.trim()).filter(Boolean),
+  )
+  const current = createMemo(() => opts()[0])
+  // kilocode_change end
 
   return (
     <div
@@ -219,6 +235,36 @@ export function ModelCard(props: ModelCardProps) {
           />
           {props.t("provider.custom.models.cost.label")}
         </label>
+        {/* kilocode_change end */}
+
+        {/* kilocode_change start - ZLF 定制：默认推理强度选择器（选中档位置顶为模型默认） */}
+        <Show when={props.m.reasoning && opts().length > 0}>
+          <div style={{ display: "flex", "align-items": "center", gap: "8px", flex: "0 1 auto", "min-width": "0" }}>
+            <span
+              style={{
+                "font-size": "var(--kilo-font-size-13)",
+                color: "var(--vscode-foreground)",
+                flex: "0 0 auto",
+                "white-space": "nowrap",
+              }}
+            >
+              {props.t("provider.custom.models.variants.default.label")}
+            </span>
+            <div style={{ width: "112px", "min-width": "92px" }}>
+              <Select<string>
+                options={opts()}
+                current={current()}
+                value={(o) => o}
+                label={format}
+                onSelect={(o) => o && props.onSelectVariant(o)}
+                placeholder={props.t("provider.custom.models.variants.reasoningEffort.placeholder")}
+                variant="secondary"
+                size="small"
+                triggerVariant="settings"
+              />
+            </div>
+          </div>
+        </Show>
         {/* kilocode_change end */}
       </div>
 

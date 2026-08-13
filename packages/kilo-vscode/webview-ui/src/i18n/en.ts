@@ -429,6 +429,8 @@ export const dict = {
   "provider.custom.models.cacheWriteCost.label": "Cache write ($/1M)",
   "provider.custom.models.cost.placeholder": "e.g. 3.00",
   "provider.custom.models.variants.reasoningEffort.label": "Reasoning effort",
+  "provider.custom.models.variants.default.label": "Default reasoning effort",
+  "provider.custom.models.variants.reasoningEffort.placeholder": "reasoningEffort",
   // kilocode_change end
   "provider.custom.models.remove": "Remove model",
   "provider.custom.models.add": "Add model",

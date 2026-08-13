@@ -420,6 +420,7 @@ export const dict = {
   "provider.custom.models.add": "افزودن مدل",
   // kilocode_change - ZLF 预设悬停预览仍引用该键，上游删除变体编辑键时被一并带走，恢复 v7.4.20 原译文
   "provider.custom.models.variants.reasoningEffort.label": "سطح استدلال",
+  "provider.custom.models.variants.reasoningEffort.placeholder": "reasoningEffort",
   // kilocode_change: 上游 #12602 删除了该键但 ZLF 定制的 CustomProviderDialog.tsx
   // 仍在使用；上游 v7.4.18 新增 fa 语言时自然缺失，合并 v7.4.20 时补齐。
   "provider.custom.models.fetch.error": "دریافت مدل‌ها ناموفق بود: {{error}}",

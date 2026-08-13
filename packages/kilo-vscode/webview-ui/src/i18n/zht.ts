@@ -454,6 +454,8 @@ export const dict = {
   "provider.custom.models.cacheWriteCost.label": "快取寫入成本",
   "provider.custom.models.cost.placeholder": "例如 3.00",
   "provider.custom.models.variants.reasoningEffort.label": "推理強度",
+  "provider.custom.models.variants.default.label": "預設推理強度",
+  "provider.custom.models.variants.reasoningEffort.placeholder": "reasoningEffort",
   // kilocode_change end
   "provider.custom.models.remove": "移除模型",
   "provider.custom.models.add": "新增模型",

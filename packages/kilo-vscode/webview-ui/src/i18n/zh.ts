@@ -494,6 +494,8 @@ export const dict = {
   "provider.custom.models.cacheWriteCost.label": "缓存写入 ($/1M)",
   "provider.custom.models.cost.placeholder": "例如 3.00",
   "provider.custom.models.variants.reasoningEffort.label": "推理强度",
+  "provider.custom.models.variants.default.label": "默认推理强度",
+  "provider.custom.models.variants.reasoningEffort.placeholder": "reasoningEffort",
   // kilocode_change end
   "provider.custom.models.remove": "移除模型",
   "provider.custom.models.add": "添加模型",

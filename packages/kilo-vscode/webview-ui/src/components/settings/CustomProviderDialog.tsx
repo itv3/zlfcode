@@ -37,6 +37,7 @@ import type {
   ThinkingTypeValue,
   VariantEntry,
 } from "./CustomProviderModelCard"
+import { prioritizeVariants } from "./CustomProviderVariants"
 import { validateCustomProvider } from "./CustomProviderValidation"
 import type { FormErrors, FormState, HeaderRow } from "./CustomProviderValidation"
 import {
@@ -584,6 +585,42 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     return defaultsForModel(provider.catalogProviders(), form.npm, id)
   }
 
+  // kilocode_change start - ZLF 定制：「默认推理强度」选择器的数据源与选择处理。
+  // 可选档位 = 已有变体名，编辑态无变体时回退到预设目录的变体名；
+  // 选择后经 prioritizeVariants 置顶为默认档并物化进表单，保存时顺序即默认语义。
+  function variantNames(model: ModelEntry) {
+    const current = model.variants.map((item) => item.name.trim()).filter(Boolean)
+    if (current.length > 0) return current
+    if (!editing() || !model.reasoning || !model.id.trim()) return undefined
+    const variants = parseDefaults(defaults(model.id))
+      .map((item) => item.name.trim())
+      .filter(Boolean)
+    return variants.length > 0 ? variants : undefined
+  }
+
+  function selectVariant(i: number, name: string) {
+    const model = form.models[i]
+    if (!model) return
+
+    const source = model.variants.length > 0 ? model.variants : parseDefaults(defaults(model.id))
+    if (!source.some((item) => item.name.trim() === name.trim())) return
+
+    const variants = prioritizeVariants(source, name)
+    if (variants.length === 0) return
+    if (model.variants.length > 0 && variants === source) return
+    // 用户显式选择变体意味着重新需要 reasoning,清除此前的取消标记。
+    reasoningDeclined.delete(i)
+    if (!model.reasoning) setForm("models", i, "reasoning", true)
+    setForm("models", i, "variants", variants)
+    setErrors(
+      "models",
+      i,
+      "variants",
+      variants.map(() => ({})),
+    )
+  }
+  // kilocode_change end
+
   function value(item: number | undefined) {
     return item === undefined ? language.t("provider.custom.models.defaults.empty") : String(item)
   }
@@ -909,6 +946,9 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
           flex: 1,
           width: "100%",
           "box-sizing": "border-box",
+          // kilocode_change - Dialog 的 fit 模式把 dialog-container 高度置为 auto（无上限），
+          // 模型多时内容区撑破视口且无法滚动；恢复 ZLF 的视口限高，保证 overflow-y 生效。
+          "max-height": "min(calc(90vh - 72px), calc(100vh - 120px))",
         }}
       >
         <div style={{ display: "flex", gap: "16px", "align-items": "center" }}>
@@ -1125,6 +1165,8 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                     errors={errors.models[i()] ?? {}}
                     t={language.t}
                     canRemove={canRemoveModel(m)}
+                    variantNames={variantNames(m)}
+                    onSelectVariant={(v) => selectVariant(i(), v)}
                     onChangeId={(v) => fill(i(), v)}
                     onChangeName={(v) => setForm("models", i(), "name", v)}
                     onChangeSupportsImages={(v) => setForm("models", i(), "supportsImages", v)}

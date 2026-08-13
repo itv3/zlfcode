@@ -452,6 +452,7 @@ export const dict = {
   // variants.reasoningEffort.label 仍被预设悬停预览引用，其余变体编辑键已随上游 v7.4.21 退役
   "provider.custom.models.image.label": "Görüntü",
   "provider.custom.models.variants.reasoningEffort.label": "Akıl yürütme çabası",
+  "provider.custom.models.variants.reasoningEffort.placeholder": "reasoningEffort",
   // kilocode_change end
   "provider.custom.models.remove": "Modeli kaldır",
   "provider.custom.models.add": "Model ekle",

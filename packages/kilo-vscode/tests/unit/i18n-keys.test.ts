@@ -278,6 +278,7 @@ const APP_PLUS_KEYS = new Set([
   "provider.custom.models.cacheWriteCost.label",
   "provider.custom.models.cost.placeholder",
   "provider.custom.field.apiKey.placeholder.saved",
+  "provider.custom.models.variants.default.label",
   "provider.custom.models.defaults.title",
   "provider.custom.models.defaults.description",
   "provider.custom.models.defaults.yes",

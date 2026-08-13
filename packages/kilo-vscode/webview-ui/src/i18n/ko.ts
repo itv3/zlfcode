@@ -461,6 +461,7 @@ export const dict = {
   // variants.reasoningEffort.label 仍被预设悬停预览引用，其余变体编辑键已随上游 v7.4.21 退役
   "provider.custom.models.image.label": "이미지",
   "provider.custom.models.variants.reasoningEffort.label": "추론 노력",
+  "provider.custom.models.variants.reasoningEffort.placeholder": "reasoningEffort",
   // kilocode_change end
   "provider.custom.models.remove": "모델 제거",
   "provider.custom.models.add": "모델 추가",
