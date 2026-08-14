@@ -143,6 +143,14 @@ export const readOnlyBash: Record<string, "allow" | "ask" | "deny"> = {
   "man *-H*": "deny",
 }
 
+const exploreBash: Record<string, "allow" | "ask" | "deny"> = {
+  ...readOnlyBash,
+  // Explore runs as a delegated agent, so it cannot answer permission prompts.
+  "gh *": "deny",
+  // `find` can mutate through `-delete` and `-exec`; use glob/list instead.
+  "find *": "deny",
+}
+
 function askGuard(mcp: Record<string, "allow" | "ask" | "deny"> = {}) {
   return Permission.fromConfig({
     "*": "deny",
@@ -160,7 +168,6 @@ function askGuard(mcp: Record<string, "allow" | "ask" | "deny"> = {}) {
     question: "allow",
     webfetch: "allow",
     websearch: "allow",
-    codebase_search: "allow",
     semantic_search: "allow",
     external_directory: {
       [Truncate.GLOB]: "allow",
@@ -224,6 +231,20 @@ export function hardenPlan(
   item.permission = Permission.merge(item.permission, planEditGuard(worktree), ...edit)
 }
 
+export function hardenExplore(
+  key: string,
+  item: { permission: Permission.Ruleset },
+  ...explicit: Permission.Ruleset[]
+) {
+  if (key !== "explore") return
+  item.permission = Permission.merge(
+    item.permission,
+    Permission.fromConfig({ bash: exploreBash }),
+    // Hardening is a ceiling, so retain any stricter user-authored denies.
+    ...explicit.map(denies),
+  )
+}
+
 function planGuard(worktree: string, mcp: Record<string, "allow" | "ask" | "deny"> = {}) {
   return Permission.fromConfig({
     "*": "deny",
@@ -247,7 +268,6 @@ function planGuard(worktree: string, mcp: Record<string, "allow" | "ask" | "deny
     list: "allow",
     webfetch: "allow",
     websearch: "allow",
-    codebase_search: "allow",
     semantic_search: "allow",
     external_directory: {
       [Truncate.GLOB]: "allow",
@@ -373,7 +393,7 @@ export function telemetryOptions(_cfg: Config.Info) {
 // Patch the base agents map in-place with all kilo-specific changes:
 // - Rename build → code
 // - Patch plan with readOnlyBash, mcpRules, .kilo paths
-// - Patch explore with codebase_search and conditional prompt
+// - Patch explore permissions and prompt
 // - Patch appropriate agents with semantic_search
 // - Add debug, orchestrator, ask agents
 export function patchAgents(
@@ -436,7 +456,7 @@ export function patchAgents(
     }
   }
 
-  // Patch explore with codebase_search and conditional prompt
+  // Patch explore permissions and prompt
   if (agents.explore) {
     agents.explore = {
       ...agents.explore,
@@ -447,11 +467,9 @@ export function patchAgents(
           grep: "allow",
           glob: "allow",
           list: "allow",
-          bash: "allow",
           skill: "allow",
           webfetch: "allow",
           websearch: "allow",
-          codebase_search: "allow",
           semantic_search: "allow",
           read: "allow",
           external_directory: {
@@ -465,10 +483,11 @@ export function patchAgents(
           },
         }),
         user,
+        // Explore is always delegated, so user allows cannot make its shell writable.
+        Permission.fromConfig({ bash: exploreBash }),
+        denies(user),
       ),
-      prompt: cfg.experimental?.codebase_search
-        ? `Prefer using the codebase_search tool for codebase searches — it performs intelligent multi-step code search and returns the most relevant code spans.\n\n${PROMPT_EXPLORE}`
-        : PROMPT_EXPLORE,
+      prompt: PROMPT_EXPLORE,
     }
   }
 
@@ -514,7 +533,6 @@ export function patchAgents(
         todowrite: "allow",
         webfetch: "allow",
         websearch: "allow",
-        codebase_search: "allow",
         external_directory: {
           [Truncate.GLOB]: "allow",
         },

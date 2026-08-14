@@ -114,7 +114,9 @@ export function compileConfigModels(input: {
           pdf: configModel.modalities?.output?.includes("pdf") ?? existing?.capabilities.output.pdf ?? false,
         },
         interleaved:
-          configModel.interleaved ??
+          (typeof configModel.interleaved === "string"
+            ? { field: configModel.interleaved }
+            : configModel.interleaved) ??
           existing?.capabilities.interleaved ??
           (!existing && apiNpm === "@ai-sdk/openai-compatible" && apiID.includes("deepseek")
             ? { field: "reasoning_content" }
@@ -140,11 +142,14 @@ export function compileConfigModels(input: {
       ...patchConfigModel(configModel, existing),
     }
     // 保留配置中的 variants 顺序，供自定义默认值使用。
-    // 上游 v7.4.21（#12941）：用户手写了 variants 时不再叠加自动生成的档位；
-    // 未手写时经 customProviderVariants 为 custom provider 自动推断 reasoning effort。
+    // 上游 v7.4.21（#12941）：未手写变体时经 customProviderVariants 自动推断 reasoning effort；
+    // 上游 v7.4.22（#13063 avoid default variant collision）：同 npm 的既有模型沿用其 variants
+    // 作为生成基底，避免重建时把用户已保存的默认档顺序冲掉。与 provider.ts 全量构建逐语句对应。
+    const baseGenerate = (m: Model) =>
+      existing?.api.npm === m.api.npm ? (existing.variants ?? ProviderTransform.variants(m)) : ProviderTransform.variants(m)
     const generated = Object.keys(configModel.variants ?? {}).length
       ? {}
-      : customProviderVariants(model, configModel.provider?.npm ?? config.npm, ProviderTransform.variants)
+      : customProviderVariants(model, configModel.provider?.npm ?? config.npm, baseGenerate)
     model.variants = orderedVariants(generated, configModel.variants ?? {})
     input.models[modelID] = model
   }

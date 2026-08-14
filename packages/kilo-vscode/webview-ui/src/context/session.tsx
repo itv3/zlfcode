@@ -66,6 +66,7 @@ import {
   buildCostBreakdown,
   buildSessionToolParts,
   childID,
+  dropSet,
   reconcileSessionToolParts,
   removeSessionToolPart,
   removeSessionToolPartsForMessage,
@@ -92,15 +93,10 @@ import { clearIfOn, createCloudPrune } from "./session-cloud-prune"
 import { isSameSessionTree } from "./model-usage"
 import { isModelUsable } from "./provider-utils"
 import { createDraftAgentSeed } from "./session-agent"
+import { createModelSelector } from "./session-model-selector"
 
 const RECENT_LIMIT = 5
 const MESSAGE_PAGE_LIMIT = 80
-/** Remove ids from a Set immutably, returning the original when nothing changed. */
-function dropSet(prev: Set<string>, ids: Iterable<string>): Set<string> {
-  const next = new Set(prev)
-  for (const id of ids) next.delete(id)
-  return next.size === prev.size ? prev : next
-}
 
 type MessageMutation = Exclude<MessageLoadMode, "focus"> | "append" | "update"
 
@@ -249,7 +245,7 @@ interface SessionContextValue {
   variantList: (sessionID?: string) => string[]
   currentVariant: (sessionID?: string) => string | undefined
   variantForAgent: (agent: string, model: ModelSelection | null) => string | undefined
-  selectVariant: (value: string, sessionID?: string) => void
+  selectVariant: (value: string | undefined, sessionID?: string) => void
 
   // Model favorites
   recentModels: Accessor<ModelSelection[]>
@@ -695,21 +691,18 @@ export const SessionProvider: ParentComponent = (props) => {
   })
   const { carry: carryVariant, list: variantList, agent: variantForAgent, current: currentVariant } = variants
   const selectVariant = variants.select
-
-  function selectModel(providerID: string, modelID: string, sessionID?: string) {
-    const sid = sessionID ?? currentSessionID()
-    const agent = agentForScope(sid)
-    const current = selected(sid)
-    const value = current ? currentVariant(sid) : undefined
-    const selection = { providerID, modelID }
-    // kilocode_change start - 不可用模型被 applyModel 忽略时，不携带变体也不清理错误提示
-    const applied = applyModel(agent, selection, sid)
-    if (applied) carryVariant(selection, value, agent, sid)
-    if (applied && sid) {
-      // kilocode_change end
-      hideErrors(sid)
-    }
-  }
+  const models = createModelSelector({
+    current: currentSessionID,
+    agent: agentForScope,
+    selected,
+    variant: currentVariant,
+    apply: applyModel,
+    valid: validModel, // kilocode_change - 不可用模型不写入会话覆盖（工厂内检查）
+    set: (id, selection) => setStore("sessionOverrides", id, selection),
+    carry: carryVariant,
+    hide: hideErrors,
+  })
+  const selectModel = models.select
 
   function selectKiloModel(modelID?: string, agent?: string) {
     if (!modelID && !agent) return
@@ -1431,8 +1424,9 @@ export const SessionProvider: ParentComponent = (props) => {
     }
     if (model && prefs.variant) {
       const agent = prefs.agent ?? store.agentSelections[sessionID] ?? defaultAgent()
+      // kilocode_change - key 用 recoverModel 校验后的 model；判定沿用上游 === undefined 以保留显式默认变体
       const key = variantKey(model, agent, sessionID)
-      if (!store.variantSelections[key]) setStore("variantSelections", key, prefs.variant)
+      if (store.variantSelections[key] === undefined) setStore("variantSelections", key, prefs.variant)
     }
   }
 
@@ -3032,24 +3026,7 @@ export const SessionProvider: ParentComponent = (props) => {
     selectedAgent: agentForScope,
     selectAgent,
     getSessionAgent: (sessionID: string) => store.agentSelections[sessionID] ?? defaultAgent(),
-    setSessionModel: (sessionID: string, providerID: string, modelID: string) => {
-      // Only write per-session override — do NOT touch global modelSelections or
-      // userSetAgents.  The override is what selected() actually
-      // reads, and mutating the global map here is both redundant and harmful: the
-      // agent may not yet be assigned (sendInitialMessage calls setSessionModel
-      // before setSessionAgent), so the write would land on defaultAgent() and
-      // corrupt the default mode's model for later sessions.
-      const agent = store.agentSelections[sessionID] ?? defaultAgent()
-      const current = selected(sessionID)
-      const value = current ? currentVariant(sessionID) : undefined
-      const model = { providerID, modelID }
-      if (!validModel(model)) {
-        console.warn("[Kilo New] Ignoring unavailable session model:", model)
-        return
-      }
-      setStore("sessionOverrides", sessionID, model)
-      carryVariant(model, value, agent, sessionID)
-    },
+    setSessionModel: models.session,
     setSessionAgent: (sessionID: string, name: string) => {
       setStore("agentSelections", sessionID, name)
     },
