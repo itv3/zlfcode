@@ -327,12 +327,11 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         autos.push(m)
         continue
       }
-      if (
-        !hasSearch() &&
-        mostUsed.some((item) => modelKey(item.providerID, item.id) === modelKey(m.providerID, m.id))
-      ) {
-        continue
-      }
+      // kilocode_change start - 上游会把「最常用」模型从提供商分组中剔除，导致只有
+      // 一个常用模型的自定义提供商整组消失（按提供商找模型的心智被破坏）。ZLF 改为
+      // 与收藏组一致的重复显示：最常用组是快捷入口，提供商分组始终保持完整。
+      // （原上游剔除逻辑：!hasSearch() && mostUsed.some(同 provider+id) → continue）
+      // kilocode_change end
       if (m.recommendedIndex !== undefined) {
         recommended.push(m)
         continue
@@ -443,10 +442,11 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
 
     return [
       ...result,
+      // 「最常用」快捷组紧跟收藏之后置顶（模型在下方提供商分组中仍完整可见）
+      ...(mostUsedGroup ? [mostUsedGroup] : []),
       ...owned,
       ...(autoGroup ? [autoGroup] : []),
       ...(recommendedGroup ? [recommendedGroup] : []),
-      ...(mostUsedGroup ? [mostUsedGroup] : []),
       ...kilo,
     ]
     // kilocode_change end
