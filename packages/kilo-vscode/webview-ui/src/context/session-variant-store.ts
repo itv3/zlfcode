@@ -33,6 +33,16 @@ export function variantKey(sel: ModelSelection, agent: string, session?: string)
   return `agent/${agent}/${base}`
 }
 
+// kilocode_change start - ZLF：暴露原始存储值（三态：undefined=从未选择、
+// DEFAULT_VARIANT=显式选择「默认」、其余=显式选择的档名），供「默认推理强度」
+// 回退逻辑区分「未选择」与「显式默认」。
+export function storedVariant(store: Record<string, string>, sel: ModelSelection, agent: string, session?: string) {
+  const key = variantKey(sel, agent, session)
+  const fallback = session ? store[variantKey(sel, agent)] : undefined
+  return store[key] ?? fallback ?? store[legacyVariantKey(sel)]
+}
+// kilocode_change end
+
 export function getVariant(
   store: Record<string, string>,
   sel: ModelSelection,
@@ -41,9 +51,7 @@ export function getVariant(
   session?: string,
 ) {
   if (variants.length === 0) return undefined
-  const key = variantKey(sel, agent, session)
-  const fallback = session ? store[variantKey(sel, agent)] : undefined
-  const stored = store[key] ?? fallback ?? store[legacyVariantKey(sel)]
+  const stored = storedVariant(store, sel, agent, session) // kilocode_change - 复用三态读取
   if (stored === undefined || stored === DEFAULT_VARIANT) return undefined
   return preserveVariant(stored, variants)
 }

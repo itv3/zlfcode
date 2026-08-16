@@ -2819,6 +2819,7 @@ export type Model = {
   reasoning_options?: Array<{
     [key: string]: unknown
   }>
+  defaultVariant?: string
 }
 
 export type Provider = {

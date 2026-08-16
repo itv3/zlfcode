@@ -75,6 +75,9 @@ export const KILO_MODEL_SCHEMA_EXTENSIONS = {
   ),
   ai_sdk_provider: Schema.optional(Schema.Literals(AI_SDK_PROVIDERS)),
   reasoning_options: Schema.optional(Schema.Array(Schema.Record(Schema.String, Schema.Any))),
+  // ZLF：用户在配置中手写 variants 时，第一个键即「默认推理强度」（编辑对话框置顶的档）。
+  // 编译层打标（见 compile.ts），请求层与 webview 在未显式选择变体时采用该档。
+  defaultVariant: optionalOmitUndefined(Schema.String),
 }
 
 // ---------------------------------------------------------------------------

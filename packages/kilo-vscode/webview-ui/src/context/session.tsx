@@ -82,7 +82,7 @@ import { PartStash } from "./part-stash"
 import { mergeParts } from "./session-parts"
 import { mergeMessages, sameReconcileShape } from "./session-merge"
 import { state as todoState } from "./todo-revert"
-import { sessionVariantKeys, transferVariants, variantKey } from "./session-variant-store"
+import { sessionVariantKeys, storedVariant, transferVariants, variantKey } from "./session-variant-store"
 import { createSessionVariants } from "./session-variants"
 import { KILO_AUTO, KILO_PROVIDER_ID, parseModelString } from "../../../src/shared/provider-model"
 import { reviewMetadata, type ReviewMessageData } from "../../../src/shared/review-comments"
@@ -691,11 +691,20 @@ export const SessionProvider: ParentComponent = (props) => {
   })
   const { carry: carryVariant, list: variantList, agent: variantForAgent, current: currentVariant } = variants
   const selectVariant = variants.select
+  // kilocode_change start - ZLF：切换模型时向 carry 传播「原始存储值」（三态），
+  // 而非 currentVariant 解析结果——否则未显式选择时解析出的「默认推理强度」档
+  // 会被当作显式选择带到新模型上，覆盖新模型自己的默认档。
+  const explicitVariant = (sid?: string) => {
+    const selection = selected(sid)
+    if (!selection) return undefined
+    return storedVariant(store.variantSelections, selection, agentForScope(sid), sid)
+  }
+  // kilocode_change end
   const models = createModelSelector({
     current: currentSessionID,
     agent: agentForScope,
     selected,
-    variant: currentVariant,
+    variant: explicitVariant, // kilocode_change - 见上
     apply: applyModel,
     valid: validModel, // kilocode_change - 不可用模型不写入会话覆盖（工厂内检查）
     set: (id, selection) => setStore("sessionOverrides", id, selection),

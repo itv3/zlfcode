@@ -95,10 +95,12 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     system.push(header, rest.join("\n"))
   }
 
-  const variant =
-    !input.small && input.model.variants && input.user.model.variant
-      ? input.model.variants[input.user.model.variant]
-      : {}
+  // kilocode_change start - ZLF：未显式指定变体时采用模型的「默认推理强度」
+  // （用户在自定义提供商编辑对话框置顶的档，编译层打标为 defaultVariant）。
+  // 显式指定仍优先；无打标的模型保持上游行为（不附加变体参数）。
+  const variantName = input.user.model.variant ?? input.model.defaultVariant
+  const variant = !input.small && input.model.variants && variantName ? input.model.variants[variantName] : {}
+  // kilocode_change end
   const base = input.small
     ? ProviderTransform.smallOptions(input.model)
     : ProviderTransform.options({

@@ -151,6 +151,11 @@ export function compileConfigModels(input: {
       ? {}
       : customProviderVariants(model, configModel.provider?.npm ?? config.npm, baseGenerate)
     model.variants = orderedVariants(generated, configModel.variants ?? {})
+    // ZLF：手写 variants 的第一个键 = 用户在编辑对话框选定的「默认推理强度」。
+    // 打标供请求层与 webview 在未显式选择变体时采用；自动生成的变体不打标
+    // （其顺序以 none 开头，作为默认会错误地关闭思考）。
+    const configVariantKeys = Object.keys(configModel.variants ?? {})
+    model.defaultVariant = configVariantKeys.length > 0 ? configVariantKeys[0] : existing?.defaultVariant
     input.models[modelID] = model
   }
 }

@@ -1,9 +1,18 @@
 import type { Accessor } from "solid-js"
 import type { ExtensionMessage, ModelSelection } from "../types/messages"
-import { DEFAULT_VARIANT, getAgentVariant, getVariant, preserveVariant, variantKey } from "./session-variant-store"
+import {
+  DEFAULT_VARIANT,
+  getAgentVariant,
+  getVariant,
+  preserveVariant,
+  storedVariant,
+  variantKey,
+} from "./session-variant-store"
 
 interface Model {
   variants?: Record<string, unknown>
+  // kilocode_change - ZLF：编译层打标的「默认推理强度」（配置手写 variants 的第一个键）
+  defaultVariant?: string
 }
 
 type Message = { type: "requestVariants" } | { type: "persistVariant"; key: string; value: string }
@@ -37,7 +46,15 @@ export function createSessionVariants(options: Options) {
     if (!selection) return undefined
     const variants = list(sid)
     if (variants.length === 0) return undefined
-    return getVariant(options.selections(), selection, variants, options.agent(sid), sid)
+    const value = getVariant(options.selections(), selection, variants, options.agent(sid), sid)
+    if (value !== undefined) return value
+    // kilocode_change start - ZLF：从未选择过变体时采用模型的「默认推理强度」
+    // （编辑对话框置顶的档）；显式选过「默认」（存 DEFAULT_VARIANT）保持裸发。
+    const stored = storedVariant(options.selections(), selection, options.agent(sid), sid)
+    if (stored === DEFAULT_VARIANT) return undefined
+    const fallback = options.find(selection)?.defaultVariant
+    return fallback && variants.includes(fallback) ? fallback : undefined
+    // kilocode_change end
   }
 
   const select = (value: string | undefined, sessionID?: string) => {
@@ -53,7 +70,13 @@ export function createSessionVariants(options: Options) {
   const carry = (selection: ModelSelection, value: string | undefined, name: string, sessionID?: string) => {
     const list = Object.keys(options.find(selection)?.variants ?? {})
     if (list.length === 0) return
-    const next = value === undefined ? DEFAULT_VARIANT : preserveVariant(value, list)
+    // kilocode_change start - ZLF：三态传播。undefined（从未选择）不写入，让新模型
+    // 走自己的「默认推理强度」；DEFAULT_VARIANT（显式默认）沿上游语义继续传播；
+    // 具体档名按最近档映射传播。上游原实现把「从未选择」也写成显式默认，会把
+    // 新模型的置顶默认档永久锁死为裸发。
+    const next =
+      value === undefined ? undefined : value === DEFAULT_VARIANT ? DEFAULT_VARIANT : preserveVariant(value, list)
+    // kilocode_change end
     if (next === undefined) return
     const key = variantKey(selection, name, sessionID)
     options.set(key, next)

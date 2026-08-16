@@ -34535,6 +34535,9 @@
             "items": {
               "type": "object"
             }
+          },
+          "defaultVariant": {
+            "type": "string"
           }
         },
         "required": [
