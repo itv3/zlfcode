@@ -14930,68 +14930,6 @@
         ]
       }
     },
-    "/kilocode/agent/requirements": {
-      "get": {
-        "tags": ["kilocode"],
-        "operationId": "kilocode.agentRequirements",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "agent",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Agent requirement status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentRequirementResult"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Check whether the selected agent's requirements are available in the request directory.",
-        "summary": "Check agent requirements",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.kilocode.agentRequirements({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/kilocode/command/files": {
       "get": {
         "tags": ["kilocode"],
@@ -15258,7 +15196,7 @@
             }
           }
         },
-        "description": "Remove a custom (non-native) agent by deleting its markdown file from disk and refreshing state.",
+        "description": "Remove a custom (non-native) agent from one writable configuration scope, or every writable scope when omitted, and dispose cached instance state.",
         "summary": "Remove a custom agent",
         "requestBody": {
           "content": {
@@ -15268,6 +15206,10 @@
                 "properties": {
                   "name": {
                     "type": "string"
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": ["global", "project"]
                   }
                 },
                 "required": ["name"],
@@ -33090,58 +33032,6 @@
           },
           "permission": {
             "$ref": "#/components/schemas/PermissionConfig"
-          },
-          "requirements": {
-            "type": "object",
-            "properties": {
-              "skills": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "pattern": "\\S"
-                },
-                "minItems": 1,
-                "maxItems": 20
-              },
-              "mcps": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "pattern": "\\S"
-                },
-                "minItems": 1,
-                "maxItems": 20
-              },
-              "vscode_extensions": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 128,
-                      "pattern": "\\S"
-                    },
-                    "id": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 128,
-                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
-                    }
-                  },
-                  "required": ["name", "id"],
-                  "additionalProperties": false
-                },
-                "minItems": 1,
-                "maxItems": 20
-              }
-            },
-            "additionalProperties": false
           }
         },
         "additionalProperties": {}
@@ -33268,7 +33158,7 @@
                     },
                     "ai_sdk_provider": {
                       "type": "string",
-                      "enum": ["alibaba", "anthropic", "mistral", "openai", "openai-compatible", "openrouter"]
+                      "enum": ["anthropic", "openai", "openai-compatible", "openrouter"]
                     },
                     "release_date": {
                       "type": "string"
@@ -33808,6 +33698,10 @@
             "type": "string",
             "enum": ["expanded", "collapsed"]
           },
+          "mcp_tool_display": {
+            "type": "string",
+            "enum": ["expanded", "collapsed"]
+          },
           "hide_prompt_training_models": {
             "type": "boolean"
           },
@@ -34177,9 +34071,6 @@
               "image_generation_model": {
                 "type": "string"
               },
-              "agent_requirements": {
-                "type": "boolean"
-              },
               "native_notebook_tools": {
                 "type": "boolean"
               },
@@ -34209,12 +34100,6 @@
                 "items": {
                   "type": "string"
                 }
-              },
-              "swe_pruner": {
-                "type": "boolean"
-              },
-              "swe_pruner_model": {
-                "type": "string"
               },
               "mcp_timeout": {
                 "type": "integer",
@@ -34528,7 +34413,7 @@
           },
           "ai_sdk_provider": {
             "type": "string",
-            "enum": ["alibaba", "anthropic", "mistral", "openai", "openai-compatible", "openrouter"]
+            "enum": ["anthropic", "openai", "openai-compatible", "openrouter"]
           },
           "reasoning_options": {
             "type": "array",
@@ -35405,58 +35290,6 @@
           },
           "options": {
             "type": "object"
-          },
-          "requirements": {
-            "type": "object",
-            "properties": {
-              "skills": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "pattern": "\\S"
-                },
-                "minItems": 1,
-                "maxItems": 20
-              },
-              "mcps": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "pattern": "\\S"
-                },
-                "minItems": 1,
-                "maxItems": 20
-              },
-              "vscode_extensions": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 128,
-                      "pattern": "\\S"
-                    },
-                    "id": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 128,
-                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
-                    }
-                  },
-                  "required": ["name", "id"],
-                  "additionalProperties": false
-                },
-                "minItems": 1,
-                "maxItems": 20
-              }
-            },
-            "additionalProperties": false
           },
           "steps": {
             "type": "number"
@@ -38720,102 +38553,6 @@
           }
         },
         "required": ["error"],
-        "additionalProperties": false
-      },
-      "AgentRequirementResult": {
-        "type": "object",
-        "properties": {
-          "agent": {
-            "type": "string"
-          },
-          "directory": {
-            "type": "string"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "state": {
-            "type": "string",
-            "enum": ["disabled", "ready", "blocked", "error"]
-          },
-          "skills": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string",
-                  "enum": ["ready", "missing", "error"]
-                },
-                "message": {
-                  "type": "string"
-                }
-              },
-              "required": ["name", "status"],
-              "additionalProperties": false
-            }
-          },
-          "mcps": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string",
-                  "enum": ["ready", "missing", "error"]
-                },
-                "message": {
-                  "type": "string"
-                }
-              },
-              "required": ["name", "status"],
-              "additionalProperties": false
-            }
-          },
-          "vscode_extensions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "pattern": "\\S"
-                },
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128,
-                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
-                }
-              },
-              "required": ["name", "id"],
-              "additionalProperties": false
-            }
-          },
-          "error": {
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string",
-                "enum": ["unknown_agent", "malformed_declaration", "discovery_failed", "mcp_status_failed"]
-              },
-              "message": {
-                "type": "string"
-              }
-            },
-            "required": ["code", "message"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["agent", "directory", "enabled", "state", "skills", "mcps", "vscode_extensions"],
         "additionalProperties": false
       },
       "CommandFile": {

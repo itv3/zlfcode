@@ -88,7 +88,8 @@ function glm52(model: Provider.Model) {
 }
 
 // 此函数会先于共享 provider/transform.ts 的 GLM-5.2 分支返回；升级上游时需对照同步变体形状和顺序。
-// 变体键序与上游 v7.4.16 保持一致（high 在前，更强档位在后），键序影响 UI 展示顺序
+// 变体键序与上游 v7.4.23 保持一致（high 在前，更强档位在后；v7.4.23 起上游将 GLM-5.2
+// 三个 npm 分支转正，形状已逐一对照相同），键序影响 UI 展示顺序
 // 与默认档位选择；@ai-sdk/openai 分支为 Kilo 新增（上游无），顺序对齐同族分支。
 function glm52Variants(model: Provider.Model): Record<string, Record<string, unknown>> | undefined {
   if (!model.capabilities.reasoning || !glm52(model)) return

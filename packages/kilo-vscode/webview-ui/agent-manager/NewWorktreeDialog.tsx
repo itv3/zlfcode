@@ -498,8 +498,8 @@ export const NewWorktreeDialog: Component<{
       providerID: sel?.providerID,
       modelID: sel?.modelID,
       agent: selectedAgent,
-      variant: !isCompare && sel ? effectiveVariant() : undefined,
-      baseBranch: advanced ? (baseBranch() ?? undefined) : undefined,
+      variant: !isCompare && sel ? effectiveVariant() : undefined, // kilocode_change - ZLF：未通过校验的模型不带 variant
+      baseBranch: effectiveBaseBranch(),
       branchName: customBranch,
       modelAllocations: allocations,
       sandbox: sandboxVisible() ? sandboxOverride() : undefined,
@@ -769,7 +769,6 @@ export const NewWorktreeDialog: Component<{
                     setProjectOpen(false)
                   }}
                   labels={{
-                    untrusted: t("agentManager.dialog.project.untrusted"),
                     missing: t("agentManager.dialog.project.missing"),
                   }}
                 />

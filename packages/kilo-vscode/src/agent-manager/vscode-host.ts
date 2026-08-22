@@ -111,6 +111,11 @@ export class VscodeHost implements Host {
       worktreeDirectories: () => opts.worktreeDirectories?.() ?? [],
       rootDirectory: opts.workspaceRoot,
       disableViewedRegistration: true,
+      focusTargetContext: {
+        prompt: "kilo-code.new.agentManagerPromptFocused",
+        mainTerminal: "kilo-code.new.agentManagerMainTerminalFocused",
+        sideTerminal: "kilo-code.new.agentManagerSideTerminalFocused",
+      },
       routeService: this.routes,
       projectQualifier: () => {
         const projectId = opts.projectId?.()
@@ -299,7 +304,7 @@ export class VscodeHost implements Host {
     }
   }
 
-  extensionKeybindings(): Array<{ command: string; key?: string; mac?: string }> {
+  extensionKeybindings(): Array<{ command: string; key?: string; mac?: string; when?: string }> {
     // F18：改用 extension-info 的 self() 解析当前扩展，消除硬编码的上游扩展 ID
     // kilocode.kilo-code——在 itv3.zlfcode 身份下硬编码 ID 恒返回 undefined，
     // 会导致 Agent Manager 的快捷键提示功能失效。this.context 由构造函数持有，

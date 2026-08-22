@@ -106,9 +106,7 @@ export const PROMPTS = [
 ] as const
 
 export const AI_SDK_PROVIDERS = [
-  "alibaba",
   "anthropic",
-  "mistral",
   "openai",
   "openai-compatible",
   "openrouter",

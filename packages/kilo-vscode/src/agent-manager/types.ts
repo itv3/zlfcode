@@ -63,6 +63,11 @@ export interface PRCheck {
   duration?: string
 }
 
+export interface PRCommentReply {
+  author: string
+  body: string
+}
+
 export interface PRComment {
   id: string
   threadId: string
@@ -73,8 +78,10 @@ export interface PRComment {
   line?: number
   url?: string
   resolved: boolean
+  outdated: boolean
   createdAt?: number
   diffHunk?: string
+  replies?: PRCommentReply[]
 }
 
 export type ReviewerState = "approved" | "changes_requested" | "pending" | "commented"
@@ -514,12 +521,6 @@ interface SetProjectExpandedIn {
   expanded: boolean
 }
 
-/** Grant a project permission to run project-controlled scripts and load state. */
-interface TrustProjectIn {
-  type: "agentManager.trustProject"
-  projectId: string
-}
-
 interface DeleteWorktreeIn {
   type: "agentManager.deleteWorktree"
   projectId?: string
@@ -821,6 +822,7 @@ interface LoadMessagesIn {
   type: "loadMessages"
   sessionID: string
   mode?: "replace" | "prepend" | "focus"
+  focus?: boolean
   before?: string
   limit?: number
 }
@@ -902,6 +904,7 @@ interface RequestTerminalContextIn {
   type: "requestTerminalContext"
   requestId: string
   sessionID?: string
+  agentManagerContext?: string
 }
 
 interface ClearSessionIn {
@@ -1027,7 +1030,6 @@ export type AgentManagerInMessage =
   | ActivateSelectionIn
   | RememberTargetIn
   | SetProjectExpandedIn
-  | TrustProjectIn
   | DeleteWorktreeIn
   | RemoveStaleWorktreeIn
   | PromoteSessionIn

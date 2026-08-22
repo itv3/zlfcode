@@ -2,7 +2,7 @@
   "name": "zlfcode",
   "displayName": "ZLF Code",
   "description": "ZLF Code 是面向内部使用的 AI coding agent，重点增强自定义提供商：支持 OpenAI / Anthropic / Gemini API 类型、模型自动发现、图像与推理能力、高级 token 参数和成本配置。",
-  "version": "7.4.2203",
+  "version": "7.4.2301",
   "icon": "assets/icons/zlfcode.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -294,8 +294,13 @@
         "category": "ZLF Code"
       },
       {
-        "command": "kilo-code.new.agentManager.newTerminal",
-        "title": "Agent Manager: New Terminal Tab (Experimental)",
+        "command": "kilo-code.new.agentManager.newTerminalTab",
+        "title": "Agent Manager: New Terminal Tab",
+        "category": "ZLF Code"
+      },
+      {
+        "command": "kilo-code.new.agentManager.newSideTerminal",
+        "title": "Agent Manager: New Sidebar Terminal Tab",
         "category": "ZLF Code"
       },
       {
@@ -733,13 +738,19 @@
         "command": "kilo-code.new.agentManager.newTab",
         "key": "ctrl+t",
         "mac": "cmd+t",
-        "when": "activeWebviewPanelId == 'kilo-code.new.AgentManagerPanel'"
+        "when": "activeWebviewPanelId == 'kilo-code.new.AgentManagerPanel' && !kilo-code.new.agentManagerSideTerminalFocused"
       },
       {
-        "command": "kilo-code.new.agentManager.newTerminal",
+        "command": "kilo-code.new.agentManager.newTerminalTab",
         "key": "ctrl+shift+t",
         "mac": "cmd+shift+t",
-        "when": "activeWebviewPanelId == 'kilo-code.new.AgentManagerPanel'"
+        "when": "activeWebviewPanelId == 'kilo-code.new.AgentManagerPanel' && !kilo-code.new.agentManagerSideTerminalFocused"
+      },
+      {
+        "command": "kilo-code.new.agentManager.newSideTerminal",
+        "key": "ctrl+t",
+        "mac": "cmd+t",
+        "when": "activeWebviewPanelId == 'kilo-code.new.AgentManagerPanel' && kilo-code.new.agentManagerSideTerminalFocused"
       },
       {
         "command": "kilo-code.new.agentManager.closeTab",
@@ -1186,7 +1197,7 @@
         },
         "kilo-code.new.showTokenThroughput": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Show tokens-per-second (prompt-processing / text-generation) badges on assistant messages and the task header"
         },
         "kilo-code.new.showAutoApprovalReason": {

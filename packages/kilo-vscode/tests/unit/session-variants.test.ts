@@ -68,27 +68,45 @@ describe("session variants", () => {
 
   it("persists an explicit default selection", () => {
     const state = setup()
+    state.selections["agent/code/anthropic/claude-sonnet-4"] = "high"
     state.variants.select(undefined)
     expect(state.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "" })
     expect(state.variants.current()).toBeUndefined()
     expect(state.messages).toEqual([{ type: "persistVariant", key: "agent/code/anthropic/claude-sonnet-4", value: "" }])
   })
 
-  // kilocode_change start - 上游用例断言「未显式选择也写入显式默认」，会把新模型的
-  // ZLF「默认推理强度」（编译层打标的 defaultVariant）永久锁死为裸发。ZLF 契约：
-  // 未显式选择（undefined）不写入；显式默认（DEFAULT_VARIANT）与具体档名照常传播。
+  // kilocode_change start - ZLF 契约：carry 绝不写入默认 sentinel。undefined（从未选择）
+  // 与 DEFAULT_VARIANT（显式默认）都不写入——一旦写入会把新模型的「默认推理强度」
+  // （编译层打标的 defaultVariant）永久锁死为裸发。v7.4.23 起上游 carry 同语义
+  //（preserveVariant 对 falsy 返回 undefined），此处守护防上游回退。
   it("does not persist anything when carrying an implicit default", () => {
     const state = setup()
     state.variants.carry(model, undefined, "code")
     expect(state.selections).toEqual({})
   })
 
-  it("carries an explicit default across model changes", () => {
+  it("does not persist anything when carrying an explicit default", () => {
     const state = setup()
     state.variants.carry(model, "", "code")
-    expect(state.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "" })
+    expect(state.selections).toEqual({})
+  })
+  // kilocode_change end
+
+  it("does not shadow a cached variant when carrying the model default", () => {
+    const global = setup()
+    global.selections["agent/code/anthropic/claude-sonnet-4"] = "high"
+    global.variants.carry(model, undefined, "code")
+    expect(global.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "high" })
+    expect(global.messages).toEqual([])
+
+    const session = setup("session-a")
+    session.selections["agent/code/anthropic/claude-sonnet-4"] = "high"
+    session.variants.carry(model, undefined, "code", "session-a")
+    expect(session.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "high" })
+    expect(session.variants.current()).toBe("high")
   })
 
+  // kilocode_change start - ZLF：置顶档（默认推理强度）回退契约
   it("falls back to the model default variant when nothing was chosen", () => {
     const state = setup()
     state.found.defaultVariant = "high"

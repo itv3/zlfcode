@@ -835,7 +835,6 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     buildTriggerLabel(
       activeModel()?.name,
       activeModel()?.providerID,
-      activeModel()?.providerName,
       props.value,
       props.allowClear ?? false,
       props.clearLabel ?? "",
@@ -1073,12 +1072,8 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                           const hovered = () => isSelected(row.key)
                           const preActive = () => isPreActive(row.key)
                           const starred = () => favoriteKeys().has(modelKey(model.providerID, model.id))
-                          // kilocode_change start - ZLF 按显示名分组：多 provider 组内显示来源标签；上游搜索态也显示 provider
+                          // kilocode_change start - ZLF 按显示名分组：多 provider 组内标签显示 providerID 作为来源
                           const group = node.group
-                          const showProvider = () =>
-                            row.kind === "favorite" ||
-                            hasSearch() ||
-                            (props.groupByDisplayName === true && (group?.providers ?? 0) > 1)
                           const source = () =>
                             props.groupByDisplayName === true && row.kind !== "favorite" && (group?.providers ?? 0) > 1
                               ? model.providerID
@@ -1154,10 +1149,8 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                       </Show>
                                     </span>
                                   </Show>
-                                  <Show when={showProvider()}>
-                                    {/* kilocode_change: ZLF 分组模式下显示 providerID 作为来源 */}
-                                    <span class="model-selector-item-provider-tag">{source()}</span>
-                                  </Show>
+                                  {/* kilocode_change: ZLF 分组模式下显示 providerID 作为来源 */}
+                                  <span class="model-selector-item-provider-tag">{source()}</span>
                                 </div>
                               </div>
                               <Show when={session && props.favorites !== false}>

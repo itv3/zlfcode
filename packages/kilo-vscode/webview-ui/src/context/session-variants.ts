@@ -70,13 +70,10 @@ export function createSessionVariants(options: Options) {
   const carry = (selection: ModelSelection, value: string | undefined, name: string, sessionID?: string) => {
     const list = Object.keys(options.find(selection)?.variants ?? {})
     if (list.length === 0) return
-    // kilocode_change start - ZLF：三态传播。undefined（从未选择）不写入，让新模型
-    // 走自己的「默认推理强度」；DEFAULT_VARIANT（显式默认）沿上游语义继续传播；
-    // 具体档名按最近档映射传播。上游原实现把「从未选择」也写成显式默认，会把
-    // 新模型的置顶默认档永久锁死为裸发。
-    const next =
-      value === undefined ? undefined : value === DEFAULT_VARIANT ? DEFAULT_VARIANT : preserveVariant(value, list)
-    // kilocode_change end
+    // An absent value means the model default, not an explicit user choice.
+    // Do not write a default sentinel here because it would shadow a cached
+    // agent-level variant when this selection is resolved for a new session.
+    const next = preserveVariant(value, list)
     if (next === undefined) return
     const key = variantKey(selection, name, sessionID)
     options.set(key, next)
