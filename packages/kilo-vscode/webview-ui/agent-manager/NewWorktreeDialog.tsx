@@ -465,9 +465,6 @@ export const NewWorktreeDialog: Component<{
   const total = () => (compareMode() ? totalAllocations(visibleAllocations()) : versions())
   const mode = () => (compareMode() ? "compare_models" : versions() > 1 ? "multiple_versions" : "single")
 
-  // kilocode_change - ZLF 的 validModel 校验叠加上游 v7.4.21 的 onCreate/多项目逻辑后
-  // 复杂度 22 略超上限 20，按 F76 先例就地豁免，不为凑指标拆散提交流程。
-  // eslint-disable-next-line complexity
   const handleSubmit = () => {
     if (!canSubmit()) return
     setStarting(true)
