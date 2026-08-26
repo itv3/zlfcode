@@ -10,7 +10,6 @@ import { KiloLog } from "../../src/kilocode/log"
 const calls: string[] = []
 const timeouts: Array<number | undefined> = []
 let err: unknown
-let drainErr: unknown
 let drainCalls = 0
 let exit: string | number | null | undefined
 
@@ -37,7 +36,6 @@ describe("KiloCli.shutdown", () => {
     calls.length = 0
     timeouts.length = 0
     err = undefined
-    drainErr = undefined
     drainCalls = 0
     exit = process.exitCode
     process.exitCode = undefined
@@ -61,7 +59,6 @@ describe("KiloCli.shutdown", () => {
     spyOn(KiloSessions, "drainIngestForShutdown").mockImplementation(async () => {
       drainCalls += 1
       calls.push("drain")
-      if (drainErr) throw drainErr
     })
   })
 
@@ -70,18 +67,14 @@ describe("KiloCli.shutdown", () => {
     mock.restore()
   })
 
-  // 必须保持为本文件第一个测试：setup.ts 导入时只在模块作用域注册一次 drain 任务，
-  // KiloShutdown.run() 执行后即清空。仅此测试锚定该一次性注册（以及它带来的
-  // drain 先于 dispose 的顺序）；后续测试通过 installDrain() 自行注册，不依赖顺序。
-  test("rejects drain without blocking dispose", async () => {
-    drainErr = new Error("ingest drain failed")
+  test("does not load unused ingest shutdown work", async () => {
     process.exitCode = 0
 
     await expect(KiloCli.shutdown()).resolves.toBeUndefined()
 
-    expect(drainCalls).toBe(1)
+    expect(drainCalls).toBe(0)
     expect(timeouts).toEqual([2000])
-    expect(calls).toEqual(["track:0", "session", "telemetry", "drain", "dispose"])
+    expect(calls).toEqual(["track:0", "session", "telemetry", "dispose"])
     expect(process.exitCode).toBe(0)
   })
 

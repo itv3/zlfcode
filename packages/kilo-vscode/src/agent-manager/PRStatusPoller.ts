@@ -1,4 +1,5 @@
 import type { ExecFileOptionsWithStringEncoding } from "child_process"
+import { existsSync } from "fs"
 import type { Worktree } from "./WorktreeStateManager"
 import type { PRStatus, PRCheck, PRComment, PRReviewer, AggregateCheckStatus } from "./types"
 import { execWithShellEnv } from "./shell-env"
@@ -14,6 +15,7 @@ import {
   parseReviewers,
 } from "./pr/am-pr-utils"
 import type { PRResult, GhThread, GhReviewRequest, GhReview } from "./pr/am-pr-types"
+import { withContext } from "./pr/pr-comment-context"
 
 interface PRStatusPollerOptions {
   getWorktrees: () => Worktree[]
@@ -248,7 +250,7 @@ export class PRStatusPoller {
       const pr = await this.cachedFetchPR(wt.branch, wt.path)
       if (!pr || this.stale(generation)) {
         if (this.stale(generation)) return
-        const hash = `${worktreeId}:none`
+        const hash = `${worktreeId}:${wt.branch}:none`
         if (this.lastHash.get(worktreeId) === hash) return
         this.lastHash.set(worktreeId, hash)
         this.options.onStatus(worktreeId, null)
@@ -286,14 +288,15 @@ export class PRStatusPoller {
 
       this.options.onStatus(worktreeId, status)
     } catch (err) {
-      this.handleError(worktreeId, wt.branch, err)
+      if (this.stale(generation)) return
+      this.handleError(worktreeId, wt.branch, wt.path, err)
       throw err // propagate so fetchAll can track failures for backoff
     }
   }
 
-  private handleError(worktreeId: string, branch: string, err: unknown): void {
+  private handleError(worktreeId: string, branch: string, cwd: string, err: unknown): void {
     const msg = err instanceof Error ? err.message : String(err)
-    const kind = classifyPRError(msg)
+    const kind = existsSync(cwd) ? classifyPRError(msg) : "unknown"
     this.options.log(`PR fetch failed for ${branch}:`, msg)
     const key = kind === "gh_missing" ? "gh_missing" : kind === "gh_auth" ? "gh_auth" : "fetch_failed"
     if (kind === "gh_missing") this.ghAvailable = false
@@ -305,7 +308,9 @@ export class PRStatusPoller {
 
   private target(worktreeId: string): Worktree | undefined {
     if (!this.options.getWorkspaceRoot()) return
-    return this.options.getWorktrees().find((worktree) => worktree.id === worktreeId)
+    const worktree = this.options.getWorktrees().find((item) => item.id === worktreeId)
+    if (!worktree || !existsSync(worktree.path)) return
+    return worktree
   }
 
   private static readonly PR_JSON_FIELDS =
@@ -482,10 +487,14 @@ export class PRStatusPoller {
     }
   }
 
+  /**
+   * Undefined on failure, never an empty thread list: the panel keeps the
+   * comments it already shows instead of collapsing the section mid-review.
+   */
   private async fetchComments(
     prNumber: number,
     cwd: string,
-  ): Promise<{ total: number; unresolved: number; comments: PRComment[] }> {
+  ): Promise<{ total: number; unresolved: number; comments: PRComment[] } | undefined> {
     try {
       const repo = await this.getRepoInfo(cwd)
       const query = `query($owner: String!, $repo: String!, $number: Int!) {
@@ -533,12 +542,12 @@ export class PRStatusPoller {
       )
       const pr = JSON.parse(stdout)?.data?.repository?.pullRequest
       const threads = pr?.reviewThreads
-      const comments = parseComments((threads?.nodes ?? []) as GhThread[])
+      const comments = await withContext(cwd, parseComments((threads?.nodes ?? []) as GhThread[]))
       const totalCount = threads?.totalCount ?? comments.length
       return { total: totalCount, unresolved: comments.filter((c) => !c.resolved).length, comments }
     } catch (err) {
       this.options.log("Failed to fetch PR comments:", err)
-      return { total: 0, unresolved: 0, comments: [] }
+      return undefined
     }
   }
 }

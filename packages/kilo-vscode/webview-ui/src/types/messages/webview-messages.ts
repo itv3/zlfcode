@@ -7,6 +7,7 @@ import type { Config } from "./config"
 import type { ModelAllocation, ReviewCommentEntry, TerminalDestination, TerminalPlacement } from "./agent-manager"
 import type { ReviewMessageData } from "../../../../src/shared/review-comments"
 import type { WorkStyle, WorkStyleState } from "../../../../src/shared/work-style-presets"
+import type { RefreshProviderUsageMessage, RequestProviderUsageMessage } from "./provider-usage"
 import type { AnacondaDesktopWebviewMessage } from "../../../../src/shared/anaconda-desktop-messages"
 import type {
   ClearLegacyDataMessage,
@@ -40,6 +41,25 @@ export interface SendMessageRequest {
 
 export interface AbortRequest {
   type: "abort"
+  sessionID: string
+}
+
+export interface RequestBackgroundJobsMessage {
+  type: "requestBackgroundJobs"
+  sessionID: string
+  requestID: string
+}
+
+export interface CancelBackgroundJobMessage {
+  type: "cancelBackgroundJob"
+  jobID: string
+  sessionID: string
+  requestID: string
+}
+
+export interface PromoteBackgroundJobMessage {
+  type: "promoteBackgroundJob"
+  jobID: string
   sessionID: string
 }
 
@@ -216,6 +236,32 @@ export interface CompactRequest {
 export interface OpenSettingsPanelRequest {
   type: "openSettingsPanel"
   tab?: string
+  projectId?: string
+}
+
+export interface RequestAgentManagerSettingsMessage {
+  type: "requestAgentManagerSettings"
+  projectId?: string
+  requestId: string
+}
+
+export interface RequestAgentManagerSettingsBranchesMessage {
+  type: "requestAgentManagerSettingsBranches"
+  projectId: string
+  requestId: string
+}
+
+export interface SetAgentManagerDefaultBaseBranchMessage {
+  type: "setAgentManagerDefaultBaseBranch"
+  projectId: string
+  branch?: string
+  requestId: string
+}
+
+export interface ConfigureAgentManagerSetupScriptMessage {
+  type: "configureAgentManagerSetupScript"
+  projectId: string
+  requestId: string
 }
 
 export interface OpenProfilePanelRequest {
@@ -653,6 +699,13 @@ export interface OpenLocallyRequest {
   sessionId: string
 }
 
+// Move a worktree-bound session back to the project root and open it in the local tabs
+export interface OpenSessionLocallyRequest {
+  type: "agentManager.openSessionLocally"
+  projectId?: string
+  sessionId: string
+}
+
 // Add a new session to an existing worktree
 export interface AddSessionToWorktreeRequest {
   type: "agentManager.addSessionToWorktree"
@@ -804,6 +857,11 @@ export interface OpenWorktreeRequest {
   worktreeId: string
 }
 
+export interface AgentManagerCopyToClipboardRequest {
+  type: "agentManager.copyToClipboard"
+  text: string
+}
+
 // Copy text to the system clipboard via the extension host
 export interface CopyToClipboardRequest {
   type: "copyToClipboard"
@@ -866,6 +924,37 @@ export interface AgentManagerOpenFileRequest {
   filePath: string
   line?: number
   column?: number
+}
+
+export interface AgentManagerRequestDocumentMessage {
+  type: "agentManager.requestDocument"
+  sessionId: string
+  file: string
+  contextKey?: string
+}
+
+export interface DocumentRequestMessage {
+  type: "document.request"
+  sessionId?: string
+  file: string
+  contextKey?: string
+}
+
+export interface DocumentOpenFileMessage {
+  type: "document.openFile"
+  file: string
+  line?: number
+  column?: number
+}
+
+export interface DocumentCloseMessage {
+  type: "document.close"
+}
+
+export interface DocumentSendCommentsMessage {
+  type: "document.sendComments"
+  comments: ReviewCommentEntry[]
+  autoSend?: boolean
 }
 
 // Create multiple worktree sessions for the same prompt (multi-version mode)
@@ -950,12 +1039,14 @@ export interface ImportFromPRRequest {
 // Agent Manager: Request one-shot diff fetch (webview → extension)
 export interface RequestWorktreeDiffMessage {
   type: "agentManager.requestWorktreeDiff"
+  projectId?: string
   sessionId: string
   scope?: string
 }
 
 export interface RequestWorktreeDiffFileMessage {
   type: "agentManager.requestWorktreeDiffFile"
+  projectId?: string
   sessionId: string
   file: string
   scope?: string
@@ -964,6 +1055,7 @@ export interface RequestWorktreeDiffFileMessage {
 // Agent Manager: Start polling for live diff updates (webview → extension)
 export interface StartDiffWatchMessage {
   type: "agentManager.startDiffWatch"
+  projectId?: string
   sessionId: string
   scope?: string
 }
@@ -971,11 +1063,13 @@ export interface StartDiffWatchMessage {
 // Agent Manager: Stop polling for diff updates (webview → extension)
 export interface StopDiffWatchMessage {
   type: "agentManager.stopDiffWatch"
+  projectId?: string
 }
 
 // Agent Manager: Request branch picker data for a diff context (webview → extension)
 export interface RequestDiffBranchesMessage {
   type: "agentManager.requestDiffBranches"
+  projectId?: string
   sessionId: string
   scope?: string
 }
@@ -983,6 +1077,7 @@ export interface RequestDiffBranchesMessage {
 // Agent Manager: Set or clear the base branch override for a diff context (webview → extension)
 export interface SetDiffBaseBranchMessage {
   type: "agentManager.setDiffBaseBranch"
+  projectId?: string
   sessionId: string
   scope?: string
   branch?: string
@@ -991,6 +1086,7 @@ export interface SetDiffBaseBranchMessage {
 // Agent Manager: PR messages (webview → extension)
 export interface RefreshPRMessage {
   type: "agentManager.refreshPR"
+  projectId?: string
   worktreeId: string
 }
 
@@ -1003,12 +1099,14 @@ export interface OpenPRMessage {
 
 export interface CommentActionMessage {
   type: "agentManager.resolveComment" | "agentManager.unresolveComment"
+  projectId?: string
   worktreeId: string
   threadId: string
 }
 
 export interface ApplyWorktreeDiffMessage {
   type: "agentManager.applyWorktreeDiff"
+  projectId?: string
   worktreeId: string
   selectedFiles?: string[]
 }
@@ -1119,6 +1217,7 @@ export interface OpenSubAgentViewerRequest {
   type: "openSubAgentViewer"
   sessionID: string
   title?: string
+  parentSessionID?: string
 }
 
 // Preview an image attachment in VS Code's built-in image viewer
@@ -1307,11 +1406,6 @@ export interface PersistModelSelectionRequest {
   modelID: string
 }
 
-export interface ClearModelSelectionRequest {
-  type: "clearModelSelection"
-  agent: string
-}
-
 export interface RequestModelSelectionsMessage {
   type: "requestModelSelections"
 }
@@ -1397,8 +1491,15 @@ export interface DismissAgentMigrationBannerMessage {
 }
 
 export type WebviewMessage =
+  | DocumentRequestMessage
+  | DocumentOpenFileMessage
+  | DocumentCloseMessage
+  | DocumentSendCommentsMessage
   | SendMessageRequest
   | AbortRequest
+  | RequestBackgroundJobsMessage
+  | CancelBackgroundJobMessage
+  | PromoteBackgroundJobMessage
   | RevertSessionRequest
   | UnrevertSessionRequest
   | DeleteMessageRequest
@@ -1413,8 +1514,14 @@ export type WebviewMessage =
   | LoginRequest
   | LogoutRequest
   | RefreshProfileRequest
+  | RequestProviderUsageMessage
+  | RefreshProviderUsageMessage
   | OpenExternalRequest
   | OpenSettingsPanelRequest
+  | RequestAgentManagerSettingsMessage
+  | RequestAgentManagerSettingsBranchesMessage
+  | SetAgentManagerDefaultBaseBranchMessage
+  | ConfigureAgentManagerSetupScriptMessage
   | OpenProfilePanelRequest
   | OpenVSCodeSettingsRequest
   | OpenConfigFileRequest
@@ -1498,6 +1605,7 @@ export type WebviewMessage =
   | RemoveStaleWorktreeRequest
   | PromoteSessionRequest
   | OpenLocallyRequest
+  | OpenSessionLocallyRequest
   | AddSessionToWorktreeRequest
   | ForkSessionRequest
   | SidebarForkSessionRequest
@@ -1523,9 +1631,11 @@ export type WebviewMessage =
   | ShowLocalTerminalRequest
   | ShowWorktreeTerminalRequest
   | OpenWorktreeRequest
+  | AgentManagerCopyToClipboardRequest
   | CopyToClipboardRequest
   | ShowExistingLocalTerminalRequest
   | AgentManagerOpenFileRequest
+  | AgentManagerRequestDocumentMessage
   | CreateMultiVersionRequest
   | SetTabOrderRequest
   | SetWorktreeOrderRequest
@@ -1606,7 +1716,6 @@ export type WebviewMessage =
   | ToggleFavoriteRequest
   | RequestFavoritesMessage
   | PersistModelSelectionRequest
-  | ClearModelSelectionRequest
   | RequestModelSelectionsMessage
   | ToggleRemoteMessage
   | SetRemoteEnabledMessage

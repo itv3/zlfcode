@@ -21,7 +21,7 @@ import {
   parseModelString,
 } from "./shared/provider-model"
 import type { CustomProviderPackage, CustomProviderProtocol } from "./shared/provider-model"
-import { configFeatures } from "./features"
+import { configFeatures, serverFeatures } from "./features"
 
 /**
  * Compute the default model selection from CLI config, VS Code settings, or hardcoded fallback.
@@ -507,7 +507,7 @@ async function refreshConfig(ctx: ActionContext, setCachedConfig: SetCachedConfi
     ctx.client.global.config.get({ throwOnError: true }),
   ])
   if (!config) return
-  const features = configFeatures(config)
+  const features = configFeatures(config, await serverFeatures(ctx.client, ctx.workspaceDir))
   setCachedConfig({ type: "configLoaded", config, globalConfig: global, features })
   ctx.postMessage({ type: "configUpdated", config, globalConfig: global, features })
 }
