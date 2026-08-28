@@ -16,6 +16,9 @@ Object.assign(globalThis, {
   SVGElement: window.SVGElement,
   MutationObserver: window.MutationObserver,
   ResizeObserver: window.ResizeObserver,
+  // 上游 v7.5.6 移除了 IntersectionObserver 特性检测（#13XXX remove redundant
+  // observer feature detection），组件在无此 API 的环境直接崩溃，补齐注入。
+  IntersectionObserver: window.IntersectionObserver,
   CustomEvent: window.CustomEvent,
   Event: window.Event,
   FocusEvent: window.FocusEvent,

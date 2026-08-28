@@ -6,7 +6,7 @@ import * as path from "path"
 import * as vscode from "vscode"
 import { resolveLocalBwrapEnv, resolveTreeSitterEnv } from "./cli-resources"
 import { t } from "./i18n"
-import { parseServerPort } from "./server-utils"
+import { scanServerPort } from "./server-utils"
 
 export interface ServerInstance {
   port: number
@@ -16,7 +16,7 @@ export interface ServerInstance {
   shared?: boolean
 }
 
-// CLI 后端启动超时按运行环境分级：
+// kilocode_change start - CLI 后端启动超时按运行环境分级：
 // - 本地环境：CLI 与扩展宿主在同一台机器，正常启动只需数秒；二进制损坏、端口
 //   占用等启动挂死问题应尽快反馈给用户，45 秒已远超正常本地启动耗时。
 // - 远程环境（Remote SSH / WSL / Dev Container，vscode.env.remoteName 非空）：
@@ -28,6 +28,8 @@ const KILL_FALLBACK_MS = 5_000
 const LOCK_STALE_MS = 90_000
 const LOCK_WAIT_MS = 250
 const HEALTH_TIMEOUT_MS = 1_500
+// kilocode_change end
+const STARTUP_OUTPUT_LIMIT = 1024
 
 type WorkspaceFolderLike = { uri: { fsPath: string } }
 type ServerExitListener = (code: number | null, signal: NodeJS.Signals | null) => void
@@ -204,13 +206,16 @@ export class ServerManager {
       console.log("[Kilo New] ServerManager: 📦 Process spawned with PID:", serverProcess.pid)
 
       let resolved = false
+      let output = ""
       const stderrLines: string[] = []
 
       serverProcess.stdout?.on("data", (data: Buffer) => {
-        const output = data.toString()
-        console.log("[Kilo New] ServerManager: 📥 CLI Server stdout:", output)
+        const chunk = data.toString()
+        console.log("[Kilo New] ServerManager: 📥 CLI Server stdout:", chunk)
 
-        const port = parseServerPort(output)
+        const state = scanServerPort(output, chunk, STARTUP_OUTPUT_LIMIT)
+        output = state.output
+        const port = state.port
         if (port !== null && !resolved) {
           resolved = true
           console.log("[Kilo New] ServerManager: 🎯 Port detected:", port)

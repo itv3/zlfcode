@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js"
-import type { ExtensionMessage, ModelSelection } from "../types/messages"
+import type { AgentConfig, ExtensionMessage, ModelSelection } from "../types/messages"
 import {
   DEFAULT_VARIANT,
   getAgentVariant,
@@ -23,6 +23,7 @@ interface Options {
   selected: (sessionID?: string) => ModelSelection | null
   session: Accessor<string | undefined>
   agent: (sessionID?: string) => string
+  config: (agent: string) => Pick<AgentConfig, "model" | "variant"> | undefined
   find: (selection: ModelSelection) => Model | undefined
   post: (message: Message) => void
   listen: (handler: (message: ExtensionMessage) => void) => () => void
@@ -35,9 +36,15 @@ export function createSessionVariants(options: Options) {
     return Object.keys(options.find(selection)?.variants ?? {})
   }
 
+  const configured = (name: string, selection: ModelSelection) => {
+    const config = options.config(name)
+    if (config?.model !== `${selection.providerID}/${selection.modelID}`) return undefined
+    return config.variant ?? undefined
+  }
+
   const agent = (name: string, selection: ModelSelection | null) => {
     if (!selection) return undefined
-    return getAgentVariant(options.selections(), selection, options.find(selection), name)
+    return getAgentVariant(options.selections(), selection, options.find(selection), name, configured(name, selection))
   }
 
   const current = (sessionID?: string) => {
@@ -46,16 +53,21 @@ export function createSessionVariants(options: Options) {
     if (!selection) return undefined
     const variants = list(sid)
     if (variants.length === 0) return undefined
-    const value = getVariant(options.selections(), selection, variants, options.agent(sid), sid)
+    const name = options.agent(sid)
+    const value = getVariant(options.selections(), selection, variants, name, sid, configured(name, selection))
     if (value !== undefined) return value
-    // kilocode_change start - ZLF：从未选择过变体时采用模型的「默认推理强度」
-    // （编辑对话框置顶的档）；显式选过「默认」（存 DEFAULT_VARIANT）保持裸发。
-    const stored = storedVariant(options.selections(), selection, options.agent(sid), sid)
+    // kilocode_change start - ZLF：链尾回退模型的「默认推理强度」（自定义 provider 编辑
+    // 对话框置顶的档）。上游 v7.5.6 的 agent 配置级默认（configured）已在 getVariant 内
+    // 优先生效；显式选过「默认」（存 DEFAULT_VARIANT）保持裸发，不落到本回退。
+    const stored = storedVariant(options.selections(), selection, name, sid)
     if (stored === DEFAULT_VARIANT) return undefined
     const fallback = options.find(selection)?.defaultVariant
     return fallback && variants.includes(fallback) ? fallback : undefined
     // kilocode_change end
   }
+
+  const request = (sessionID?: string) =>
+    current(sessionID) ?? (list(sessionID).length > 0 ? DEFAULT_VARIANT : undefined)
 
   const select = (value: string | undefined, sessionID?: string) => {
     const sid = sessionID ?? options.session()
@@ -92,5 +104,5 @@ export function createSessionVariants(options: Options) {
     return unsub
   }
 
-  return { carry, list, agent, current, select, load }
+  return { carry, list, agent, current, request, select, load }
 }

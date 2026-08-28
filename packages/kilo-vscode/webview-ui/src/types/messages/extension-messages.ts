@@ -130,6 +130,8 @@ export interface ErrorMessage {
   message: string
   code?: string
   sessionID?: string
+  projectId?: string
+  worktreeId?: string
 }
 
 export interface SendMessageFailedMessage {
@@ -141,6 +143,13 @@ export interface SendMessageFailedMessage {
   messageID?: string
   files?: FileAttachment[]
   review?: import("../../../../src/shared/review-comments").ReviewMessageData
+}
+
+export interface SessionResumeResultMessage {
+  type: "sessionResumeResult"
+  sessionID: string
+  requestID: string
+  error?: string
 }
 
 export interface SessionCommandCompletedMessage {
@@ -168,6 +177,7 @@ export interface SessionTurnClosedMessage {
   type: "sessionTurnClosed"
   sessionID: string
   reason: SessionCloseReason
+  parentID?: string
 }
 
 export interface SessionErrorMessage {
@@ -810,6 +820,11 @@ export interface AgentManagerSessionForkedMessage {
   worktreeId?: string
 }
 
+export interface AgentManagerWorktreeActivityMessage {
+  type: "agentManager.worktreeActivity"
+  active: string[]
+}
+
 export interface AgentManagerSessionClosedMessage {
   type: "agentManager.sessionClosed"
   projectId?: string
@@ -1432,6 +1447,7 @@ export type ExtensionMessage =
   | ConnectionStateMessage
   | ErrorMessage
   | SendMessageFailedMessage
+  | SessionResumeResultMessage
   | SessionCommandCompletedMessage
   | PartUpdatedMessage
   | PartsUpdatedMessage
@@ -1517,6 +1533,7 @@ export type ExtensionMessage =
   | AgentManagerSessionAddedMessage
   | AgentManagerSessionForkedMessage
   | AgentManagerSessionClosedMessage
+  | AgentManagerWorktreeActivityMessage
   | AgentManagerStateMessage
   | AgentManagerProjectsMessage
   | AgentManagerSelectionActivatedMessage

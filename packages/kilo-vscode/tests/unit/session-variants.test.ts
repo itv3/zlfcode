@@ -4,13 +4,16 @@ import type { ExtensionMessage, ModelSelection } from "../../webview-ui/src/type
 
 const model: ModelSelection = { providerID: "anthropic", modelID: "claude-sonnet-4" }
 
-function setup(session?: string) {
+function setup(session?: string, configured?: string) {
+  const config = { model: "anthropic/claude-sonnet-4", variant: configured }
   const selections: Record<string, string> = {}
   const messages: Array<{ type: string; key?: string; value?: string }> = []
   const order: string[] = []
   let handler: ((message: ExtensionMessage) => void) | undefined
   // kilocode_change - found 可注入 defaultVariant，测试 ZLF「默认推理强度」回退
-  const found: { variants: Record<string, object>; defaultVariant?: string } = { variants: { low: {}, high: {} } }
+  const found: { variants: Record<string, object>; defaultVariant?: string } = {
+    variants: { low: {}, high: {}, max: {} },
+  }
   const variants = createSessionVariants({
     selections: () => selections,
     set: (key, value) => {
@@ -19,6 +22,7 @@ function setup(session?: string) {
     selected: () => model,
     session: () => session,
     agent: () => "code",
+    config: () => config,
     find: () => found,
     post: (message) => {
       order.push("post")
@@ -30,7 +34,15 @@ function setup(session?: string) {
       return () => order.push("unsub")
     },
   })
-  return { variants, selections, messages, order, found, dispatch: (message: ExtensionMessage) => handler?.(message) }
+  return {
+    variants,
+    config,
+    selections,
+    messages,
+    order,
+    found,
+    dispatch: (message: ExtensionMessage) => handler?.(message),
+  }
 }
 
 describe("session variants", () => {
@@ -51,6 +63,48 @@ describe("session variants", () => {
       variants: { "agent/code/anthropic/claude-sonnet-4": "high", "session/old/model": "low" },
     })
     expect(state.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "high" })
+  })
+
+  it("uses the configured agent variant when no picker selection exists", () => {
+    const state = setup(undefined, "max")
+    expect(state.variants.agent("code", model)).toBe("max")
+    expect(state.variants.current()).toBe("max")
+    expect(state.variants.request()).toBe("max")
+  })
+
+  it("uses updated configuration ahead of remembered defaults for new tabs", () => {
+    const state = setup("pending-new", "high")
+    state.selections["agent/code/anthropic/claude-sonnet-4"] = "low"
+    expect(state.variants.current()).toBe("high")
+    state.config.variant = "max"
+    expect(state.variants.current()).toBe("max")
+    expect(state.variants.request()).toBe("max")
+    expect(state.variants.agent("code", model)).toBe("max")
+  })
+
+  it("does not apply a configured variant to another model", () => {
+    const state = setup("pending-new", "max")
+    state.config.model = "anthropic/another-model"
+    expect(state.variants.current()).toBeUndefined()
+    expect(state.variants.agent("code", model)).toBeUndefined()
+  })
+
+  it("sends an explicit model default instead of inheriting the configured agent variant", () => {
+    const state = setup("session-a", "max")
+    state.variants.select(undefined)
+    expect(state.variants.current()).toBeUndefined()
+    expect(state.variants.request()).toBe("")
+    expect(state.variants.current("session-b")).toBe("max")
+    expect(state.variants.request("session-b")).toBe("max")
+  })
+
+  it.each(["sidebar-pending:new", "pending:new"])("keeps a pre-submit Default choice scoped to %s", (id) => {
+    const state = setup(undefined, "max")
+    state.variants.select(undefined, id)
+    expect(state.variants.current(id)).toBeUndefined()
+    expect(state.variants.request(id)).toBe("")
+    expect(state.variants.current("another-draft")).toBe("max")
+    expect(state.messages).toEqual([])
   })
 
   it("persists global selections but keeps session selections local", () => {
