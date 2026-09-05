@@ -43,15 +43,23 @@ const flag = prerelease ? ["--pre-release"] : []
 for (const target of targets) {
   const vsixPath = join(outDir, `kilo-vscode-${target}.vsix`)
   console.log(`\n🚀 Publishing ${target} to VS Code Marketplace${prerelease ? " (pre-release)" : ""}...`)
-  await $`bunx vsce publish ${flag} --packagePath ${vsixPath}`
+  // kilocode_change - ZLF 环境经 bunx 调用 vsce；重试与 --skip-duplicate 跟随上游
+  await retry(() => $`bunx vsce publish ${flag} --skip-duplicate --packagePath ${vsixPath}`, {
+    attempts: 3,
+    delay: 30_000,
+    label: `vsce publish ${target}`,
+  })
   console.log(`  ✅ Published ${target} to VS Code Marketplace`)
 
   console.log(`\n📤 Publishing ${target} to Open VSX${prerelease ? " (pre-release)" : ""}...`)
-  await retry(() => $`npx ovsx publish ${flag} --pat ${process.env.OPENVSX_TOKEN} --packagePath ${vsixPath}`, {
-    attempts: 3,
-    delay: 10_000,
-    label: `ovsx publish ${target}`,
-  })
+  await retry(
+    () => $`npx ovsx publish ${flag} --skip-duplicate --pat ${process.env.OPENVSX_TOKEN} --packagePath ${vsixPath}`,
+    {
+      attempts: 3,
+      delay: 30_000,
+      label: `ovsx publish ${target}`,
+    },
+  )
   console.log(`  ✅ Published ${target} to Open VSX`)
 }
 
@@ -69,8 +77,9 @@ async function retry<T>(fn: () => Promise<T>, opts: { attempts: number; delay: n
       return await fn()
     } catch (err) {
       if (i === opts.attempts) throw err
-      console.warn(`  ⚠️  ${opts.label} failed (attempt ${i}/${opts.attempts}), retrying in ${opts.delay / 1000}s...`)
-      await new Promise((r) => setTimeout(r, opts.delay))
+      const delay = opts.delay * 2 ** (i - 1)
+      console.warn(`  ⚠️  ${opts.label} failed (attempt ${i}/${opts.attempts}), retrying in ${delay / 1000}s...`)
+      await new Promise((r) => setTimeout(r, delay))
     }
   }
   throw new Error("unreachable")

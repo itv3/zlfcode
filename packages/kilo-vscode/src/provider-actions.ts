@@ -257,6 +257,9 @@ function trimCatalogModels<T extends { id: string; models?: Record<string, unkno
 }
 
 /** 拉取 provider 可用性和认证状态,但不把已保存凭据暴露给 webview。 */
+// kilocode_change - 上游 v7.5.14 的 org/defaults 组装叠加 ZLF 双模式与 catalog 裁剪后
+// 复杂度 22 略超上限 20，按 F76 先例就地豁免，不为凑指标拆散取数流程。
+// eslint-disable-next-line complexity
 export async function fetchProviderData(
   client: KiloClient,
   dir: string,
@@ -278,9 +281,9 @@ export async function fetchProviderData(
           .catch(() => ({}))
       : Promise.resolve({})
   const kiloRequest = client.kilo
-    .authStatus({ directory: dir }, { throwOnError: true, signal })
-    .then((r) => (r.data?.authenticated ? (r.data.type ?? null) : null))
-    .catch(() => null)
+    .authStatus({ directory: dir }, { throwOnError: true, signal }) // kilocode_change - 允许取消
+    .then((r) => r.data)
+    .catch(() => undefined)
 
   const [raw, config, authMethods, kiloAuth] = await Promise.all([
     fetchProviderList(client, dir, mode, signal),
@@ -320,11 +323,35 @@ export async function fetchProviderData(
     return next as (typeof response.all)[number]
   })
   delete authStates[KILO_PROVIDER_ID]
-  if (kiloAuth) authStates[KILO_PROVIDER_ID] = kiloAuth
-
+  if (kiloAuth?.authenticated && kiloAuth.type) authStates[KILO_PROVIDER_ID] = kiloAuth.type
+  const organizationId = kiloAuth ? (kiloAuth.organizationId ?? null) : undefined
+  const defaults = { ...response.default }
+  if (organizationId) {
+    const models = all.find((item) => item.id === KILO_PROVIDER_ID)?.models ?? {}
+    const recommended = response.default[KILO_PROVIDER_ID]
+    const model = recommended && Object.hasOwn(models, recommended) ? recommended : Object.keys(models).at(0)
+    if (model) defaults[KILO_PROVIDER_ID] = model
+    if (!model) delete defaults[KILO_PROVIDER_ID]
+  }
+  if (!kiloAuth) delete defaults[KILO_PROVIDER_ID]
+  // kilocode_change start - ZLF：catalog 模式按认证态裁剪各 provider 的模型列表
   const connected = new Set(response.connected)
-  const trimmed = mode === "catalog" ? all.map((item) => trimCatalogModels(item, connected, authStates)) : all
-  return { response: { ...response, all: trimmed }, authMethods, authStates, storedKeys }
+  const visible = kiloAuth ? all : all.filter((item) => item.id !== KILO_PROVIDER_ID)
+  const trimmed = mode === "catalog" ? visible.map((item) => trimCatalogModels(item, connected, authStates)) : visible
+  // kilocode_change end
+  return {
+    response: {
+      ...response,
+      all: trimmed,
+      connected: kiloAuth ? response.connected : response.connected.filter((id) => id !== KILO_PROVIDER_ID),
+      default: defaults,
+    },
+    authMethods,
+    authStates,
+    storedKeys,
+    organizationId,
+    ready: !!kiloAuth,
+  }
 }
 
 /**

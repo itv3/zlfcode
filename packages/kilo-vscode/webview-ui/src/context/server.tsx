@@ -212,7 +212,7 @@ export const ServerProvider: ParentComponent = (props) => {
    * user has no way to see the code or cancel if the browser is dismissed.
    */
   const goToLogin = () => {
-    window.postMessage({ type: "navigate", view: "profile" }, "*")
+    window.postMessage({ type: "navigate", view: "profile" }, window.origin)
     startLogin()
   }
 

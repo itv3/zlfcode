@@ -9,6 +9,7 @@
 
 import type { SnapshotFileDiff } from "@kilocode/sdk/v2/client"
 import type { DiffImage } from "../diff/types"
+import type { BrowserElement } from "../services/browser-automation"
 import type { Worktree, ManagedSession, Section } from "./WorktreeStateManager"
 import type { WorktreeStats, LocalStats } from "./GitStatsPoller"
 import type { ApplyConflict } from "./GitOps"
@@ -19,6 +20,7 @@ import type { ProjectSnapshot } from "./project/contexts"
 import type { SidebarTarget } from "./project/route"
 import type { TerminalDestination } from "./terminal-destination"
 import type { ScriptTerminalView } from "./ScriptTerminalManager"
+import type { BrowserFeedbackData } from "../shared/browser-feedback"
 
 export type { TerminalFont }
 export type { ProjectSnapshot }
@@ -51,47 +53,30 @@ export type WorktreeDiffEntry = SnapshotFileDiff & {
 // PR status types
 // ---------------------------------------------------------------------------
 
-export type PRState = "open" | "draft" | "merged" | "closed"
-export type ReviewDecision = "approved" | "changes_requested" | "pending"
-export type CheckStatus = "success" | "failure" | "pending" | "skipped" | "cancelled"
-export type AggregateCheckStatus = "success" | "failure" | "pending" | "none"
+import type {
+  PRState,
+  ReviewDecision,
+  CheckStatus,
+  AggregateCheckStatus,
+  PRCheck,
+  PRCommentReply,
+  PRComment,
+  ReviewerState,
+  PRReviewer,
+  PRConversationComment,
+} from "../../webview-ui/agent-manager/pr/pr-types"
 
-export interface PRCheck {
-  name: string
-  status: CheckStatus
-  url?: string
-  duration?: string
-}
-
-export interface PRCommentReply {
-  author: string
-  body: string
-}
-
-export interface PRComment {
-  id: string
-  threadId: string
-  author: string
-  avatar?: string
-  body: string
-  file?: string
-  line?: number
-  url?: string
-  resolved: boolean
-  outdated: boolean
-  createdAt?: number
-  diffHunk?: string
-  /** Lines after the commented line, read from the worktree: a hunk has none. */
-  after?: string[]
-  replies?: PRCommentReply[]
-}
-
-export type ReviewerState = "approved" | "changes_requested" | "pending" | "commented"
-
-export interface PRReviewer {
-  login: string
-  avatar?: string
-  state: ReviewerState
+export type {
+  PRState,
+  ReviewDecision,
+  CheckStatus,
+  AggregateCheckStatus,
+  PRCheck,
+  PRCommentReply,
+  PRComment,
+  ReviewerState,
+  PRReviewer,
+  PRConversationComment,
 }
 
 export interface PRStatus {
@@ -110,11 +95,13 @@ export interface PRStatus {
     checks: PRCheck[]
   }
   reviewers: PRReviewer[]
+  unresolvedThreads?: number
   comments?: {
     total: number
     unresolved: number
     comments: PRComment[]
   }
+  conversation?: PRConversationComment[]
   additions: number
   deletions: number
   files: number
@@ -178,6 +165,7 @@ interface StateMessage {
   activeTarget?: SidebarTarget
   terminalDestination?: TerminalDestination
   terminalFont?: TerminalFont
+  browserAutomation?: boolean
 }
 
 /** Project catalog pushed to the webview after registry or context changes. */
@@ -324,6 +312,7 @@ interface SendInitialMessage {
   agent?: string
   variant?: string
   files?: MessageFileIn[]
+  browserFeedback?: BrowserFeedbackData
 }
 
 interface BranchesMessage {
@@ -456,6 +445,43 @@ interface ActionOutMessage {
   action: string
 }
 
+interface BrowserStateMessage {
+  type: "agentManager.browserState"
+  browserId: string
+  projectId?: string
+  sessionId: string
+  navigation?: number
+  status: "starting" | "ready" | "loading" | "error" | "closed"
+  inspecting?: boolean
+  url?: string
+  title?: string
+  errors: number
+  logs?: string[]
+  error?: string
+  frameError?: string
+}
+
+interface BrowserInspectionMessage {
+  type: "agentManager.browserInspection"
+  error?: string
+  requestId: string
+  projectId?: string
+  sessionId: string
+  url?: string
+  title?: string
+  element?: BrowserElement
+  logs: string[]
+  hover?: boolean
+}
+
+interface BrowserDevtoolsMessage {
+  type: "agentManager.browserDevtools"
+  browserId: string
+  projectId?: string
+  sessionId: string
+  url: string
+}
+
 interface RunStatusMessage extends RunStatus {
   type: "agentManager.runStatus"
   /** Owning project for this status. Absent in legacy single-project mode. */
@@ -495,6 +521,9 @@ export type AgentManagerOutMessage =
   | PRErrorOutMessage
   | CommentActionResultMessage
   | ActionOutMessage
+  | BrowserStateMessage
+  | BrowserInspectionMessage
+  | BrowserDevtoolsMessage
   | RunStatusMessage
   | TerminalCreatedMessage
   | TerminalRestartedMessage
@@ -919,6 +948,7 @@ interface SendMessageIn {
   files?: MessageFileIn[]
   agentManagerContext?: string
   contextDirectory?: string
+  browserFeedback?: BrowserFeedbackData
 }
 
 interface SendCommandIn {
@@ -989,6 +1019,7 @@ interface ForkSessionIn {
 interface AbortIn {
   type: "abort"
   sessionID: string
+  scope?: "session" | "tree"
 }
 
 interface ContinueInWorktreeIn {
@@ -1088,8 +1119,31 @@ interface TerminalDestinationSelectedIn {
   destination: TerminalDestination
 }
 
+interface BrowserRequestIn {
+  type:
+    | "agentManager.browser.open"
+    | "agentManager.browser.refresh"
+    | "agentManager.browser.close"
+    | "agentManager.browser.state"
+    | "agentManager.browser.inspect"
+    | "agentManager.browser.input"
+    | "agentManager.browser.devtools"
+  sessionId: string
+  requestId?: string
+  projectId?: string
+  url?: string
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  hover?: boolean
+  click?: boolean
+  theme?: "dark" | "light"
+}
+
 /** All messages the Agent Manager expects from the webview (onMessage input). */
 export type AgentManagerInMessage =
+  | import("../../webview-ui/src/types/messages/agent-manager").BaseUpdateRequest
   | CreateWorktreeIn
   | RequestProjectsIn
   | AddProjectIn
@@ -1175,3 +1229,4 @@ export type AgentManagerInMessage =
   | TerminalResizeIn
   | TerminalRestartIn
   | TerminalDestinationSelectedIn
+  | BrowserRequestIn

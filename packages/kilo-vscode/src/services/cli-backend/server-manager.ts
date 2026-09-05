@@ -77,6 +77,7 @@ export class ServerManager {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly onExit?: ServerExitListener,
+    private readonly env?: () => Promise<Record<string, string>>,
   ) {
     this.pruneDeadSharedState()
   }
@@ -133,6 +134,7 @@ export class ServerManager {
     console.log("[Kilo New] ServerManager: 📄 CLI isFile:", stat.isFile())
     console.log("[Kilo New] ServerManager: 📄 CLI mode (octal):", (stat.mode & 0o777).toString(8))
 
+    const extraEnv = await this.env?.()
     return new Promise((resolve, reject) => {
       console.log("[Kilo New] ServerManager: 🎬 Spawning CLI process:", cliPath, ["serve", "--port", "0"])
       const cfg = vscode.workspace.getConfiguration("kilo-code.new")
@@ -199,6 +201,7 @@ export class ServerManager {
           ...(!claudeCompat && { KILO_DISABLE_CLAUDE_CODE: "true" }),
           ...resolveTreeSitterEnv(this.context.extensionPath),
           ...bwrapEnv,
+          ...extraEnv,
         },
         stdio: ["ignore", "pipe", "pipe"],
         detached: true,

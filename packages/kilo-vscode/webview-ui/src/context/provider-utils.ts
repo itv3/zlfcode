@@ -48,7 +48,9 @@ export function visibleModels(models: EnrichedModel[], connected: readonly strin
 
 /**
  * True when the selection points to an existing model in a connected provider.
- * Kilo gateway models remain usable only when they are visible free models.
+ * Kilo gateway models remain usable whenever the provider catalog exposes them.
+ * （v7.5.14 起 kilo 目录由后端按认证/组织态过滤，未登录时 kilo 整体不出现，
+ * 校验层不再叠加 ZLF 的 free-only 过滤；选择器显示层仍经 visibleModels 过滤。）
  */
 export function isModelValid(
   providers: Record<string, Provider>,
@@ -58,9 +60,8 @@ export function isModelValid(
   if (!selection) return false
   const provider = providers[selection.providerID]
   if (!provider) return false
-  const model = provider.models[selection.modelID]
-  if (!model) return false
-  return isVisibleModel({ ...model, providerID: selection.providerID }, connected)
+  if (selection.providerID !== "kilo" && !connected.includes(selection.providerID)) return false
+  return !!provider.models[selection.modelID]
 }
 
 /**

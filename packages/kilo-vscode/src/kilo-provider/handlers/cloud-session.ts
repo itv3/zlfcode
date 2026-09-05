@@ -9,7 +9,8 @@ import type { KiloClient, Session, TextPartInput, FilePartInput } from "@kilocod
 import type { CloudSessionData, EditorContext } from "../../services/cli-backend/types"
 import { getErrorMessage, sessionToWebview, mapCloudSessionMessageToWebviewMessage } from "../../kilo-provider-utils"
 import { resolveMessageFile, type MessageFile } from "../message-files"
-import { reviewMetadata, type ReviewMessageData } from "../../shared/review-comments"
+import { type ReviewMessageData } from "../../shared/review-comments"
+import { feedbackMetadata, type BrowserFeedbackData } from "../../shared/browser-feedback"
 import { completesWithoutStatus } from "../command-completion"
 
 const TIMEOUT = 30_000
@@ -124,6 +125,7 @@ export async function handleImportAndSend(
   review?: ReviewMessageData,
   command?: string,
   commandArgs?: string,
+  browserFeedback?: BrowserFeedbackData,
 ): Promise<void> {
   if (!ctx.client) {
     ctx.postMessage({
@@ -213,7 +215,7 @@ export async function handleImportAndSend(
           if (part) parts.push(part)
         }
       }
-      parts.push({ type: "text", text, metadata: review ? reviewMetadata(review) : undefined })
+      parts.push({ type: "text", text, metadata: feedbackMetadata(review, browserFeedback) })
 
       const editorContext = await ctx.gatherEditorContext()
       await client.session.promptAsync(
@@ -244,6 +246,7 @@ export async function handleImportAndSend(
       messageID,
       files,
       review: command ? undefined : review,
+      browserFeedback: command ? undefined : browserFeedback,
     })
   }
 }

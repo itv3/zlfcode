@@ -23,6 +23,7 @@ import { interactiveTerminalHandlers } from "./handlers/interactive-terminal"
 import { kiloGatewayHandlers } from "./handlers/kilo-gateway"
 import { kilocodeHandlers } from "./handlers/kilocode"
 import { memoryHandlers } from "./handlers/memory"
+import { migrateHandlers } from "./handlers/migrate"
 import { networkHandlers } from "./handlers/network"
 import { providerReadyHandlers } from "./handlers/provider-ready"
 import { remoteHandlers } from "./handlers/remote"
@@ -45,6 +46,7 @@ export const provide = Layer.provide([
   kiloGatewayHandlers,
   kilocodeHandlers,
   memoryHandlers,
+  migrateHandlers,
   networkHandlers,
   providerReadyHandlers,
   remoteHandlers,

@@ -1,6 +1,6 @@
 /** Provider/模型上下文：管理可用模型、连接状态和全局默认选择。 */
 
-import { createContext, useContext, createSignal, createMemo, onCleanup } from "solid-js"
+import { batch, createContext, useContext, createSignal, createMemo, onCleanup } from "solid-js"
 import type { ParentComponent, Accessor } from "solid-js"
 import { useVSCode } from "./vscode"
 import type {
@@ -185,6 +185,8 @@ interface ProviderContextValue {
   catalogProviders: Accessor<Record<string, Provider>>
   connected: Accessor<string[]>
   defaults: Accessor<Record<string, string>>
+  organizationId: Accessor<string | null | undefined>
+  ready: Accessor<boolean>
   defaultSelection: Accessor<ModelSelection>
   models: Accessor<EnrichedModel[]>
   visibleModels: Accessor<EnrichedModel[]>
@@ -204,6 +206,8 @@ export const ProviderProvider: ParentComponent = (props) => {
   const [catalog, setCatalog] = createSignal<Record<string, Provider>>({})
   const [connected, setConnected] = createSignal(state.connected)
   const [defaults, setDefaults] = createSignal(state.defaults)
+  const [organizationId, setOrganizationId] = createSignal<string | null>()
+  const [ready, setReady] = createSignal(false)
   const [defaultSelection, setDefaultSelection] = createSignal(state.defaultSelection)
   const [authMethods, setAuthMethods] = createSignal(state.authMethods)
   const [authStates, setAuthStates] = createSignal(state.authStates)
@@ -225,6 +229,26 @@ export const ProviderProvider: ParentComponent = (props) => {
 
   // 立即注册处理器，避免 DOM 挂载前到达的 Provider 消息丢失。
   const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
+    // 上游 v7.5.14：org 切换/重载时后端先广播 providersLoading，暂缓 kilo 目录展示。
+    // 仅动信号层（state 状态机不动），下一条 providersLoaded 会以权威快照覆盖。
+    if (message.type === "providersLoading") {
+      batch(() => {
+        setReady(false)
+        setOrganizationId(undefined)
+        setProviders((prev) => {
+          const next = { ...prev }
+          delete next.kilo
+          return next
+        })
+        setDefaults((prev) => {
+          const next = { ...prev }
+          delete next.kilo
+          return next
+        })
+        setConnected((prev) => prev.filter((id) => id !== "kilo"))
+      })
+      return
+    }
     if (
       message.type !== "providerConnected" &&
       message.type !== "providerDisconnected" &&
@@ -252,12 +276,19 @@ export const ProviderProvider: ParentComponent = (props) => {
     if (message.type === "providerDisconnected" && message.removed) {
       setCatalog((value) => without(value, message.providerID))
     }
-    setProviders(state.providers)
-    setConnected(state.connected)
-    setDefaults(state.defaults)
-    setDefaultSelection(state.defaultSelection)
-    setAuthMethods(state.authMethods)
-    setAuthStates(state.authStates)
+    batch(() => {
+      setProviders(state.providers)
+      setConnected(state.connected)
+      setDefaults(state.defaults)
+      setDefaultSelection(state.defaultSelection)
+      setAuthMethods(state.authMethods)
+      setAuthStates(state.authStates)
+      // kilocode_change - 上游 ready/organizationId 状态仅随 providersLoaded 快照更新
+      if (message.type === "providersLoaded") {
+        setOrganizationId(message.ready === false ? undefined : (message.organizationId ?? null))
+        setReady(message.ready ?? true)
+      }
+    })
     if (message.type === "providersLoaded") retry.loaded(message.mode)
   })
 
@@ -281,6 +312,8 @@ export const ProviderProvider: ParentComponent = (props) => {
     catalogProviders,
     connected,
     defaults,
+    organizationId,
+    ready,
     defaultSelection,
     models,
     visibleModels,

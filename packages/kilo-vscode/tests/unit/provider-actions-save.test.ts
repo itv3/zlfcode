@@ -1004,6 +1004,140 @@ describe("disconnectProvider", () => {
 })
 
 describe("fetchProviderData", () => {
+  for (const item of [
+    { name: "uses the allowed organization API default", recommended: "org/default", expected: "org/default" },
+    { name: "uses the first allowed model when no default exists", recommended: undefined, expected: "org/first" },
+    { name: "uses the first allowed model when the default is empty", recommended: "", expected: "org/first" },
+    {
+      name: "ignores a default outside the organization catalog",
+      recommended: "kilo-auto/free",
+      expected: "org/first",
+    },
+    { name: "ignores inherited catalog properties", recommended: "toString", expected: "org/first" },
+    {
+      name: "does not invent a default for an empty catalog",
+      empty: true,
+      recommended: "org/default",
+      expected: undefined,
+    },
+    {
+      name: "does not retain a default without a Kilo provider",
+      missing: true,
+      recommended: "org/default",
+      expected: undefined,
+    },
+  ]) {
+    it(item.name, async () => {
+      const external = {
+        id: "anthropic",
+        name: "Anthropic",
+        models: { claude: { id: "claude" } },
+        metadata: { priority: 1 },
+      }
+      // kilocode_change start - ZLF 的 connected 模式经 config.providers 取已连接快照
+      //（Remote-SSH 性能定制），mock 与 provider.list 返回同源数据；上游原测试断言
+      // config.providers 不被调用（calls===0），该断言仅对上游单路径架构成立，移除。
+      const payload = {
+        all: [
+          ...(item.missing
+            ? []
+            : [
+                {
+                  id: "kilo",
+                  name: "Kilo Gateway",
+                  models: item.empty
+                    ? {}
+                    : { "org/first": { id: "org/first" }, "org/default": { id: "org/default" } },
+                },
+              ]),
+          { ...external, key: "sk-test" },
+        ],
+        connected: item.missing ? ["anthropic"] : ["kilo", "anthropic"],
+        default: { ...(item.recommended === undefined ? {} : { kilo: item.recommended }), anthropic: "claude" },
+      }
+      const client = {
+        provider: {
+          list: async () => ({ data: payload }),
+          auth: async () => ({ data: {} }),
+        },
+        kilo: {
+          authStatus: async () => ({ data: { authenticated: true, type: "oauth", organizationId: "org" } }),
+        },
+        config: {
+          providers: async () => ({ data: { providers: payload.all, default: payload.default } }),
+        },
+      } as unknown as Parameters<typeof fetchProviderData>[0]
+      // kilocode_change end
+
+      const result = await fetchProviderData(client, "/workspace")
+      expect(result.response.default.kilo).toBe(item.expected)
+      expect(result.response.default.anthropic).toBe("claude")
+      expect(result.response.all.find((provider) => provider.id === "anthropic")).toEqual(external)
+      expect(result.response.connected).toEqual(item.missing ? ["anthropic"] : ["kilo", "anthropic"])
+      expect(result.authStates).toEqual({ kilo: "oauth", anthropic: "api" })
+      expect(result.organizationId).toBe("org")
+      expect(result.ready).toBe(true)
+    })
+  }
+
+  it.each([false, true])("removes unverified Kilo data without auth context (failure: %s)", async (fail) => {
+    // kilocode_change - payload 同时喂给 provider.list 与 ZLF connected 模式的 config.providers
+    const payload = {
+      all: [
+        { id: "kilo", models: { "kilo-auto/free": {} } },
+        { id: "external", models: { model: {} } },
+      ],
+      connected: ["kilo", "external"],
+      default: { kilo: "kilo-auto/free", external: "model" },
+    }
+    const client = {
+      provider: {
+        list: async () => ({ data: payload }),
+        auth: async () => ({ data: {} }),
+      },
+      config: {
+        providers: async () => ({ data: { providers: payload.all, default: payload.default } }),
+      },
+      kilo: {
+        authStatus: async () => {
+          if (fail) throw new Error("Context unavailable")
+          return { data: undefined }
+        },
+      },
+    } as unknown as Parameters<typeof fetchProviderData>[0]
+
+    const result = await fetchProviderData(client, "/workspace")
+    expect(result.ready).toBe(false)
+    expect(result.organizationId).toBeUndefined()
+    expect(result.response.all.map((provider) => provider.id)).toEqual(["external"])
+    expect(result.response.connected).toEqual(["external"])
+    expect(result.response.default).toEqual({ external: "model" })
+  })
+
+  it("retains Personal defaults without fetching organization recommendations", async () => {
+    // kilocode_change - ZLF connected 模式必经 config.providers（同源数据），上游的
+    // calls===0 断言仅对上游单路径架构成立，移除；本测试保留的语义是"Personal（无
+    // org）时 default 不被组织推荐改写"。
+    const payload = { all: [], connected: [], default: { kilo: "kilo-auto/free" } }
+    const client = {
+      provider: {
+        list: async () => ({ data: payload }),
+        auth: async () => ({ data: {} }),
+      },
+      kilo: { authStatus: async () => ({ data: { authenticated: true, type: "oauth" } }) },
+      config: {
+        providers: async () => {
+          return { data: { providers: payload.all, default: payload.default } }
+        },
+      },
+    } as unknown as Parameters<typeof fetchProviderData>[0]
+
+    const result = await fetchProviderData(client, "/workspace")
+    expect(result.ready).toBe(true)
+    expect(result.organizationId).toBeNull()
+    expect(result.response.default).toEqual({ kilo: "kilo-auto/free" })
+  })
+
   it("derives api auth state and strips keys from provider payloads", async () => {
     const client = {
       config: {

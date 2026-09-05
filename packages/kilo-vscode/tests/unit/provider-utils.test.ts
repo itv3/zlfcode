@@ -104,8 +104,9 @@ describe("isModelValid", () => {
     expect(isModelValid(providers, [], { providerID: "kilo", modelID: "kilo-auto/free" })).toBe(true)
   })
 
-  it("rejects paid Kilo catalog models", () => {
-    expect(isModelValid(providers, [], { providerID: "kilo", modelID: "anthropic/paid" })).toBe(false)
+  // kilocode_change - v7.5.14 起 kilo 目录由后端按认证/组织态过滤，校验层不再叠加 free-only
+  it("accepts paid Kilo models exposed by the backend-filtered catalog", () => {
+    expect(isModelValid(providers, [], { providerID: "kilo", modelID: "anthropic/paid" })).toBe(true)
   })
 
   it("rejects unknown models", () => {
@@ -137,8 +138,8 @@ describe("isModelUsable", () => {
     expect(isModelUsable(providers, [], { providerID: "openai", modelID: "gpt-4o" })).toBe(false)
     // kilo 免费模型无需连接即可用
     expect(isModelUsable(providers, [], { providerID: "kilo", modelID: "stepfun/step-flash:free" })).toBe(true)
-    // kilo 付费模型不可用
-    expect(isModelUsable(providers, [], { providerID: "kilo", modelID: "anthropic/paid" })).toBe(false)
+    // kilo 目录内模型即可用（后端已按认证态过滤付费目录）
+    expect(isModelUsable(providers, [], { providerID: "kilo", modelID: "anthropic/paid" })).toBe(true)
     // 不存在的模型不可用
     expect(isModelUsable(providers, ["openai"], { providerID: "openai", modelID: "missing" })).toBe(false)
   })

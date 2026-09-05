@@ -1,12 +1,75 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import { defaultOrganizationId, fetchDefaultModel } from "../../src/api/profile.js"
-import { DEFAULT_FREE_MODEL, DEFAULT_MODEL } from "../../src/api/constants.js"
+import { DEFAULT_FREE_MODEL, DEFAULT_MODEL, KILO_API_BASE } from "../../src/api/constants.js"
 import type { KilocodeProfile } from "../../src/types.js"
 
-const fetch = globalThis.fetch
+describe("fetchDefaultModel", () => {
+  const failures: [string, () => Promise<Response>][] = [
+    ["missing", async () => Response.json({})],
+    ["empty", async () => Response.json({ defaultModel: "", defaultFreeModel: "" })],
+    ["unauthorized", async () => new Response(null, { status: 401 })],
+    ["server error", async () => new Response(null, { status: 500 })],
+    ["invalid JSON", async () => new Response("invalid")],
+    ["network error", async () => Promise.reject(new Error("offline"))],
+  ]
 
-afterEach(() => {
-  globalThis.fetch = fetch
+  test.each(failures)("preserves old defaults and accepts an Org fallback: %s", async (_, response) => {
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(response, { preconnect: globalThis.fetch.preconnect }),
+    )
+    try {
+      expect(await fetchDefaultModel()).toBe(DEFAULT_FREE_MODEL)
+      expect(await fetchDefaultModel("token")).toBe(DEFAULT_MODEL)
+      expect(await fetchDefaultModel("token", "org")).toBe(DEFAULT_MODEL)
+      expect(await fetchDefaultModel("token", "org", "allowed/first")).toBe("allowed/first")
+      expect(await fetchDefaultModel("token", "org", "")).toBe("")
+    } finally {
+      fetch.mockRestore()
+    }
+  })
+
+  test("uses the API default ahead of the supplied fallback", async () => {
+    const fetch = spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ defaultModel: "allowed/default", defaultFreeModel: "public/free" }),
+    )
+    try {
+      expect(await fetchDefaultModel("token", "org", "allowed/first")).toBe("allowed/default")
+      expect(fetch.mock.calls.at(0)?.at(0)).toBe(`${KILO_API_BASE}/api/organizations/org/defaults`)
+    } finally {
+      fetch.mockRestore()
+    }
+  })
+
+  // kilocode_change start - ZLF 契约：请求必须携带超时保护信号（5 秒超时，
+  // 避免默认模型请求阻塞 Provider 初始化）。
+  test("carries a timeout abort signal on the request", async () => {
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (_input: unknown, init?: RequestInit) => {
+          expect(init?.signal).toBeInstanceOf(AbortSignal)
+          return Response.json({})
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ) as typeof globalThis.fetch,
+    )
+    try {
+      expect(await fetchDefaultModel()).toBe(DEFAULT_FREE_MODEL)
+    } finally {
+      fetch.mockRestore()
+    }
+  })
+  // kilocode_change end
+
+  test("keeps anonymous API defaults", async () => {
+    const fetch = spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ defaultModel: "paid", defaultFreeModel: "public/free" }),
+    )
+    try {
+      expect(await fetchDefaultModel()).toBe("public/free")
+    } finally {
+      fetch.mockRestore()
+    }
+  })
 })
 
 const profile = (input: Partial<KilocodeProfile> = {}): KilocodeProfile => ({
@@ -55,41 +118,5 @@ describe("defaultOrganizationId", () => {
         }),
       ),
     ).toBe("org_2")
-  })
-})
-
-describe("fetchDefaultModel", () => {
-  test("creates a default timeout signal", async () => {
-    globalThis.fetch = (_input, init) => {
-      expect(init?.signal).toBeInstanceOf(AbortSignal)
-      return Promise.reject(new Error("模拟网络失败"))
-    }
-
-    expect(await fetchDefaultModel()).toBe(DEFAULT_FREE_MODEL)
-  })
-
-  test("uses the anonymous fallback when the request times out", async () => {
-    globalThis.fetch = (_input, init) => {
-      const signal = init?.signal
-      if (!signal) return Promise.reject(new Error("缺少超时信号"))
-      return new Promise((_resolve, reject) => {
-        signal.addEventListener("abort", () => reject(signal.reason), { once: true })
-      })
-    }
-
-    const model = await fetchDefaultModel(undefined, undefined, AbortSignal.timeout(5))
-
-    expect(model).toBe(DEFAULT_FREE_MODEL)
-  })
-
-  test("uses the authenticated fallback when the request is aborted", async () => {
-    globalThis.fetch = (_input, init) => {
-      expect(init?.signal?.aborted).toBe(true)
-      return Promise.reject(init?.signal?.reason)
-    }
-
-    const model = await fetchDefaultModel("test-token", undefined, AbortSignal.abort())
-
-    expect(model).toBe(DEFAULT_MODEL)
   })
 })

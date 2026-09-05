@@ -38,6 +38,7 @@ import { InstanceReloadApi } from "@/kilocode/server/httpapi/groups/instance-rel
 import { InteractiveTerminalApi } from "@/kilocode/server/httpapi/groups/interactive-terminal"
 import { KiloGatewayApi } from "@/kilocode/server/httpapi/groups/kilo-gateway"
 import { KilocodeApi } from "@/kilocode/server/httpapi/groups/kilocode"
+import { MigrateApi } from "@/kilocode/server/httpapi/groups/migrate"
 import { NetworkApi } from "@/kilocode/server/httpapi/groups/network"
 import { ProviderReadyApi } from "@/kilocode/server/httpapi/groups/provider-ready"
 import { RemoteApi } from "@/kilocode/server/httpapi/groups/remote"
@@ -109,6 +110,7 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(InteractiveTerminalApi)
   .addHttpApi(KiloGatewayApi)
   .addHttpApi(KilocodeApi)
+  .addHttpApi(MigrateApi)
   .addHttpApi(NetworkApi)
   .addHttpApi(ProviderReadyApi)
   .addHttpApi(RemoteApi)

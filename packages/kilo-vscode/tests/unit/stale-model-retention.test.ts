@@ -130,11 +130,15 @@ describe("kilo 缺失的过渡快照不影响数据（F02 场景 b/c）", () => 
     expect(getSessionModel(store, restored, "session-b", "code")).toEqual(KILO_FREE)
   })
 
-  it("providers 完全为空（启动窗口）时豁免校验，既有选择直接可用", () => {
+  it("providers 完全为空（启动窗口）时解析暂缓为 null，但存储不被清除", () => {
+    // v7.5.14 起启动窗口由上游 ready/pending 机制接管：空目录下解析返回 null
+    //（界面显示待定），选择保留在 store 中，目录就绪后自动复活（见上一用例）。
     const store = makeStore()
     const env = makeEnv({}, [])
-    expect(getSessionModel(store, env, "session-a", "code")).toEqual(OPENAI_GPT)
-    expect(getSessionModel(store, env, "session-b", "code")).toEqual(KILO_FREE)
+    expect(getSessionModel(store, env, "session-a", "code")).toBeNull()
+    expect(getSessionModel(store, env, "session-b", "code")).toBeNull()
+    expect(store.sessionOverrides["session-a"]).toEqual(OPENAI_GPT)
+    expect(store.sessionOverrides["session-b"]).toEqual(KILO_FREE)
   })
 })
 
