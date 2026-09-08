@@ -6,13 +6,15 @@ import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Markdown } from "@kilocode/kilo-ui/markdown"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { useLanguage } from "../../src/context/language"
-import { formatRelativeDate } from "../../src/utils/date"
-import { sendReviewComments } from "../../diff-viewer/review-annotations"
+import { useVSCode } from "../../src/context/vscode"
 import { CopyButton } from "./CopyButton"
+import { PRCommentTime } from "./PRCommentTime"
 import { SectionHeading } from "./SectionHeading"
-import { commentState, patchCommentState } from "./pr-comment-state"
-import { githubUrl, prConversationMarkdown, prConversationPayload, preview, SEND_LIMIT } from "./pr-comment-payload"
-import type { PRConversationComment, ReviewerState } from "./pr-types"
+import { actionableConversation, sendConversation } from "./pr-actions"
+import { commentState, createReactionController, patchCommentState } from "./pr-comment-state"
+import { githubUrl, prConversationMarkdown, preview, SEND_LIMIT } from "./pr-comment-payload"
+import type { PRConversationComment, PRReaction, PRReactionContent, ReviewerState } from "./pr-types"
+import { PRReactions } from "./PRReactions"
 
 const REVIEWER_ICON: Record<ReviewerState, string> = {
   approved: "circle-check",
@@ -38,6 +40,10 @@ interface CardProps {
   onSend: () => void
   onDismiss: () => void
   onOpenUrl?: () => void
+  reactionError?: string
+  reactions?: PRReaction[]
+  reactionPending?: (content: PRReactionContent) => boolean
+  onReaction?: (content: PRReactionContent, add: boolean) => void
 }
 
 function PRConversationCard(props: CardProps) {
@@ -92,9 +98,7 @@ function PRConversationCard(props: CardProps) {
           <Show when={props.sent}>
             <span class="am-pr-comment-tag am-pr-comment-tag-sent">{t("agentManager.pr.comment.sent")}</span>
           </Show>
-          <Show when={props.comment.createdAt}>
-            {(time) => <span class="am-pr-comment-time">{formatRelativeDate(new Date(time()).toISOString())}</span>}
-          </Show>
+          <PRCommentTime time={props.comment.createdAt} />
         </div>
       </button>
 
@@ -102,15 +106,23 @@ function PRConversationCard(props: CardProps) {
         <div class="am-pr-comment-body">
           <Markdown text={props.comment.body} />
         </div>
+        <Show when={props.reactionError}>{(err) => <div class="am-pr-comment-error">{err()}</div>}</Show>
         <div class="am-pr-comment-actions am-pr-row">
           <Button variant="primary" size="small" disabled={props.sent} onClick={props.onSend}>
             {props.sent
               ? t("agentManager.pr.comment.sent")
-              : t(props.activeTerminalId ? "agentManager.pr.comment.sendToTerminal" : "agentManager.pr.comment.send")}
+              : t(props.activeTerminalId ? "agentManager.pr.comment.sendToTerminal" : "agentManager.pr.fixWithKilo")}
           </Button>
           <Button variant="secondary" size="small" class="am-pr-comment-btn" onClick={props.onDismiss}>
             {props.dismissed ? t("agentManager.pr.conversation.restore") : t("agentManager.pr.conversation.dismiss")}
           </Button>
+          <Show when={props.onReaction}>
+            <PRReactions
+              reactions={props.reactions ?? props.comment.reactions}
+              pending={props.reactionPending}
+              onToggle={(content, add) => props.onReaction?.(content, add)}
+            />
+          </Show>
           <span class="am-pr-comment-actions-gap" />
           <CopyButton text={prConversationMarkdown(props.comment)} label={t("agentManager.pr.comment.copy")} />
           <Show when={props.onOpenUrl}>
@@ -140,6 +152,14 @@ interface Props {
 
 export function PRConversation(props: Props) {
   const { t } = useLanguage()
+  const vscode = useVSCode()
+  const reactions = createReactionController({
+    worktree: () => props.worktreeId,
+    project: () => props.projectId,
+    post: vscode.postMessage,
+    onMessage: vscode.onMessage,
+    fail: (error) => t("agentManager.pr.comment.reactionFailed", { error: error || t("common.requestFailed") }),
+  })
   const state = () => commentState(props.worktreeId)
   const patch = (fn: (prev: ReturnType<typeof state>) => Partial<ReturnType<typeof state>>) =>
     patchCommentState(props.worktreeId, fn)
@@ -165,25 +185,10 @@ export function PRConversation(props: Props) {
     }))
   }
 
-  const actionable = createMemo(() =>
-    props.comments.filter((c) => !c.isBot && !sent(c.id) && !dismissed(c.id)).map((c) => c.id),
-  )
+  const actionable = createMemo(() => actionableConversation(props.comments, state()))
 
   function send(ids: string[]) {
-    const map = new Map(props.comments.map((c) => [c.id, c]))
-    const batch = ids
-      .flatMap((id) => {
-        const comment = map.get(id)
-        return comment && !state().sent[id] ? [comment] : []
-      })
-      .slice(0, SEND_LIMIT)
-    if (batch.length === 0) return
-    sendReviewComments(batch.map(prConversationPayload), props.activeTerminalId)
-    patch((prev) => {
-      const nextSent = { ...prev.sent }
-      for (const item of batch) nextSent[item.id] = true
-      return { sent: nextSent }
-    })
+    sendConversation(props.worktreeId, props.comments, ids, state(), props.activeTerminalId)
   }
 
   return (
@@ -219,6 +224,10 @@ export function PRConversation(props: Props) {
                   onToggleOpen={() => toggleOpen(comment)}
                   onSend={() => send([comment.id])}
                   onDismiss={() => toggleDismiss(comment)}
+                  reactionError={reactions.error(comment.id)}
+                  reactions={reactions.list(comment.id, comment.reactions)}
+                  reactionPending={(content) => reactions.pending(comment.id, content)}
+                  onReaction={(content, add) => reactions.toggle(comment.id, content, add)}
                   onOpenUrl={
                     githubUrl(comment.url) && props.onOpenUrl
                       ? () => props.onOpenUrl?.(githubUrl(comment.url)!)

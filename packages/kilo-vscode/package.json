@@ -2,7 +2,7 @@
   "name": "zlfcode",
   "displayName": "ZLF Code",
   "description": "ZLF Code 是面向内部使用的 AI coding agent，重点增强自定义提供商：支持 OpenAI / Anthropic / Gemini API 类型、模型自动发现、图像与推理能力、高级 token 参数和成本配置。",
-  "version": "7.5.1401",
+  "version": "7.5.1601",
   "icon": "assets/icons/zlfcode.png",
   "galleryBanner": {
     "color": "#FFFFFF",
@@ -205,6 +205,11 @@
         "category": "ZLF Code"
       },
       {
+        "command": "kilo-code.new.toggleCaffeination",
+        "title": "Toggle Keep Awake",
+        "category": "ZLF Code"
+      },
+      {
         "command": "kilo-code.new.autocomplete.generateSuggestions",
         "title": "Generate Suggested Edits",
         "category": "ZLF Code"
@@ -321,7 +326,7 @@
       {
         "command": "kilo-code.new.agentManager.updateFromBase",
         "title": "Agent Manager: Update from base",
-        "category": "Kilo Code",
+        "category": "ZLF Code",
         "enablement": "activeWebviewPanelId == 'kilo-code.new.AgentManagerPanel'"
       },
       {
