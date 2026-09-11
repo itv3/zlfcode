@@ -23,6 +23,7 @@ export interface CloudSessionContext {
     recordMessageSessionId(messageId: string, sessionId: string): void
   }
   postMessage(msg: unknown): void
+  notify?(message: string): void
   getWorkspaceDirectory(sessionId?: string): string
   gatherEditorContext(): Promise<EditorContext>
   runWithMessageConfirmation?<T>(
@@ -190,7 +191,7 @@ export async function handleImportAndSend(
       if (command) {
         // flatMap + `?? []`：会话目录外的附件被归属校验丢弃（详见 resolveMessageFile 注释）。
         const parts = files?.flatMap((f) => resolveMessageFile(f, dir) ?? [])
-        await client.session.command(
+        const result = await client.session.command(
           {
             sessionID: session.id,
             directory: dir,
@@ -204,6 +205,13 @@ export async function handleImportAndSend(
           },
           { throwOnError: true },
         )
+        if (command === "goal" && !commandArgs?.trim()) {
+          const message = result.data.parts
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join("\n")
+          if (message) ctx.notify?.(message)
+        }
         return
       }
 

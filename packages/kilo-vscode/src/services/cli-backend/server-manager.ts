@@ -61,6 +61,7 @@ export function resolveManagedServerEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessE
   }
 }
 
+// kilocode_change start - ZLF：按运行环境分级的启动超时（本地 45s / 远程 180s）
 /**
  * 按运行环境返回 CLI 后端启动超时秒数。
  * `remoteName` 传 `vscode.env.remoteName`：本地窗口为 undefined（用较短的本地
@@ -68,6 +69,11 @@ export function resolveManagedServerEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessE
  */
 export function resolveStartupTimeoutSeconds(remoteName: string | undefined): number {
   return remoteName ? REMOTE_STARTUP_TIMEOUT_SECONDS : LOCAL_STARTUP_TIMEOUT_SECONDS
+}
+// kilocode_change end
+
+export function resolveClaudeMigrationEnv(env: NodeJS.ProcessEnv, enabled: boolean): string {
+  return env.KILO_EXPERIMENTAL_CLAUDE_MIGRATION ?? String(enabled)
 }
 
 export class ServerManager {
@@ -139,6 +145,10 @@ export class ServerManager {
       console.log("[Kilo New] ServerManager: 🎬 Spawning CLI process:", cliPath, ["serve", "--port", "0"])
       const cfg = vscode.workspace.getConfiguration("kilo-code.new")
       const claudeCompat = cfg.get<boolean>("claudeCodeCompat", false)
+      const claudeMigration = resolveClaudeMigrationEnv(
+        { ...process.env, ...(extraEnv ?? {}) },
+        cfg.get<boolean>("experimental.claudeMigration", false),
+      )
       // Pin cwd so the CLI doesn't inherit the extension host's cwd ("/" under F5 debug)
       // or "$HOME" in empty VS Code windows.
       const folders = vscode.workspace.workspaceFolders
@@ -202,6 +212,7 @@ export class ServerManager {
           ...resolveTreeSitterEnv(this.context.extensionPath),
           ...bwrapEnv,
           ...extraEnv,
+          KILO_EXPERIMENTAL_CLAUDE_MIGRATION: claudeMigration,
         },
         stdio: ["ignore", "pipe", "pipe"],
         detached: true,

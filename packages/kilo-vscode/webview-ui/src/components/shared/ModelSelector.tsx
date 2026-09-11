@@ -171,6 +171,14 @@ export interface ModelSelectorBaseProps {
   initialExpanded?: boolean
   /** Only respond to picker events from this prompt scope. */
   trigger?: string
+  /** Disable this prompt-scoped selector while a permission owns the prompt. */
+  blocked?: boolean
+  /**
+   * Force the compact list layout. Used by inline `@` model references, where
+   * there is no current model for the preview pane and picking is a one-click,
+   * insert-only action. The persisted chat-selector preference is not changed.
+   */
+  collapsed?: boolean
 }
 
 export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
@@ -192,15 +200,22 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   })
 
   const [open, setOpen] = createSignal(false)
+  // kilocode_change start - ZLF 的 initialExpanded 定制与上游 collapsed（`@` 内联模型引用
+  // 强制紧凑布局、不读写宿主偏好）共存：collapsed 优先强制折叠；否则 initialExpanded
+  // 未传时走宿主持久化偏好（上游行为），传了则走本组件的本地状态。
   const [localExpanded, setLocalExpanded] = createSignal(props.initialExpanded ?? vscode.getModelSelectorExpanded())
-  const expanded = () => (props.initialExpanded === undefined ? vscode.getModelSelectorExpanded() : localExpanded())
+  const preferExpanded = () =>
+    props.initialExpanded === undefined ? vscode.getModelSelectorExpanded() : localExpanded()
+  const expanded = () => !props.collapsed && preferExpanded()
   const setExpanded = (value: boolean) => {
+    if (props.collapsed) return
     if (props.initialExpanded === undefined) {
       vscode.setModelSelectorExpanded(value)
       return
     }
     setLocalExpanded(value)
   }
+  // kilocode_change end
   const [search, setSearch] = createSignal("")
   const hasSearch = () => search().trim().length > 0
   const [selectedKey, setSelectedKey] = createSignal(CLEAR_KEY)
@@ -323,7 +338,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     }
 
     for (const m of filtered()) {
-      if (isAuto(m)) {
+      if (isAuto(m) && m.recommendedIndex !== undefined) {
         autos.push(m)
         continue
       }
@@ -628,7 +643,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   // always restore the prompt before the popover's own Escape handler runs.
   const onTrigger = (event: Event) => {
     const source = (event as CustomEvent<{ source?: string }>).detail?.source
-    if (source !== props.trigger) return
+    if (source !== props.trigger || props.blocked) return
     setOpen(true)
   }
   const onEscape = (e: KeyboardEvent) => {
@@ -637,11 +652,19 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     e.stopImmediatePropagation()
     cancel()
   }
-  window.addEventListener("openModelPicker", onTrigger)
-  window.addEventListener("keydown", onEscape, true)
+  createEffect(() => {
+    if (props.blocked) {
+      setOpen(false)
+      return
+    }
+    window.addEventListener("openModelPicker", onTrigger)
+    window.addEventListener("keydown", onEscape, true)
+    onCleanup(() => {
+      window.removeEventListener("openModelPicker", onTrigger)
+      window.removeEventListener("keydown", onEscape, true)
+    })
+  })
   onCleanup(() => {
-    window.removeEventListener("openModelPicker", onTrigger)
-    window.removeEventListener("keydown", onEscape, true)
     clearTimeout(previewTimer)
     if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame)
   })
@@ -880,13 +903,16 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
           deferDismiss={props.deferDismiss}
           portal={props.portal}
           open={open()}
-          onOpenChange={setOpen}
+          onOpenChange={(value) => {
+            if (value && props.blocked) return
+            setOpen(value)
+          }}
           triggerAs={Button}
           triggerProps={{
             variant: "secondary",
             size: "normal",
             get disabled() {
-              return !canOpen()
+              return props.blocked || !canOpen()
             },
             get ["aria-label"]() {
               return controlLabel()
@@ -963,30 +989,34 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                       }
                     }}
                   />
-                  <Tooltip
-                    value={expanded() ? language.t("dialog.model.collapse") : language.t("dialog.model.expand")}
-                    placement="top"
-                  >
-                    <IconButton
-                      icon={expanded() ? "collapse" : "expand"}
-                      size="small"
-                      variant="ghost"
-                      aria-label={expanded() ? language.t("dialog.model.collapse") : language.t("dialog.model.expand")}
-                      aria-expanded={expanded()}
-                      aria-controls={previewID}
-                      onClick={() => {
-                        if (expanded()) {
-                          setPreActiveKey(null)
-                          setPreviewKey(null)
+                  <Show when={!props.collapsed}>
+                    <Tooltip
+                      value={expanded() ? language.t("dialog.model.collapse") : language.t("dialog.model.expand")}
+                      placement="top"
+                    >
+                      <IconButton
+                        icon={expanded() ? "collapse" : "expand"}
+                        size="small"
+                        variant="ghost"
+                        aria-label={
+                          expanded() ? language.t("dialog.model.collapse") : language.t("dialog.model.expand")
                         }
-                        setExpanded(!expanded())
-                        requestAnimationFrame(() => {
-                          searchRef?.focus()
-                          scrollRow(preActiveKey() ?? selectedKey(), "nearest")
-                        })
-                      }}
-                    />
-                  </Tooltip>
+                        aria-expanded={expanded()}
+                        aria-controls={previewID}
+                        onClick={() => {
+                          if (expanded()) {
+                            setPreActiveKey(null)
+                            setPreviewKey(null)
+                          }
+                          setExpanded(!expanded())
+                          requestAnimationFrame(() => {
+                            searchRef?.focus()
+                            scrollRow(preActiveKey() ?? selectedKey(), "nearest")
+                          })
+                        }}
+                      />
+                    </Tooltip>
+                  </Show>
                 </div>
 
                 <div
@@ -1215,6 +1245,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
 
 interface ModelSelectorProps {
   sessionID?: Accessor<string | undefined>
+  blocked?: boolean
 }
 
 export const ModelSelector: Component<ModelSelectorProps> = (props) => {
@@ -1227,6 +1258,7 @@ export const ModelSelector: Component<ModelSelectorProps> = (props) => {
       // 聊天选择器展示"实际将被使用的模型"：无法解析的选择交给模型回退逻辑，
       // 不显示 raw 兜底（resolved 语义，F11/F65）。
       labelSemantics="resolved"
+      blocked={props.blocked}
       onSelect={(providerID, modelID) => {
         session.selectModel(providerID, modelID, id())
       }}

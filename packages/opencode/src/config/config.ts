@@ -50,6 +50,7 @@ import { KilocodeDefaultPlugins } from "@/kilocode/config/default-plugins"
 import { KilocodeGlobalConfigStamp } from "@/kilocode/config/global-stamp"
 import { SandboxConfig } from "@/kilocode/sandbox/config"
 import { ExternalMarkdown } from "@/kilocode/config/external-markdown"
+import { ClaudeMigration } from "@/kilocode/config/claude-migration" // kilocode_change
 import type { KilocodeMarkdown } from "@/kilocode/config/markdown"
 import {
   IndexingConfig as KiloIndexingConfig,
@@ -384,7 +385,21 @@ const layer = Layer.effect(
     const loadSnapshot = Effect.fnUntraced(function* (env?: Record<string, string>) {
       // kilocode_change start
       yield* Effect.promise(() => KilocodeConfig.migrateBashPermission())
-      const before = yield* KilocodeGlobalConfigStamp.read(fs, Global.Path.config)
+      if (Flag.KILO_EXPERIMENTAL_CLAUDE_MIGRATION && !ClaudeMigration.unsupportedContext()) {
+        yield* flock
+          .withLock(
+            Effect.promise(() => ClaudeMigration.run({ enabled: true })),
+            `config:global:${path.resolve(Global.Path.config)}`,
+          )
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Claude Code configuration migration failed", { error: String(cause) }).pipe(
+                Effect.as(undefined),
+              ),
+            ),
+          )
+      }
+      const before = yield* KilocodeGlobalConfigStamp.read(fs, Global.Path.config) // kilocode_change - ZLF 配置热刷新需保留读取前快照
       globalStamp = before
       // kilocode_change end
       let result: Info = {}

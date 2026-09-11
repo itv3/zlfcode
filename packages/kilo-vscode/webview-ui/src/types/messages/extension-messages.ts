@@ -19,6 +19,7 @@ import type { AgentManagerSidebarTarget } from "./webview-messages"
 import type { PermissionRequest } from "./permissions"
 import type { AnacondaDesktopExtensionMessage } from "../../../../src/shared/anaconda-desktop-messages"
 import type { BrowserFeedbackData, BrowserReference } from "../../../../src/shared/browser-feedback"
+import type { PRMergeResult } from "../../../../src/shared/pr-comment-actions"
 
 export type { BrowserReference } from "../../../../src/shared/browser-feedback"
 
@@ -86,6 +87,7 @@ import type {
   MigrationSessionProgressMessage,
 } from "./migration"
 import type { MemoryEventMessage, MemoryLoadedMessage, MemoryOperationResultMessage } from "./memory"
+import type { SessionBoardLoadedMessage } from "./board"
 
 // ============================================
 // Messages FROM extension TO webview
@@ -320,6 +322,11 @@ export interface CloudSessionImportFailedMessage {
 export interface OpenCloudSessionMessage {
   type: "openCloudSession"
   sessionId: string
+}
+
+export interface OpenSessionMessage {
+  type: "openSession"
+  sessionID: string
 }
 
 export interface SelectKiloModelMessage {
@@ -697,6 +704,7 @@ export interface ClaudeCompatSettingLoadedMessage {
 export interface ExtensionSettings {
   maxCost?: number
   multiProject?: boolean
+  claudeMigration?: boolean
   [key: string]: unknown
 }
 
@@ -761,8 +769,17 @@ export interface NotificationSettingsLoadedMessage {
   type: "notificationSettingsLoaded"
   settings: {
     attentionEnabled: boolean
+    attentionNotifications: boolean
+    attentionOSNotifications: boolean
     attentionSound: string
+    osNotificationsAvailable: boolean
   }
+}
+
+export interface OSNotificationTestResultMessage {
+  type: "osNotificationTestResult"
+  ok: boolean
+  error?: string
 }
 
 export interface TimelineSettingLoadedMessage {
@@ -778,6 +795,11 @@ export interface ThroughputSettingLoadedMessage {
 export interface AutoApprovalReasonSettingLoadedMessage {
   type: "autoApprovalReasonSettingLoaded"
   visible: boolean
+}
+
+export interface PushFixesSettingLoadedMessage {
+  type: "pushFixesSettingLoaded"
+  enabled: boolean
 }
 
 export interface WorkStyleLoadedMessage {
@@ -882,6 +904,7 @@ export interface AgentManagerStateMessage {
   terminalDestination?: TerminalDestination
   terminalFont?: TerminalFont
   browserAutomation?: boolean
+  restricted?: boolean
 }
 
 // A registered Agent Manager project as shown in the sidebar
@@ -906,6 +929,15 @@ export interface AgentManagerProjectsMessage {
 export interface AgentManagerSelectionActivatedMessage {
   type: "agentManager.selectionActivated"
   target: AgentManagerSidebarTarget
+}
+
+/** Host request to select a managed session and scroll its chat to the latest message. */
+export interface AgentManagerRevealSessionMessage {
+  type: "agentManager.revealSession"
+  projectId: string
+  /** Absent when the session lives in the project's Local tabs. */
+  worktreeId?: string
+  sessionId: string
 }
 
 export interface AgentManagerProjectSessionsMessage {
@@ -1276,6 +1308,8 @@ export interface DiffViewerContextMessage {
 export interface DiffViewerPRCommentsMessage {
   type: "diffViewer.prComments"
   comments: PRComment[]
+  target?: import("../../../../src/shared/pr-comment-actions").PRTarget
+  threads?: string[]
 }
 
 export interface DiffViewerFocusCommentMessage {
@@ -1542,6 +1576,14 @@ export interface AgentManagerBrowserDevtoolsMessage {
 }
 
 export type ExtensionMessage =
+  | {
+      type: "agentManager.resolveCommentResult" | "agentManager.unresolveCommentResult"
+      projectId?: string
+      worktreeId: string
+      threadId: string
+      success: boolean
+      error?: string
+    }
   | { type: "sessionAcknowledged"; sessionID: string; eventID: string }
   | { type: "webviewActiveChanged"; active: boolean }
   | DocumentResultMessage
@@ -1632,9 +1674,11 @@ export type ExtensionMessage =
   | ConfigBindingExpiredMessage
   | GlobalConfigLoadedMessage
   | NotificationSettingsLoadedMessage
+  | OSNotificationTestResultMessage
   | TimelineSettingLoadedMessage
   | ThroughputSettingLoadedMessage
   | AutoApprovalReasonSettingLoadedMessage
+  | PushFixesSettingLoadedMessage
   | WorkStyleLoadedMessage
   | WorkStyleAppliedMessage
   | WorkStyleApplyFailedMessage
@@ -1649,6 +1693,7 @@ export type ExtensionMessage =
   | AgentManagerWorktreeDeletedMessage
   | AgentManagerProjectsMessage
   | AgentManagerSelectionActivatedMessage
+  | AgentManagerRevealSessionMessage
   | AgentManagerProjectSessionsMessage
   | AgentManagerRunStatusMessage
   | AgentManagerCaffeinationMessage
@@ -1670,6 +1715,7 @@ export type ExtensionMessage =
   | CloudSessionImportedMessage
   | CloudSessionImportFailedMessage
   | OpenCloudSessionMessage
+  | OpenSessionMessage
   | SelectKiloModelMessage
   | AgentManagerBranchesMessage
   | AgentManagerImportResultMessage
@@ -1687,6 +1733,7 @@ export type ExtensionMessage =
   | AgentManagerPRStatusMessage
   | AgentManagerPRErrorMessage
   | AgentManagerCommentReactionResultMessage
+  | PRMergeResult
   | AgentManagerTerminalCreatedMessage
   | AgentManagerTerminalRestartedMessage
   | AgentManagerTerminalFontChangedMessage
@@ -1744,3 +1791,4 @@ export type ExtensionMessage =
   | MemoryEventMessage
   | MemoryOperationResultMessage
   | BackgroundJobsLoadedMessage
+  | SessionBoardLoadedMessage
