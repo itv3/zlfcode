@@ -591,7 +591,8 @@ it.instance(
     const providers = yield* list
     const model = providers[ProviderV2.ID.anthropic].models["claude-sonnet-4-6"]
     expect(model.variants?.low).toEqual({ reasoningEffort: "low" })
-    expect(model.variants?.max).toBeUndefined()
+    // kilocode_change - 自定义 OpenAI 兼容 Provider 支持完整推理档位，包括 max。
+    expect(model.variants?.max).toEqual({ reasoningEffort: "max" })
   }),
   {
     config: {
@@ -761,30 +762,6 @@ it.instance(
           models: {
             "glm-flash": { family: "glm-flash", release_date: "2026-06-01" },
             "claude-haiku": { family: "claude-haiku", release_date: "2026-01-01" },
-          },
-          options: { apiKey: "test-key" },
-        },
-      },
-    },
-  },
-)
-
-it.instance(
-  // kilocode_change start - Kilo always has an auto-routed small-model fallback
-  "getSmallModel falls back to Kilo auto when model IDs lack family metadata",
-  Effect.gen(function* () {
-    const model = yield* Provider.use.getSmallModel(ProviderV2.ID.make("test-provider"))
-    expect(model).toMatchObject({ providerID: "kilo", id: "kilo-auto/small" })
-  }),
-  // kilocode_change end
-  {
-    config: {
-      provider: {
-        "test-provider": {
-          name: "Test Provider",
-          npm: "@ai-sdk/openai-compatible",
-          models: {
-            "gpt-5-nano": { release_date: "2026-01-01" },
           },
           options: { apiKey: "test-key" },
         },

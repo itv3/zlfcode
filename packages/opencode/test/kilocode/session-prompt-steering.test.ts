@@ -2,12 +2,10 @@ import path from "path"
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
-import { Effect } from "effect"
+import { Effect, ManagedRuntime } from "effect"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { AppRuntime } from "../../src/effect/app-runtime"
-import { makeRuntime } from "../../src/effect/run-service"
 import { MessageV2 } from "../../src/session/message-v2"
 import { Session } from "../../src/session/session"
 import { SessionPrompt } from "../../src/session/prompt"
@@ -25,7 +23,8 @@ const previous = Flag.KILO_DB
 const dbfile = path.join(os.tmpdir(), `kilo-prompt-steering-${process.pid}-${crypto.randomUUID()}.db`)
 const layer = LayerNode.compile(LayerNode.group([Session.node, SessionProjector.node]))
 const prompt = LayerNode.compile(LayerNode.group([SessionPrompt.node, SessionProjector.node]))
-const runtime = makeRuntime(Session.Service, layer)
+// 使用私有 memo map，避免切换测试数据库时复用全局运行时的数据库连接。
+const runtime = ManagedRuntime.make(layer)
 
 beforeAll(async () => {
   await fs.rm(dbfile, { force: true })
@@ -34,7 +33,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await runtime.dispose()
-  await AppRuntime.dispose()
   await disposeTestRuntime()
   Flag.KILO_DB = previous
   await Promise.all([dbfile, `${dbfile}-wal`, `${dbfile}-shm`].map(cleanup))
@@ -112,9 +110,9 @@ function question() {
 
 const sessions = {
   create: (input: Parameters<Session.Interface["create"]>[0]) =>
-    runtime.runPromise((svc) => svc.create(input)),
+    runtime.runPromise(Session.Service.use((svc) => svc.create(input))),
   messages: (sessionID: SessionID) =>
-    runtime.runPromise((svc) => svc.messages({ sessionID })),
+    runtime.runPromise(Session.Service.use((svc) => svc.messages({ sessionID }))),
 }
 
 async function wait(sessionID: SessionID) {
@@ -150,6 +148,25 @@ function tail(body: Record<string, unknown>): { role: string; content: unknown }
   return { role: item.role, content: item.content }
 }
 
+async function directory(baseURL: string) {
+  const tmp = await tmpdir({
+    git: true,
+    init: async (dir) =>
+      Bun.write(
+        path.join(dir, "opencode.json"),
+        JSON.stringify({
+          enabled_providers: ["alibaba"],
+          provider: { alibaba: { options: { apiKey: "test-key", baseURL } } },
+          agent: { code: { model: "alibaba/qwen-plus" } },
+        }),
+      ),
+  })
+  return {
+    path: tmp.path,
+    [Symbol.asyncDispose]: () => cleanup(tmp.path),
+  }
+}
+
 test("runs queued steering before resuming a dismissed question turn", async () => {
   const calls: Array<Record<string, unknown>> = []
   const server = Bun.serve({
@@ -165,18 +182,7 @@ test("runs queued steering before resuming a dismissed question turn", async () 
   })
 
   try {
-    await using tmp = await tmpdir({
-      git: true,
-      init: async (dir) =>
-        Bun.write(
-          path.join(dir, "opencode.json"),
-          JSON.stringify({
-            enabled_providers: ["alibaba"],
-            provider: { alibaba: { options: { apiKey: "test-key", baseURL: `${server.url.origin}/v1` } } },
-            agent: { code: { model: "alibaba/qwen-plus" } },
-          }),
-        ),
-    })
+    await using tmp = await directory(`${server.url.origin}/v1`)
     await provideTestInstance({
       directory: tmp.path,
       fn: () =>

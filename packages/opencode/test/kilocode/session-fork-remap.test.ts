@@ -1,8 +1,8 @@
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { Effect, ManagedRuntime } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { createKiloClient } from "@kilocode/sdk/v2/client"
 import { provideTestInstance } from "../fixture/fixture"
@@ -11,7 +11,7 @@ import { Session } from "../../src/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import * as Log from "@opencode-ai/core/util/log"
-import { disposeAllInstances, disposeTestRuntime, tmpdir } from "../fixture/fixture"
+import { disposeTestRuntime, tmpdir } from "../fixture/fixture"
 import { eq } from "drizzle-orm"
 import { EventSequenceTable, EventTable } from "@opencode-ai/core/event/sql"
 import { Flag } from "@opencode-ai/core/flag/flag"
@@ -24,8 +24,6 @@ import { InstanceRef } from "../../src/effect/instance-ref"
 import path from "path"
 import os from "os"
 import fs from "fs/promises"
-import { AppRuntime } from "../../src/effect/app-runtime"
-import { makeRuntime } from "../../src/effect/run-service"
 import { remove as cleanup } from "./cleanup"
 
 Log.init({ print: false })
@@ -33,7 +31,8 @@ Log.init({ print: false })
 const previous = Flag.KILO_DB
 const dbfile = path.join(os.tmpdir(), `kilo-fork-${process.pid}-${crypto.randomUUID()}.db`)
 const layer = LayerNode.compile(LayerNode.group([Session.node, SessionProjector.node]))
-const runtime = makeRuntime(Session.Service, layer)
+// 使用私有 memo map，避免切换测试数据库时复用全局运行时的数据库连接。
+const runtime = ManagedRuntime.make(layer)
 
 beforeAll(async () => {
   await fs.rm(dbfile, { force: true })
@@ -42,24 +41,33 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await runtime.dispose()
-  await AppRuntime.dispose()
   await disposeTestRuntime()
   Flag.KILO_DB = previous
   await Promise.all([dbfile, `${dbfile}-wal`, `${dbfile}-shm`].map(cleanup))
 })
 
 const sessions = {
-  create: (input?: Parameters<Session.Interface["create"]>[0]) => runtime.runPromise((svc) => svc.create(input)),
-  get: (id: SessionID) => runtime.runPromise((svc) => svc.get(id)),
-  list: () => runtime.runPromise((svc) => svc.list()),
-  messages: (input: Parameters<Session.Interface["messages"]>[0]) => runtime.runPromise((svc) => svc.messages(input)),
-  updateMessage: <T extends MessageV2.Info>(msg: T) => runtime.runPromise((svc) => svc.updateMessage(msg)),
-  updatePart: <T extends MessageV2.Part>(part: T) => runtime.runPromise((svc) => svc.updatePart(part)),
+  create: (input?: Parameters<Session.Interface["create"]>[0]) =>
+    runtime.runPromise(Session.Service.use((svc) => svc.create(input))),
+  get: (id: SessionID) => runtime.runPromise(Session.Service.use((svc) => svc.get(id))),
+  list: () => runtime.runPromise(Session.Service.use((svc) => svc.list())),
+  messages: (input: Parameters<Session.Interface["messages"]>[0]) =>
+    runtime.runPromise(Session.Service.use((svc) => svc.messages(input))),
+  fork: (input: Parameters<Session.Interface["fork"]>[0]) =>
+    runtime.runPromise(Session.Service.use((svc) => svc.fork(input))),
+  updateMessage: <T extends MessageV2.Info>(msg: T) =>
+    runtime.runPromise(Session.Service.use((svc) => svc.updateMessage(msg))),
+  updatePart: <T extends MessageV2.Part>(part: T) =>
+    runtime.runPromise(Session.Service.use((svc) => svc.updatePart(part))),
 }
 
-afterEach(async () => {
-  await disposeAllInstances()
-})
+async function directory() {
+  const tmp = await tmpdir({ git: true })
+  return {
+    path: tmp.path,
+    [Symbol.asyncDispose]: () => cleanup(tmp.path),
+  }
+}
 
 async function instance<R>(input: { directory: string; fn: () => R }) {
   return provideTestInstance({
@@ -149,7 +157,7 @@ describe("Session.fork cost accounting", () => {
   test(
     "forked sessions start with zero cost",
     async () => {
-      await using tmp = await tmpdir({ git: true })
+      await using tmp = await directory()
       await instance({
         directory: tmp.path,
         fn: async () => {
@@ -166,7 +174,7 @@ describe("Session.fork cost accounting", () => {
             tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
           } as MessageV2.StepFinishPart)
 
-          const forked = await Session.fork({ sessionID: original.id })
+          const forked = await sessions.fork({ sessionID: original.id })
           const source = await sessions.messages({ sessionID: original.id })
           const copy = await sessions.messages({ sessionID: forked.id })
           const cost = (msgs: MessageV2.WithParts[]) =>
@@ -191,7 +199,7 @@ describe("Session.fork task children", () => {
   test(
     "clones completed task children under the forked parent",
     async () => {
-      await using tmp = await tmpdir({ git: true })
+      await using tmp = await directory()
       await instance({
         directory: tmp.path,
         fn: async () => {
@@ -271,7 +279,7 @@ describe("Session.fork task children", () => {
   test(
     "turns copied running tasks into resumable historical errors",
     async () => {
-      await using tmp = await tmpdir({ git: true })
+      await using tmp = await directory()
       await instance({
         directory: tmp.path,
         fn: async () => {
@@ -296,7 +304,7 @@ describe("Session.fork task children", () => {
           } as MessageV2.ToolPart)
 
           const before = await sessions.list()
-          const forked = await Session.fork({ sessionID: parent.id })
+          const forked = await sessions.fork({ sessionID: parent.id })
           const after = await sessions.list()
           const msgs = await sessions.messages({ sessionID: forked.id })
           const tool = msgs.flatMap((msg) => msg.parts).find((part) => part.type === "tool") as MessageV2.ToolPart
@@ -320,7 +328,7 @@ describe("Session.fork task children", () => {
   test(
     "detaches in-flight tasks and remaps errored task references",
     async () => {
-      await using tmp = await tmpdir({ git: true })
+      await using tmp = await directory()
       await instance({
         directory: tmp.path,
         fn: async () => {
@@ -359,7 +367,7 @@ describe("Session.fork task children", () => {
             },
           } as MessageV2.ToolPart)
 
-          const forked = await Session.fork({ sessionID: parent.id })
+          const forked = await sessions.fork({ sessionID: parent.id })
           const msgs = await sessions.messages({ sessionID: forked.id })
           const tools = msgs.flatMap((msg) => msg.parts).filter((part) => part.type === "tool")
           const pending = tools.find((part) => part.callID === "call_pending")
@@ -391,7 +399,7 @@ describe("Session.fork task children", () => {
   test(
     "ignores malformed task references while forking",
     async () => {
-      await using tmp = await tmpdir({ git: true })
+      await using tmp = await directory()
       await instance({
         directory: tmp.path,
         fn: async () => {
@@ -413,7 +421,7 @@ describe("Session.fork task children", () => {
             },
           } as MessageV2.ToolPart)
 
-          const forked = await Session.fork({ sessionID: parent.id })
+          const forked = await sessions.fork({ sessionID: parent.id })
           const msgs = await sessions.messages({ sessionID: forked.id })
           const tool = msgs.flatMap((msg) => msg.parts).find((part) => part.type === "tool") as MessageV2.ToolPart
           expect(tool.state.status).toBe("error")
@@ -431,7 +439,7 @@ describe("Session.fork task children", () => {
       const flag = Flag.KILO_EXPERIMENTAL_WORKSPACES
       Flag.KILO_EXPERIMENTAL_WORKSPACES = true
       try {
-        await using tmp = await tmpdir({ git: true })
+        await using tmp = await directory()
         await instance({
           directory: tmp.path,
           fn: async () => {
@@ -445,7 +453,7 @@ describe("Session.fork task children", () => {
               text: "hello",
             } as MessageV2.TextPart)
 
-            const forked = await Session.fork({ sessionID: parent.id })
+            const forked = await sessions.fork({ sessionID: parent.id })
             const [rows, sequence] = await Effect.runPromise(
               Effect.gen(function* () {
                 const { db } = yield* CoreDatabase.Service
@@ -485,7 +493,7 @@ describe("Session.fork task children", () => {
   test(
     "does not alter non-task parts",
     async () => {
-      await using tmp = await tmpdir({ git: true })
+      await using tmp = await directory()
       await instance({
         directory: tmp.path,
         fn: async () => {
@@ -499,7 +507,7 @@ describe("Session.fork task children", () => {
             text: "hello",
           } as MessageV2.TextPart)
 
-          const forked = await Session.fork({ sessionID: parent.id })
+          const forked = await sessions.fork({ sessionID: parent.id })
           const msgs = await sessions.messages({ sessionID: forked.id })
           expect(msgs).toHaveLength(1)
           expect(msgs[0].parts[0]).toMatchObject({ type: "text", text: "hello" })
@@ -512,7 +520,7 @@ describe("Session.fork task children", () => {
   test(
     "drops transient UI parts while preserving durable synthetic context",
     async () => {
-      await using tmp = await tmpdir({ git: true })
+      await using tmp = await directory()
       await instance({
         directory: tmp.path,
         fn: async () => {
@@ -537,7 +545,7 @@ describe("Session.fork task children", () => {
             } as MessageV2.TextPart)
           }
 
-          const forked = await Session.fork({ sessionID: parent.id })
+          const forked = await sessions.fork({ sessionID: parent.id })
           const source = await sessions.messages({ sessionID: parent.id })
           const copy = await sessions.messages({ sessionID: forked.id })
           const texts = copy.flatMap((msg) => msg.parts).flatMap((part) => (part.type === "text" ? [part.text] : []))

@@ -36,6 +36,7 @@ import { pollWithTimeout, testEffect } from "../../lib/effect"
 const { KiloSessions } = await import("../../../src/kilo-sessions/kilo-sessions")
 
 const it = testEffect(AppNodeBuilder.build(CrossSpawnSpawner.node))
+const fetcher = globalThis.fetch
 
 // Mirrors the KiloSessions layer wiring used by test/kilocode/kilo-sessions.test.ts:
 // real Bus/Session/Config graph, TestConfig so `init` does not read real config.
@@ -148,6 +149,7 @@ describe("KiloSessions locally started session announce", () => {
     })
     pub.mockRestore()
     mock.restore()
+    globalThis.fetch = fetcher
     restoreEnv()
     reset(token)
   })

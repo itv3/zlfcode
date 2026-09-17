@@ -1,11 +1,8 @@
 import path from "path"
-import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test"
+import { describe, expect, setDefaultTimeout, test } from "bun:test"
 import { Effect } from "effect"
-import fs from "fs/promises"
-import os from "os"
 import { Bus } from "../../src/bus"
 import { AppRuntime } from "../../src/effect/app-runtime"
-import { makeRuntime } from "../../src/effect/run-service"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import { KiloSessionCompaction } from "@/kilocode/session/compaction"
 import { KiloSessionPromptQueue } from "@/kilocode/session/prompt-queue"
@@ -13,57 +10,34 @@ import { KiloSession } from "@/kilocode/session"
 import { Suggestion } from "../../src/kilocode/suggestion"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { InstanceStore } from "../../src/project/instance-store"
-import { provideTestInstance } from "../fixture/fixture"
+import { provideTestInstance, tmpdir } from "../fixture/fixture"
 import { Session } from "../../src/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
 import { SessionCompaction } from "../../src/session/compaction"
 import { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, SessionID } from "../../src/session/schema"
 import * as Log from "@opencode-ai/core/util/log"
-import { disposeTestRuntime, provideInstance, testInstanceStoreLayer, tmpdir } from "../fixture/fixture"
-import { Flag } from "@opencode-ai/core/flag/flag"
-import { remove as cleanup } from "./cleanup"
 import { pollWithTimeout } from "../lib/effect"
 
 Log.init({ print: false })
 setDefaultTimeout(15_000)
-
-const previous = Flag.KILO_DB
-const dbfile = path.join(os.tmpdir(), `kilo-prompt-queue-${process.pid}-${crypto.randomUUID()}.db`)
-const layer = LayerNode.compile(LayerNode.group([Session.node, SessionProjector.node]))
-const prompt = LayerNode.compile(LayerNode.group([SessionPrompt.node, SessionProjector.node]))
-const runtime = makeRuntime(Session.Service, layer)
-
-beforeAll(async () => {
-  await fs.rm(dbfile, { force: true })
-  Flag.KILO_DB = dbfile
-})
-
-afterAll(async () => {
-  await runtime.dispose()
-  await AppRuntime.dispose()
-  await disposeTestRuntime()
-  Flag.KILO_DB = previous
-  await Promise.all([dbfile, `${dbfile}-wal`, `${dbfile}-shm`].map(cleanup))
-})
 
 const store = {
   updateMessage: <T extends MessageV2.Info>(msg: T) => Effect.promise(() => sessions.updateMessage(msg)),
   updatePart: <T extends MessageV2.Part>(part: T) => Effect.promise(() => sessions.updatePart(part)),
 }
 
+// Session 与 Prompt 统一走应用运行时，避免测试文件切换数据库后落到不同 SQLite 连接。
 const sessions = {
   create: (input?: Parameters<Session.Interface["create"]>[0]) =>
-    runtime.runPromise((svc) => svc.create(input)),
+    AppRuntime.runPromise(Session.Service.use((svc) => svc.create(input))),
   messages: (input: Parameters<Session.Interface["messages"]>[0]) =>
-    runtime.runPromise((svc) => svc.messages(input)),
+    AppRuntime.runPromise(Session.Service.use((svc) => svc.messages(input))),
   updateMessage: <T extends MessageV2.Info>(msg: T) =>
-    runtime.runPromise((svc) => svc.updateMessage(msg)),
+    AppRuntime.runPromise(Session.Service.use((svc) => svc.updateMessage(msg))),
   updatePart: <T extends MessageV2.Part>(part: T) =>
-    runtime.runPromise((svc) => svc.updatePart(part)),
+    AppRuntime.runPromise(Session.Service.use((svc) => svc.updatePart(part))),
 }
 
 function line(input: unknown) {
@@ -126,15 +100,8 @@ function hasText(msg: MessageV2.WithParts, text: string) {
   return msg.parts.some((part) => part.type === "text" && part.text.includes(text))
 }
 
-function scoped<T>(dir: string, fn: (prompt: SessionPrompt.Interface) => Promise<T>) {
-  return Effect.runPromise(
-    SessionPrompt.Service.use((prompt) => Effect.promise(() => fn(prompt))).pipe(
-      Effect.provide(prompt),
-      provideInstance(dir),
-      Effect.provide(testInstanceStoreLayer),
-      Effect.scoped,
-    ),
-  )
+function scoped<T>(_dir: string, fn: (prompt: SessionPrompt.Interface) => Promise<T>) {
+  return AppRuntime.runPromise(SessionPrompt.Service.use((prompt) => Effect.promise(() => fn(prompt))))
 }
 
 // Find the last non-system message in an OpenAI-compatible request body. Kept
@@ -469,7 +436,10 @@ describe("session prompt queue", () => {
       await using tmp = await tmpdir({
         git: true,
         init: async (dir) => {
-          await Bun.write(path.join(dir, "opencode.json"), JSON.stringify(providerCfg(server.url.origin)))
+          await Bun.write(
+            path.join(dir, "opencode.json"),
+            JSON.stringify(providerCfg(server.url.origin)),
+          )
         },
       })
 
@@ -583,7 +553,10 @@ describe("session prompt queue", () => {
       await using tmp = await tmpdir({
         git: true,
         init: async (dir) => {
-          await Bun.write(path.join(dir, "opencode.json"), JSON.stringify(providerCfg(server.url.origin)))
+          await Bun.write(
+            path.join(dir, "opencode.json"),
+            JSON.stringify(providerCfg(server.url.origin)),
+          )
         },
       })
 
@@ -704,6 +677,7 @@ describe("session prompt queue", () => {
       expect(calls).toHaveLength(2)
       expect(hasText(first, "first reply")).toBe(true)
       expect(hasText(second, "second reply")).toBe(true)
+      await AppRuntime.runPromise(InstanceStore.Service.use((store) => store.dispose(ctx)))
     } finally {
       server.stop(true)
     }
@@ -750,10 +724,7 @@ describe("session prompt queue", () => {
       await using tmp = await tmpdir({
         git: true,
         init: async (dir) => {
-          await Bun.write(
-            path.join(dir, "opencode.json"),
-            JSON.stringify(providerCfg(server.url.origin)),
-          )
+          await Bun.write(path.join(dir, "opencode.json"), JSON.stringify(providerCfg(server.url.origin)))
         },
       })
 
@@ -973,10 +944,7 @@ describe("session prompt queue", () => {
       await using tmp = await tmpdir({
         git: true,
         init: async (dir) => {
-          await Bun.write(
-            path.join(dir, "opencode.json"),
-            JSON.stringify(providerCfg(server.url.origin)),
-          )
+          await Bun.write(path.join(dir, "opencode.json"), JSON.stringify(providerCfg(server.url.origin)))
         },
       })
 

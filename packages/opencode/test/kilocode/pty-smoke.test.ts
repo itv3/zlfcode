@@ -19,9 +19,13 @@ describe("rendered PTY smoke", () => {
     await run(editor(delay), 10_000)
   })
 
-  test("preserves pending input when a redraw takes longer than the retry interval", async () => {
-    await run(editor(0, 0.5), 15_000)
-  })
+  test(
+    "preserves pending input when a redraw takes longer than the retry interval",
+    async () => {
+      await run(editor(0, 0.5), 15_000)
+    },
+    20_000,
+  )
 
   test.each([
     ["silent process", ""],

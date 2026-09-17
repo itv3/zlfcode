@@ -200,7 +200,141 @@ async function flush() {
 }
 
 describe("disconnectProvider", () => {
-  it("keeps configured provider enabled after disconnecting oauth override", async () => {
+  for (const scope of ["global", "project", "both"]) {
+    it(`deletes builtin provider config and literal credentials from ${scope} scope`, async () => {
+      const global = {
+        disabled_providers: ["groq"],
+        provider: {
+          groq: { options: { apiKey: "unrelated-test-key" } },
+          ...(scope !== "project" ? { vercel: { options: { apiKey: "global-old-test-key" } } } : {}),
+        },
+      }
+      const merged = {
+        ...global,
+        provider: {
+          ...global.provider,
+          vercel: { options: { apiKey: scope === "global" ? "global-old-test-key" : "project-old-test-key" } },
+        },
+      }
+      const { ctx, calls, setCachedConfig } = createCtx(global, merged)
+
+      await disconnectProvider(ctx, "req", "vercel", null, setCachedConfig)
+
+      expect(calls.remove).toEqual([{ providerID: "vercel" }])
+      expect(calls.config).toEqual(
+        scope === "project" ? [] : [{ config: { provider: { vercel: null }, disabled_providers: ["groq"] } }],
+      )
+      expect(calls.project).toEqual([{ config: { provider: { vercel: null } }, directory: "/tmp" }])
+      expect(calls.posts).toContainEqual({
+        type: "providerDisconnected",
+        revision: 1,
+        requestId: "req",
+        providerID: "vercel",
+        removed: false,
+        auth: { mode: "clear" },
+      })
+      await flush()
+      expect(calls.refresh).toBe(1)
+    })
+  }
+
+  it("deletes an empty configured builtin entry so it is no longer config-connected", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx({}, { provider: { vercel: { options: {} } } })
+
+    await disconnectProvider(ctx, "req", "vercel", null, setCachedConfig)
+
+    expect(calls.config).toEqual([])
+    expect(calls.project).toEqual([{ config: { provider: { vercel: null } }, directory: "/tmp" }])
+    await flush()
+    expect(calls.refresh).toBe(1)
+  })
+
+  it("allows a configured Vercel provider to reconnect with a new key without disabling it", async () => {
+    const existing = {
+      disabled_providers: ["groq"],
+      provider: { vercel: { models: { "test-model": { name: "Test Model" } } } },
+    }
+    const { ctx, calls, setCachedConfig } = createCtx(existing)
+
+    await connectProvider(ctx, "before", "vercel", "old-test-key")
+    await disconnectProvider(ctx, "logout", "vercel", null, setCachedConfig)
+    await connectProvider(ctx, "after", "vercel", "new-test-key")
+
+    expect(calls.remove).toEqual([{ providerID: "vercel" }])
+    expect(calls.config).toEqual([{ config: { provider: { vercel: null }, disabled_providers: ["groq"] } }])
+    expect(calls.project).toEqual([{ config: { provider: { vercel: null } }, directory: "/tmp" }])
+    expect(calls.set.map((call) => call.auth.key)).toEqual(["old-test-key", "new-test-key"])
+    expect(calls.posts).toContainEqual({
+      type: "providerDisconnected",
+      revision: 2,
+      requestId: "logout",
+      providerID: "vercel",
+      removed: false,
+      auth: { mode: "clear" },
+    })
+    expect(calls.posts).toContainEqual({
+      type: "providerConnected",
+      revision: 3,
+      requestId: "after",
+      providerID: "vercel",
+      auth: { mode: "set", state: "api" },
+    })
+    await flush()
+    expect(calls.refresh).toBe(3)
+  })
+
+  it("publishes disconnect before backend disposal finishes and refreshes afterward", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx({ provider: { vercel: {} } })
+    const entered = Promise.withResolvers<void>()
+    const disposed = Promise.withResolvers<void>()
+    ctx.disposeGlobal = async () => {
+      entered.resolve()
+      await disposed.promise
+    }
+
+    const pending = disconnectProvider(ctx, "req", "vercel", null, setCachedConfig)
+    await entered.promise
+    await pending
+
+    expect(calls.cached).toHaveLength(1)
+    expect(calls.posts).toContainEqual({
+      type: "providerDisconnected",
+      revision: 1,
+      requestId: "req",
+      providerID: "vercel",
+      removed: false,
+      auth: { mode: "clear" },
+    })
+    expect(calls.events).toEqual(["notify", "providerDisconnected", "configUpdated"])
+    expect(calls.refresh).toBe(0)
+
+    disposed.resolve()
+    await flush()
+    expect(calls.refresh).toBe(1)
+  })
+
+  it("does not delete a configured builtin when credential cleanup fails", async () => {
+    const { ctx, calls, setCachedConfig } = createCtx({ provider: { vercel: {} } })
+    ctx.client.auth.remove = async () => {
+      throw new Error("Credential cleanup failed")
+    }
+
+    await disconnectProvider(ctx, "req", "vercel", null, setCachedConfig)
+
+    expect(calls.config).toEqual([])
+    expect(calls.refresh).toBe(0)
+    expect(calls.posts).toEqual([
+      {
+        type: "providerActionError",
+        requestId: "req",
+        providerID: "vercel",
+        action: "disconnect",
+        message: "Credential cleanup failed",
+      },
+    ])
+  })
+
+  it("removes a configured provider without changing unrelated disabled providers", async () => {
     const existing = {
       disabled_providers: ["openai", "groq"],
       provider: {
@@ -214,7 +348,7 @@ describe("disconnectProvider", () => {
     await disconnectProvider(ctx, "req", "openai", null, setCachedConfig)
 
     expect(calls.remove).toEqual([{ providerID: "openai" }])
-    expect(calls.config).toEqual([{ config: { disabled_providers: ["groq"] } }])
+    expect(calls.config).toEqual([{ config: { provider: { openai: null }, disabled_providers: ["groq"] } }])
     expect(calls.posts).toContainEqual({
       type: "providerDisconnected",
       revision: 1,
@@ -809,7 +943,7 @@ describe("fetchProviderData", () => {
 })
 
 describe("disconnectProvider", () => {
-  it("adds configured providers to disabled_providers without deleting their config", async () => {
+  it("removes configured providers without disabling them", async () => {
     const existing = {
       disabled_providers: ["openai"],
       provider: {
@@ -820,8 +954,8 @@ describe("disconnectProvider", () => {
 
     await disconnectProvider(ctx, "req", "myprovider", null, setCachedConfig)
 
-    expect(calls.config).toHaveLength(1)
-    expect(calls.config[0].config).toEqual({ disabled_providers: ["openai", "myprovider"] })
+    expect(calls.config).toEqual([{ config: { provider: { myprovider: null }, disabled_providers: ["openai"] } }])
+    expect(calls.project).toEqual([{ config: { provider: { myprovider: null } }, directory: "/tmp" }])
     expect(calls.remove).toEqual([{ providerID: "myprovider" }])
     expect(calls.posts).toContainEqual(
       expect.objectContaining({ type: "providerDisconnected", requestId: "req", providerID: "myprovider" }),
@@ -860,7 +994,7 @@ describe("disconnectProvider", () => {
     )
   })
 
-  it("does not duplicate configured providers already disabled", async () => {
+  it("removes the deleted configured provider from disabled providers", async () => {
     const existing = {
       disabled_providers: ["myprovider"],
       provider: {
@@ -871,7 +1005,7 @@ describe("disconnectProvider", () => {
 
     await disconnectProvider(ctx, "req", "myprovider", null, setCachedConfig)
 
-    expect(calls.config).toHaveLength(0)
+    expect(calls.config).toEqual([{ config: { provider: { myprovider: null }, disabled_providers: [] } }])
     await flush()
     expect(calls.refresh).toBe(1)
   })
@@ -1045,9 +1179,7 @@ describe("fetchProviderData", () => {
                 {
                   id: "kilo",
                   name: "Kilo Gateway",
-                  models: item.empty
-                    ? {}
-                    : { "org/first": { id: "org/first" }, "org/default": { id: "org/default" } },
+                  models: item.empty ? {} : { "org/first": { id: "org/first" }, "org/default": { id: "org/default" } },
                 },
               ]),
           { ...external, key: "sk-test" },

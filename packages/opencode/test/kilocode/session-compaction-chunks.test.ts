@@ -34,8 +34,6 @@ import { SyncEvent } from "../../src/sync"
 import { ProviderTest } from "../fake/provider"
 import { tmpdir } from "../fixture/fixture"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { AppRuntime } from "../../src/effect/app-runtime"
-import { makeRuntime } from "../../src/effect/run-service"
 import { remove as cleanup } from "./cleanup"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Provider } from "../../src/provider/provider"
@@ -49,7 +47,8 @@ const agents = Layer.mock(Agent.Service)({
 const previous = Flag.KILO_DB
 const dbfile = path.join(os.tmpdir(), `kilo-compaction-chunks-${process.pid}-${crypto.randomUUID()}.db`)
 const layer = LayerNode.compile(LayerNode.group([SessionNs.node, SessionProjector.node]))
-const runtime = makeRuntime(SessionNs.Service, layer)
+// 使用私有 memo map，避免前序测试提前初始化 AppRuntime 后继续绑定旧数据库。
+const runtime = ManagedRuntime.make(layer)
 
 beforeAll(async () => {
   await fs.rm(dbfile, { force: true })
@@ -58,7 +57,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await runtime.dispose()
-  await AppRuntime.dispose()
   await disposeTestRuntime()
   Flag.KILO_DB = previous
   await Promise.all([dbfile, `${dbfile}-wal`, `${dbfile}-shm`].map(cleanup))
@@ -71,16 +69,16 @@ const store = {
 
 const svc = {
   create(input?: SessionNs.CreateInput) {
-    return runtime.runPromise((svc) => svc.create(input))
+    return runtime.runPromise(SessionNs.Service.use((svc) => svc.create(input)))
   },
   messages(input: Parameters<SessionNs.Interface["messages"]>[0]) {
-    return runtime.runPromise((svc) => svc.messages(input))
+    return runtime.runPromise(SessionNs.Service.use((svc) => svc.messages(input)))
   },
   updateMessage<T extends MessageV2.Info>(msg: T) {
-    return runtime.runPromise((svc) => svc.updateMessage(msg))
+    return runtime.runPromise(SessionNs.Service.use((svc) => svc.updateMessage(msg)))
   },
   updatePart<T extends MessageV2.Part>(part: T) {
-    return runtime.runPromise((svc) => svc.updatePart(part))
+    return runtime.runPromise(SessionNs.Service.use((svc) => svc.updatePart(part)))
   },
 }
 
