@@ -90,8 +90,9 @@ import { errorIDs, preserveSessionErrors, withoutResolvedSessionErrors } from ".
 import { PartStash } from "./part-stash"
 import { isolate, mergeOptimisticPart, mergeOptimisticParts, mergeParts } from "./session-parts"
 import { mergeMessages, sameReconcileShape } from "./session-merge"
+import { createFrameQueue, streamMessage } from "./frame-queue"
 import { state as todoState } from "./todo-revert"
-import { sessionVariantKeys, storedVariant, transferVariants, variantKey } from "./session-variant-store"
+import { preserveVariant, sessionVariantKeys, transferVariants, variantKey } from "./session-variant-store"
 import { createSessionVariants } from "./session-variants"
 import { KILO_AUTO, KILO_PROVIDER_ID, parseModelString } from "../../../src/shared/provider-model"
 import { type ReviewMessageData } from "../../../src/shared/review-comments"
@@ -106,8 +107,10 @@ import { isSameSessionTree } from "./model-usage"
 import { isModelUsable } from "./provider-utils"
 import { createDraftAgentSeed, resolvePromptAgent } from "./session-agent"
 import { createModelSelector } from "./session-model-selector"
+import { createModelPreferences } from "./session-model-preferences"
+import { createPreferenceLoader } from "./session-preference-loader"
 import { activities, type Activity } from "../utils/session-activity"
-import { active as activeTiming, hold, type Timing } from "./session-timing"
+import { hold, type Timing } from "./session-timing"
 import type { SessionContextValue } from "./session-types"
 
 const RECENT_LIMIT = 5
@@ -254,6 +257,9 @@ export const SessionProvider: ParentComponent = (props) => {
   // Tracks whether the user has explicitly set a model override per agent (to
   // prevent the default-sync effect from overwriting it).
   const [userSetAgents, setUserSetAgents] = createSignal<Record<string, boolean>>({})
+  const [preferredSelection, setPreferredSelection] = createSignal<ModelSelection & { variant?: string }>()
+  const [preferencesReady, setPreferencesReady] = createSignal(false)
+  let remembered = false
 
   // Agents (modes) loaded from the CLI backend
   const [agents, setAgents] = createSignal<AgentInfo[]>([])
@@ -477,34 +483,29 @@ export const SessionProvider: ParentComponent = (props) => {
       agentSelections: store.agentSelections,
       recentModels: store.recentModels,
       userSetAgents: userSetAgents(),
+      preferred: preferredSelection(),
     }
   }
 
-  function resolveModel(agentName: string): ModelSelection | null {
-    return resolveModelSelection({
+  // Keep automatic defaults in sync until the user chooses a model.
+  createEffect(() => {
+    const agentName = selectedAgentName()
+    if (userSetAgents()[agentName]) return
+    const sel = resolveModelSelection({
       ...environment(),
       mode: getModeModel(agentName),
       global: getGlobalModel(),
       recent: store.recentModels,
     })
-  }
+    setStore("modelSelections", agentName, sel && { ...sel })
+  })
 
+  // kilocode_change start - ZLF：模型可用性防御（provider 断连/模型失效时不写入选择、不带入会话）。
+  // 会话覆盖的读取侧校验已由上游 getSessionModel → resolveModelSelection 链承担，此处只保留写入侧。
   function validModel(selection: ModelSelection | null | undefined) {
     return isModelUsable(provider.providers(), provider.connected(), selection)
   }
-
-  function sessionModel(sessionID: string) {
-    return validModel(store.sessionOverrides[sessionID]) ? store.sessionOverrides[sessionID] : undefined
-  }
-
-  // Keep model selection in sync with provider/mode default until the user
-  // explicitly overrides it.
-  createEffect(() => {
-    const agentName = selectedAgentName()
-    if (userSetAgents()[agentName]) return
-    const sel = resolveModel(agentName)
-    setStore("modelSelections", agentName, sel)
-  })
+  // kilocode_change end
 
   const currentSelected = createMemo<ModelSelection | null>(() =>
     getSelected(preferences(), environment(), currentSessionID(), selectedAgentName()),
@@ -532,29 +533,42 @@ export const SessionProvider: ParentComponent = (props) => {
     vscode.postMessage({ type: "recordModelUsage", providerID, modelID })
   }
 
+  const memory = createModelPreferences({
+    store,
+    model: (scope, id, model) => setStore(scope, id, model),
+    set: (key, value) => setStore("variantSelections", key, value),
+    clear: (update) => setStore(produce((store) => update(store))),
+    scopes: () => [currentSessionID(), draftSessionID(), ...Object.keys(submissionMap)],
+    initialized: (id) => /^(?:sidebar-)?pending:/.test(id) || isSubmitting(id) || store.messages[id] !== undefined,
+    selected,
+    defaults: (agent) =>
+      preferredSelection() ??
+      (userSetAgents()[agent] ? store.modelSelections[agent] : undefined) ??
+      getModeModel(agent) ??
+      getGlobalModel(),
+    agent: agentForScope,
+    variant: (id, model) => variants.saved(model, agentForScope(id), id),
+    recent: pushRecent,
+    update: (agent, model, variant) => {
+      remembered = true
+      setUserSetAgents((prev) => ({ ...prev, [agent]: true }))
+      setPreferredSelection({ ...model, variant })
+    },
+    post: vscode.postMessage,
+  })
+  const rememberSelection = memory.remember
+  // kilocode_change start - ZLF：在上游 memory.apply 外层包一道模型可用性校验——不可用
+  // 模型不写入任何选择（返回 false 供 createModelSelector 跳过 carry/hide），保护
+  // 用户在 provider 瞬时断连/模型失效时的既有选择不被覆盖。
   function applyModel(agentName: string, selection: ModelSelection, sessionID?: string) {
     if (!validModel(selection)) {
       console.warn("[Kilo New] Ignoring unavailable model selection:", selection)
       return false
     }
-    pushRecent(selection)
-    if (sessionID) {
-      setStore("sessionOverrides", sessionID, selection)
-      return true
-    }
-    // Always remember the per-mode model choice so switching modes restores
-    // the last-used model (mirrors CLI TUI's model.json behavior).
-    setUserSetAgents((prev) => ({ ...prev, [agentName]: true }))
-    setStore("modelSelections", agentName, selection)
-    // Persist to model.json via the extension host
-    vscode.postMessage({
-      type: "persistModelSelection",
-      agent: agentName,
-      providerID: selection.providerID,
-      modelID: selection.modelID,
-    })
+    memory.apply(agentName, selection, sessionID)
     return true
   }
+  // kilocode_change end
 
   const variants = createSessionVariants({
     selections: () => store.variantSelections,
@@ -566,30 +580,39 @@ export const SessionProvider: ParentComponent = (props) => {
     find: provider.findModel,
     post: vscode.postMessage,
     listen: vscode.onMessage,
+    preferred: preferredSelection,
+    remember: rememberSelection,
   })
   const { carry: carryVariant, list: variantList, agent: variantForAgent, current: currentVariant } = variants
   const selectVariant = variants.select
-  // kilocode_change start - ZLF：切换模型时向 carry 传播「原始存储值」（三态），
-  // 而非 currentVariant 解析结果——否则未显式选择时解析出的「默认推理强度」档
-  // 会被当作显式选择带到新模型上，覆盖新模型自己的默认档。
-  const explicitVariant = (sid?: string) => {
-    const selection = selected(sid)
-    if (!selection) return undefined
-    return storedVariant(store.variantSelections, selection, agentForScope(sid), sid)
-  }
-  // kilocode_change end
+  // 说明：切换模型时向 carry 传播的是 variants.choice（原始存储值 + 上游 preferred 记忆），
+  // 而非 current() 的解析结果——这正是 ZLF 原 explicitVariant 定制的目的（未显式选择时解析出
+  // 的「默认推理强度」档不能被当作显式选择带到新模型上）；上游 v7.7.5 的 choice 语义已等价，
+  // ZLF 的 explicitVariant 定制据此收敛删除。
   const models = createModelSelector({
     current: currentSessionID,
     agent: agentForScope,
     selected,
-    variant: explicitVariant, // kilocode_change - 见上
-    apply: applyModel,
+    variant: variants.choice,
+    apply: applyModel, // kilocode_change - ZLF：经 validModel 校验的 memory.apply 包装
     valid: validModel, // kilocode_change - 不可用模型不写入会话覆盖（工厂内检查）
     set: (id, selection) => setStore("sessionOverrides", id, selection),
     carry: carryVariant,
     hide: hideErrors,
   })
-  const selectModel = models.select
+  function selectModel(providerID: string, modelID: string, sessionID?: string) {
+    const id = sessionID ?? currentSessionID()
+    batch(() => {
+      models.select(providerID, modelID, id)
+      if (!id || /^(?:sidebar-)?pending:/.test(id)) {
+        const model = { providerID, modelID }
+        const agent = agentForScope(id)
+        const value = store.variantSelections[variantKey(model, agent, id)] ?? variantForAgent(agent, model)
+        const list = Object.keys(provider.findModel(model)?.variants ?? {})
+        rememberSelection(agent, model, value === "" ? "" : preserveVariant(value, list))
+      }
+    })
+  }
 
   function selectKiloModel(modelID?: string, agent?: string) {
     if (!modelID && !agent) return
@@ -643,24 +666,6 @@ export const SessionProvider: ParentComponent = (props) => {
       for (const id of ids) next.add(id)
       return next
     })
-  }
-
-  function clearModeModelSelection(agentName: string) {
-    setUserSetAgents((prev) => {
-      const next = { ...prev }
-      delete next[agentName]
-      return next
-    })
-    setStore(
-      "modelSelections",
-      produce((selections) => {
-        delete selections[agentName]
-      }),
-    )
-  }
-
-  function shouldClearModeModelSelection(agentName: string) {
-    return getModeModel(agentName) !== null && userSetAgents()[agentName] === true
   }
 
   function clearHiddenErrors(ids: string[]) {
@@ -774,6 +779,7 @@ export const SessionProvider: ParentComponent = (props) => {
     if (message.type !== "extensionDataReady") return
     unsubReady()
     clearTimeout(fallback)
+    retryPreferences()
     if (agents().length === 0) vscode.postMessage({ type: "requestAgents" })
     if (Object.keys(mcpStatus()).length === 0) vscode.postMessage({ type: "requestMcpStatus" })
   })
@@ -793,15 +799,26 @@ export const SessionProvider: ParentComponent = (props) => {
   const unsubSelections = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type !== "modelSelectionsLoaded") return
     batch(() => {
-      setStore("modelSelections", reconcile(message.selections))
+      const local =
+        !preferencesReady() && remembered
+          ? Object.fromEntries(Object.entries(store.modelSelections).filter(([name]) => userSetAgents()[name]))
+          : {}
+      const selections = { ...message.selections, ...local }
+      setStore("modelSelections", reconcile(selections))
       const flags: Record<string, boolean> = {}
-      for (const name of Object.keys(message.selections)) {
+      for (const name of Object.keys(selections)) {
         flags[name] = true
       }
       setUserSetAgents(flags)
+      if (preferencesReady() || !remembered) setPreferredSelection(message.preferred)
+      setPreferencesReady(true)
     })
   })
-  vscode.postMessage({ type: "requestModelSelections" })
+  const retryPreferences = createPreferenceLoader({
+    ready: preferencesReady,
+    connected: server.isConnected,
+    request: () => vscode.postMessage({ type: "requestModelSelections" }),
+  })
   onCleanup(unsubSelections)
 
   // Load persisted recent models from extension globalState
@@ -887,17 +904,14 @@ export const SessionProvider: ParentComponent = (props) => {
   }
 
   function handleStreamMessage(message: ExtensionMessage): boolean {
+    if (!streamMessage(message)) return false
     if (message.type === "partUpdated") {
       handlePartUpdated(message.sessionID, message.messageID, message.part, message.delta)
       return true
     }
 
     if (message.type === "partsUpdated") {
-      batch(() => {
-        for (const update of message.updates) {
-          handlePartUpdated(update.sessionID, update.messageID, update.part, update.delta)
-        }
-      })
+      message.updates.forEach((u) => handlePartUpdated(u.sessionID, u.messageID, u.part, u.delta))
       return true
     }
 
@@ -1105,21 +1119,23 @@ export const SessionProvider: ParentComponent = (props) => {
     }
   }
 
-  // Handle messages from extension
   onMount(() => {
     const unsubscribeProject = vscode.onMessage(trackAgentProject)
     const unsubscribeAck = vscode.onMessage((message) => {
       if (message.type !== "sessionAcknowledged") return
       if (closeMap[message.sessionID]?.eventID === message.eventID) setCloseMap(message.sessionID, "seen", true)
     })
+    const apply = (items: ExtensionMessage[]) => batch(() => items.forEach(handleExtensionMessage))
+    const frames = createFrameQueue(apply, streamMessage)
     const unsubscribe = vscode.onMessage((message) => {
-      if (!isStaleAgentSession(message, agentProjectId())) handleExtensionMessage(message)
+      if (!isStaleAgentSession(message, agentProjectId())) frames.push(message)
     })
     setModelUsageReady(true)
     onCleanup(() => {
       unsubscribeProject()
       unsubscribeAck()
       unsubscribe()
+      frames.cancel()
     })
   })
 
@@ -1160,12 +1176,6 @@ export const SessionProvider: ParentComponent = (props) => {
           .filter((message) => !ids.has(message.id))
           .map((message) => ({ ...message, sessionID: session.id }))
         setStore("messages", session.id, [...current, ...promoted])
-        setStore(
-          "messages",
-          produce((messages) => {
-            delete messages[draftID]
-          }),
-        )
 
         const pending = pendingOptimistic.get(draftID)
         if (pending) {
@@ -1201,6 +1211,13 @@ export const SessionProvider: ParentComponent = (props) => {
       const pendingAgent = draftID ? store.agentSelections[draftID] : pendingAgentSelection()
       const pendingModel = draftID ? store.sessionOverrides[draftID] : undefined
       if (draftID) {
+        // Goal commands have no optimistic messages, but their empty draft cache must also be removed.
+        setStore(
+          "messages",
+          produce((messages) => {
+            delete messages[draftID]
+          }),
+        )
         const entries = transferVariants(store.variantSelections, draftID, session.id)
         for (const [key, value] of Object.entries(entries)) {
           setStore("variantSelections", key, value)
@@ -1208,24 +1225,7 @@ export const SessionProvider: ParentComponent = (props) => {
         }
         if (pendingAgent) setStore("agentSelections", session.id, pendingAgent)
         if (pendingModel) setStore("sessionOverrides", session.id, pendingModel)
-        setStore(
-          "agentSelections",
-          produce((agents) => {
-            delete agents[draftID]
-          }),
-        )
-        setStore(
-          "sessionOverrides",
-          produce((models) => {
-            delete models[draftID]
-          }),
-        )
-        setStore(
-          "variantSelections",
-          produce((variants) => {
-            for (const key of sessionVariantKeys(variants, draftID)) delete variants[key]
-          }),
-        )
+        memory.forget(draftID)
         agentDrafts.promote(draftID)
       } else if (pendingAgent && !store.agentSelections[session.id]) {
         setStore("agentSelections", session.id, pendingAgent)
@@ -2172,30 +2172,16 @@ export const SessionProvider: ParentComponent = (props) => {
   function selectAgent(name: string, sessionID?: string) {
     const id = sessionID ?? currentSessionID()
     if (id) {
+      memory.pin(id)
       setStore("agentSelections", id, name)
-      // Clear per-session model override so the new mode's configured/default
-      // model takes effect instead of the previous mode's override.
-      setStore(
-        "sessionOverrides",
-        produce((overrides) => {
-          delete overrides[id]
-        }),
-      )
-      if (shouldClearModeModelSelection(name)) {
-        clearModeModelSelection(name)
-      }
-    } else {
-      setPendingAgentSelection(name)
-      if (shouldClearModeModelSelection(name)) {
-        clearModeModelSelection(name)
-        return
-      }
-      // When switching mode, initialize model for the new mode if the user
-      // hasn't explicitly set one for it
-      if (!userSetAgents()[name] && !store.modelSelections[name]) {
-        setStore("modelSelections", name, resolveModel(name))
-      }
+      return
     }
+    const agent = selectedAgentName()
+    const model = store.modelSelections[agent]
+    if (!preferredSelection() && userSetAgents()[agent] && model) {
+      setPreferredSelection({ ...model, variant: variants.saved(model, agent) })
+    }
+    setPendingAgentSelection(name)
   }
 
   /** Create an optimistic user message + parts in the store so the UI updates instantly. */
@@ -2239,9 +2225,11 @@ export const SessionProvider: ParentComponent = (props) => {
     const messageID = input.messageID ?? Identifier.ascending("message")
     const scope = input.draftID ?? input.sessionID
     if (scope) {
-      clearClose(scope)
-      addOptimistic(scope, messageID, input.text, input.files, input.review, input.browserFeedback)
-      startSubmission(scope, messageID)
+      batch(() => {
+        clearClose(scope)
+        addOptimistic(scope, messageID, input.text, input.files, input.review, input.browserFeedback)
+        startSubmission(scope, messageID)
+      })
     }
     vscode.postMessage({ ...input, messageID })
   }
@@ -2341,6 +2329,7 @@ export const SessionProvider: ParentComponent = (props) => {
     context?: string,
     origin?: string | null,
     overrides?: { agent?: string; model?: string; variant?: string; messageID?: string },
+    projectId?: string,
   ): boolean {
     if (!server.isConnected()) {
       console.warn("[Kilo New] Cannot send command: not connected")
@@ -2353,18 +2342,21 @@ export const SessionProvider: ParentComponent = (props) => {
       if (control) return null
       if (overrides?.model) return parseModelString(overrides.model)
       const scope = draftID ?? sid
-      const model = overrides?.agent
-        ? modelForAgent(overrides.agent)
-        : scope
-          ? selected(scope)
-          : getSelected(preferences(), environment(), undefined, pendingAgentSelection() ?? defaultAgent())
+      const model = scope
+        ? selected(scope)
+        : getSelected(preferences(), environment(), undefined, pendingAgentSelection() ?? defaultAgent())
       return model ?? (providerID && modelID ? { providerID, modelID } : null)
     })()
     if (!control && !available(effectiveSelection)) return false
 
     const effectiveDraftID = !sid && !draftID ? crypto.randomUUID() : draftID
     const scope = effectiveDraftID ?? sid
-    if (!sid && !draftID && effectiveDraftID) agentDrafts.seed(effectiveDraftID)
+    if (!sid && !draftID && effectiveDraftID) {
+      agentDrafts.seed(effectiveDraftID)
+      // This UUID is a known-new draft, not unopened history. Initialize it so a mode-only
+      // command retains the outgoing model/effort together instead of mixing two modes.
+      setStore("messages", effectiveDraftID, [])
+    }
 
     if (effectiveSelection) {
       if (overrides?.agent) {
@@ -2373,7 +2365,7 @@ export const SessionProvider: ParentComponent = (props) => {
       if (overrides?.model) {
         selectModel(effectiveSelection.providerID, effectiveSelection.modelID, scope)
       }
-      if (overrides?.variant) {
+      if (overrides?.variant !== undefined) {
         selectVariant(overrides.variant, scope)
       }
       recordModelUsage(effectiveSelection.providerID, effectiveSelection.modelID)
@@ -2426,6 +2418,7 @@ export const SessionProvider: ParentComponent = (props) => {
       messageID,
       sessionID: sid,
       draftID: effectiveDraftID,
+      projectId,
       ...settings,
       files,
       agentManagerContext: context,
@@ -3041,6 +3034,10 @@ export const SessionProvider: ParentComponent = (props) => {
     selected,
     modelForAgent,
     selectModel,
+    preferredSelection,
+    preferencesReady,
+    rememberSelection,
+    trackScopes: memory.track,
     costBreakdown,
     contextUsage,
     modelUsage,
@@ -3082,6 +3079,7 @@ export const SessionProvider: ParentComponent = (props) => {
     variantList,
     currentVariant,
     variantForAgent,
+    variantPreference: (agent, model) => (model ? variants.saved(model, agent) : undefined),
     selectVariant,
     revert,
     revertedCount,

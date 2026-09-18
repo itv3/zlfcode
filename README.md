@@ -1,6 +1,6 @@
 # ZLF Code
 
-ZLF Code 是面向内部使用的 AI coding agent。当前版本已接入官方 `v7.7.2` 历史，并在共同祖先基础上保留 ZLF 自定义功能、发布身份和 workflow。
+ZLF Code 是面向内部使用的 AI coding agent。当前版本已接入官方 `v7.7.5` 历史，并在共同祖先基础上保留 ZLF 自定义功能、发布身份和 workflow。
 
 ## 当前版本
 

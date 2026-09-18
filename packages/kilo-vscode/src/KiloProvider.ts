@@ -60,6 +60,7 @@ import { resolveProjectDirectory } from "./project-directory"
 import { seedSessionStatuses } from "./session-status"
 import { normalizeEnhancePromptErrorMessage } from "./enhance-prompt-error"
 import { retry } from "./services/cli-backend/retry"
+import { integratedBrowserUseSystemChrome } from "./services/browser-automation/chrome-setting"
 import { removeAgent } from "./services/agent-removal"
 import { normalize, type SSEPayload, type SyncPayload, type WirePayload } from "./services/cli-backend/sdk-sse-adapter"
 import { slimInfo, slimPart, slimParts } from "./kilo-provider/slim-metadata"
@@ -172,6 +173,7 @@ import { configFeatures, serverFeatures } from "./features"
 import { fetchSnapshot } from "./kilo-provider/config-snapshot"
 import { createAutoApproveBridge } from "./kilo-provider/auto-approve"
 import type { KiloProviderOptions } from "./kilo-provider/options"
+import { watchRestore } from "./kilo-provider/prompt-focus"
 import type { ProjectRef, SessionRef, WorktreeRef } from "./agent-manager/project/route"
 import { indexingConsentStore, registeredProjects } from "./indexing-consent"
 import { fetchKiloEmbeddingModelCatalog } from "@kilocode/kilo-gateway"
@@ -510,6 +512,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private telemetryStateDisposable: vscode.Disposable | null = null
   private viewStateDisposable: vscode.Disposable | null = null
   private visibilityDisposable: vscode.Disposable | null = null
+  private view: vscode.WebviewView | undefined
+  private panel: vscode.WebviewPanel | undefined
+  private latch: ReturnType<typeof watchRestore> | undefined
   private autoApproveBridge: ReturnType<typeof createAutoApproveBridge> | null = null
   private readonly marketplace = new MarketplaceService()
 
@@ -562,6 +567,15 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       if (this.connectionState === "connected") void this.fetchAndSendSandboxDefault()
     })
     TelemetryProxy.getInstance().setProvider(this)
+    this.latch = watchRestore({
+      focused: () => vscode.window.state.focused,
+      onChange: (listener) => vscode.window.onDidChangeWindowState(listener),
+      enabled: () => !this.opts.hideTopBar,
+      restore: (live) => {
+        if (!live) this.revealHost()
+        this.postMessage({ type: "action", action: "restoreInput" })
+      },
+    })
   }
 
   setRemoteService(service: RemoteStatusService): void {
@@ -820,6 +834,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     _token: vscode.CancellationToken,
   ) {
     this.isWebviewReady = false
+    this.view = webviewView
+    this.panel = undefined
     this.webview = webviewView.webview
 
     webviewView.webview.options = {
@@ -852,6 +868,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   public resolveWebviewPanel(panel: vscode.WebviewPanel): void {
     // WebviewPanel can be restored/reloaded; ensure we don't treat it as ready prematurely.
     this.isWebviewReady = false
+    this.panel = panel
+    this.view = undefined
     this.webview = panel.webview
 
     panel.webview.options = {
@@ -1308,9 +1326,6 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         case "openSettingsPanel":
           vscode.commands.executeCommand("kilo-code.new.settingsButtonClicked", message.tab, message.projectId)
           break
-        case "openKiloClaw":
-          vscode.commands.executeCommand("kilo-code.new.kiloClawOpen")
-          break
         case "openVSCodeSettings":
           vscode.commands.executeCommand("workbench.action.openSettings", message.query)
           break
@@ -1690,6 +1705,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   }
 
   private handleWebviewFocusMessage(message: TypedWebviewMessage & { focused?: unknown; target?: unknown }): void {
+    if (message.type === "webviewFocusChanged") this.latch?.note(message.focused === true)
     if (message.type === "webviewFocusChanged" && this.opts.focusContext) {
       void vscode.commands.executeCommand("setContext", this.opts.focusContext, message.focused === true)
     }
@@ -1706,7 +1722,16 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       message.target === "prompt" || message.target === "mainTerminal" || message.target === "sideTerminal"
         ? message.target
         : "other"
+    this.latch?.mark(target)
     this.setFocusTarget(target)
+  }
+
+  private revealHost(): void {
+    if (this.view?.visible) {
+      this.view.show()
+      return
+    }
+    if (this.panel?.visible) this.panel.reveal(this.panel.viewColumn)
   }
 
   private setFocusTarget(target: "prompt" | "mainTerminal" | "sideTerminal" | "other"): void {
@@ -2692,24 +2717,16 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
   private async fetchAndSendProviderUsage(force = false): Promise<void> {
     const generation = ++this.providerUsageGeneration
-    const client = this.client
-    if (!client) {
-      this.postMessage(
-        this.cachedProviderUsageMessage ?? {
-          type: "providerUsageLoaded",
-          error: "Provider usage could not be loaded.",
-        },
-      )
-      return
-    }
-
     const directory = this.getProjectDirectory(this.currentSession?.id)
-    const result = await (
-      force ? client.kilocode.providerUsage.refresh({ directory }) : client.kilocode.providerUsage.get({ directory })
-    ).catch((error) => {
-      console.error("[Kilo New] KiloProvider: Failed to fetch provider usage:", error)
-      return undefined
-    })
+    const result = await this.connectionService
+      .getClientAsync(directory)
+      .then((client) =>
+        force ? client.kilocode.providerUsage.refresh({ directory }) : client.kilocode.providerUsage.get({ directory }),
+      )
+      .catch((error) => {
+        console.error("[Kilo New] KiloProvider: Failed to fetch provider usage:", error)
+        return undefined
+      })
     if (generation !== this.providerUsageGeneration) return
     if (!result?.data) {
       if (this.cachedProviderUsageMessage) {
@@ -4335,6 +4352,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       multiProject: this.multiProjectSetting(),
       claudeMigration: this.claudeMigrationSetting(),
       browserAutomation: this.browserAutomationSetting(),
+      agentManagerBrowserUseSystemChrome: integratedBrowserUseSystemChrome(),
       "agentManager.autoBranchNaming": naming.get<boolean>("autoBranchNaming", true),
       "agentManager.branchPrefix": naming.get<string>("branchPrefix", ""),
       "agentManager.worktreePool": naming.get<boolean>("worktreePool", true),
@@ -4608,6 +4626,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       }
 
       await this.checkpoints.get(sid)
+      // Wait for Playwright MCP before the prompt so its tools are advertised.
+      // Kept outside withRetry so retryable prompt errors keep their backoff.
+      // The Integrated Browser does not use Playwright and is not affected.
+      await this.connectionService.prepareTools(dir)
       await runWithMessageConfirmation(this.confirmations, messageID, "KiloProvider: Message request", () =>
         this.withRetry(
           () =>
@@ -4689,7 +4711,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       // flatMap + `?? []`：会话目录外的附件被归属校验丢弃（详见 resolveMessageFile 注释）。
       const parts = files?.flatMap((f) => resolveMessageFile(f, dir) ?? [])
 
-      if (!control) await this.checkpoints.get(sid)
+      if (!control) {
+        await this.checkpoints.get(sid)
+        await this.connectionService.prepareTools(dir)
+      }
       const send = () =>
         this.client!.session.command({
           sessionID: sid,
@@ -5084,7 +5109,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.postMessage({
       type: "browserSettingsLoaded",
       settings: {
+        enabled: config.get<boolean>("enabled", false),
         useSystemChrome: config.get<boolean>("useSystemChrome", true),
+        headless: config.get<boolean>("headless", false),
       },
     })
   }
@@ -6052,6 +6079,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       void vscode.commands.executeCommand("setContext", this.opts.focusContext, false)
     }
     this.setFocusTarget("other")
+    this.latch?.dispose()
+    this.latch = undefined
     this.unsubscribeRemote?.()
     this.streams.focus(undefined)
     this.connectionService.unregisterVisible(this.instanceId)

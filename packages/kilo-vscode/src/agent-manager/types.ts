@@ -14,6 +14,7 @@ import type { Worktree, ManagedSession, Section } from "./WorktreeStateManager"
 import type { WorktreeStats, LocalStats } from "./GitStatsPoller"
 import type { ApplyConflict } from "./GitOps"
 import type { BranchListItem, WorktreeSetupErrorCode } from "./git-import"
+import type { OrphanDirectory, WorktreeHealth } from "./worktree-reconcile"
 import type { RunStatus } from "./run/manager"
 import type { TerminalFont } from "./terminal-font"
 import type { ProjectSnapshot } from "./project/contexts"
@@ -148,6 +149,10 @@ interface StateMessage {
   sessions: ManagedSession[]
   sections?: Section[]
   staleWorktreeIds?: string[]
+  /** Why each unhealthy worktree is unhealthy; healthy worktrees are omitted. */
+  worktreeHealth?: Record<string, WorktreeHealth>
+  /** Directories under `.kilo/worktrees/` that no worktree claims. Never removed automatically. */
+  orphanDirectories?: OrphanDirectory[]
   tabOrder?: Record<string, string[]>
   worktreeOrder?: string[]
   sessionsCollapsed?: boolean
@@ -308,6 +313,9 @@ interface SendInitialMessage {
   sessionId: string
   worktreeId: string
   text?: string
+  /** When set, run a slash command instead of sending the text as a prompt. */
+  command?: string
+  arguments?: string
   providerID?: string
   modelID?: string
   agent?: string
@@ -614,6 +622,29 @@ interface RemoveStaleWorktreeIn {
   type: "agentManager.removeStaleWorktree"
   projectId?: string
   worktreeId: string
+  /** Move the worktree's sessions to Local instead of dropping them with the row. */
+  keepSessions?: boolean
+}
+
+/** Re-create a worktree directory that was deleted outside Agent Manager, from its branch. */
+interface RestoreWorktreeIn {
+  type: "agentManager.restoreWorktree"
+  projectId?: string
+  worktreeId: string
+}
+
+/** Delete directories under `.kilo/worktrees/` that no worktree claims. */
+interface CleanOrphanDirectoriesIn {
+  type: "agentManager.cleanOrphanDirectories"
+  projectId?: string
+  paths: string[]
+}
+
+/** Reveal an orphaned directory in the OS file manager. */
+interface RevealPathIn {
+  type: "agentManager.revealPath"
+  projectId?: string
+  path: string
 }
 
 interface PromoteSessionIn {
@@ -718,6 +749,9 @@ interface CreateMultiVersionIn {
   type: "agentManager.createMultiVersion"
   projectId?: string
   text?: string
+  /** Server command to execute as the first prompt instead of `text`. */
+  command?: string
+  arguments?: string
   name?: string
   versions?: number
   providerID?: string
@@ -979,6 +1013,7 @@ interface SendMessageIn {
 
 interface SendCommandIn {
   type: "sendCommand"
+  projectId?: string
   command: string
   arguments: string
   messageID?: string
@@ -1181,6 +1216,9 @@ export type AgentManagerInMessage =
   | SetProjectExpandedIn
   | DeleteWorktreeIn
   | RemoveStaleWorktreeIn
+  | RestoreWorktreeIn
+  | CleanOrphanDirectoriesIn
+  | RevealPathIn
   | PromoteSessionIn
   | OpenLocallyIn
   | OpenSessionLocallyIn

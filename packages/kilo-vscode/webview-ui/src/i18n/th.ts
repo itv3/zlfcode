@@ -200,10 +200,12 @@ export const dict = {
   "prompt.action.send.recording": "ถอดเสียงและส่ง",
   "prompt.action.stop": "หยุด",
   "prompt.action.enhance": "ปรับปรุงพรอมต์",
+  "prompt.paste.expand": "คลิกเพื่อขยายข้อความที่วาง",
   "prompt.action.autoApprove.enable": "เปิดใช้การอนุมัติอัตโนมัติ",
   "prompt.action.autoApprove.disable": "ปิดใช้การอนุมัติอัตโนมัติ",
   "prompt.action.autoApprove.enabled": "เปิดใช้การอนุมัติอัตโนมัติแล้ว คำขอสิทธิ์จะได้รับการอนุมัติโดยอัตโนมัติ",
   "prompt.action.autoApprove.disabled": "ปิดใช้การอนุมัติอัตโนมัติแล้ว คลิกเพื่ออนุมัติคำขอสิทธิ์โดยอัตโนมัติ",
+  "prompt.action.autoApprove.sandboxExcluded": "พร้อมท์การออกจากแซนด์บ็อกซ์จะถูกยกเว้นเสมอ",
   "prompt.action.enhanceDescription":
     "ปุ่ม 'ปรับปรุงพรอมต์' ช่วยปรับปรุงพรอมต์ของคุณโดยให้บริบทเพิ่มเติม ชี้แจง หรือเขียนใหม่ ลองพิมพ์พรอมต์ที่นี่และคลิกปุ่มอีกครั้งเพื่อดูว่ามันทำงานอย่างไร",
   "prompt.action.indexing": "การตั้งค่าการสร้างดัชนี",
@@ -222,6 +224,8 @@ export const dict = {
   "prompt.action.sandbox.network.allowed": "อนุญาต",
   "prompt.action.sandbox.unrestricted": "ไม่จำกัด",
   "prompt.action.sandbox.description.enabled": "เขียนได้เฉพาะในโฟลเดอร์โปรเจ็กต์และ Kilo",
+  "prompt.action.sandbox.description.escalation":
+    "กฎสิทธิ์และการอนุมัติอัตโนมัติมีผลภายในแซนด์บ็อกซ์ คำสั่งที่ต้องออกจากแซนด์บ็อกซ์จะถามเสมอ",
   "prompt.action.sandbox.description.disabled": "คลิกเพื่อจำกัดการเขียนในระบบไฟล์และการเข้าถึงเครือข่าย",
   "prompt.action.sandbox.description.disabledNetworkAllowed":
     "คลิกเพื่อจำกัดการเขียนในระบบไฟล์ การตั้งค่า sandbox ของคุณยังคงอนุญาตให้เข้าถึงเครือข่าย",
@@ -266,7 +270,9 @@ export const dict = {
   "notification.permission.title": "ต้องการสิทธิ์",
   "notification.permission.titleSubagent": "ต้องการสิทธิ์ (ตัวแทนย่อย)",
   "notification.permission.titleSkillShell": 'เรียกใช้คำสั่งเชลล์จากสกิล "{{skill}}" หรือไม่?',
-  "notification.permission.titleSandboxEscalation": "อนุญาตการดำเนินการ Git นอกแซนด์บ็อกซ์หรือไม่?",
+  "notification.permission.titleSandboxEscalation": "เรียกใช้ภายนอกแซนด์บ็อกซ์หรือไม่?",
+  "notification.permission.descriptionSandboxEscalation":
+    "การดำเนินการนี้จะรันคำสั่งทั้งหมดโดยไม่มีการจำกัดระบบไฟล์และเครือข่าย สำหรับคำสั่งนี้เท่านั้น Git ต้องเขียนลงใน .git ซึ่งเป็นแบบอ่านอย่างเดียวในแซนด์บ็อกซ์ และอยู่นอก worktree สำหรับ worktree ที่เชื่อมโยง กฎอนุญาตของ Bash และการอนุมัติอัตโนมัติจะไม่อนุมัติพร้อมท์นี้โดยอัตโนมัติ",
   "ui.permission.manageAutoApprove": "จัดการกฎการอนุมัติอัตโนมัติ",
   "ui.permission.reject": "ปฏิเสธ",
   "ui.permission.feedbackPlaceholder": "บอก Kilo ว่าควรทำต่างออกไปอย่างไร",
@@ -320,7 +326,6 @@ export const dict = {
   "sidebar.topBar.newTask": "งานใหม่",
   "sidebar.topBar.history": "ประวัติ",
   "sidebar.topBar.agentManager": "ตัวจัดการเอเจนต์",
-  "sidebar.topBar.kiloClaw": "KiloClaw",
   "sidebar.topBar.marketplace": "มาร์เก็ตเพลส",
   "sidebar.topBar.profile": "โปรไฟล์",
   "sidebar.topBar.settings": "การตั้งค่า",
@@ -564,37 +569,21 @@ export const dict = {
 
   "settings.permissions.toast.updateFailed.title": "ไม่สามารถอัปเดตสิทธิ์",
 
-  "settings.permissions.tool.read.title": "อ่าน",
   "settings.permissions.tool.read.description": "อ่านไฟล์ (ตรงกับเส้นทางไฟล์)",
-  "settings.permissions.tool.edit.title": "แก้ไข",
   "settings.permissions.tool.edit.description": "แก้ไขไฟล์ รวมถึงการแก้ไข เขียน แพตช์ และแก้ไขหลายรายการ",
-  "settings.permissions.tool.glob.title": "Glob",
   "settings.permissions.tool.glob.description": "จับคู่ไฟล์โดยใช้รูปแบบ glob",
-  "settings.permissions.tool.grep.title": "Grep",
   "settings.permissions.tool.grep.description": "ค้นหาเนื้อหาไฟล์โดยใช้นิพจน์ทั่วไป",
-  "settings.permissions.tool.list.title": "รายการ",
   "settings.permissions.tool.list.description": "แสดงรายการไฟล์ภายในไดเรกทอรี",
-  "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "เรียกใช้คำสั่งเชลล์",
-  "settings.permissions.tool.task.title": "งาน",
   "settings.permissions.tool.task.description": "เปิดเอเจนต์ย่อย",
-  "settings.permissions.tool.skill.title": "ทักษะ",
   "settings.permissions.tool.skill.description": "โหลดทักษะตามชื่อ",
-  "settings.permissions.tool.lsp.title": "LSP",
   "settings.permissions.tool.lsp.description": "เรียกใช้การสืบค้นเซิร์ฟเวอร์ภาษา",
-  "settings.permissions.tool.todoread.title": "อ่านรายการงาน",
   "settings.permissions.tool.todoread.description": "อ่านรายการงาน",
-  "settings.permissions.tool.todowrite.title": "เขียนรายการงาน",
   "settings.permissions.tool.todowrite.description": "อัปเดตรายการงาน",
-  "settings.permissions.tool.webfetch.title": "ดึงข้อมูลจากเว็บ",
   "settings.permissions.tool.webfetch.description": "ดึงเนื้อหาจาก URL",
-  "settings.permissions.tool.websearch.title": "ค้นหาเว็บ",
   "settings.permissions.tool.websearch.description": "ค้นหาบนเว็บ",
-  "settings.permissions.tool.codesearch.title": "ค้นหาโค้ด",
   "settings.permissions.tool.codesearch.description": "ค้นหาโค้ดบนเว็บ",
-  "settings.permissions.tool.external_directory.title": "ไดเรกทอรีภายนอก",
   "settings.permissions.tool.external_directory.description": "เข้าถึงไฟล์นอกไดเรกทอรีโปรเจกต์",
-  "settings.permissions.tool.doom_loop.title": "Doom Loop",
   "settings.permissions.tool.doom_loop.description": "ตรวจจับการเรียกเครื่องมือซ้ำด้วยข้อมูลนำเข้าเหมือนกัน",
 
   "session.delete.title": "ลบเซสชัน",
@@ -686,6 +675,7 @@ export const dict = {
   "profile.usage.source.direct": "โดยตรง",
   "profile.usage.state.stale": "กำลังแสดงข้อมูลการใช้งานที่อัปเดตล่าสุด",
   "profile.usage.state.unavailable": "ไม่มีข้อมูลการใช้งาน",
+  "profile.usage.state.empty": "ไม่มีการรายงานขีดจำกัดการใช้งาน",
   "profile.usage.plan.pastDue": "แผน: ค้างชำระ",
   "profile.usage.plan.canceling": "แผน: ยกเลิกเมื่อสิ้นสุดรอบ",
   "profile.usage.plan.unknown": "แผน: ไม่ทราบสถานะ",
@@ -845,7 +835,7 @@ export const dict = {
   "settings.agentBehaviour.subtab.skills": "ทักษะ",
 
   "settings.browser.description":
-    "เมื่อเปิดใช้งาน ตัวแทน AI สามารถโต้ตอบกับหน้าเว็บได้ — นำทาง คลิก พิมพ์ และจับภาพหน้าจอ หน้าต่าง Chrome จะเปิดขึ้นเพื่อให้คุณดูการทำงานของตัวแทน",
+    "กำหนดค่าการทำงานอัตโนมัติของเบราว์เซอร์ในตัวที่ขับเคลื่อนโดย Playwright Kilo สามารถนำทาง โต้ตอบ และจับภาพหน้าจอของหน้าเว็บในเซสชันของคุณได้",
   "settings.browser.enable.title": "เปิดใช้งานการทำงานอัตโนมัติของเบราว์เซอร์",
   "settings.browser.enable.description": "ลงทะเบียนเซิร์ฟเวอร์ Playwright MCP กับ CLI backend",
   "settings.browser.systemChrome.title": "ใช้ Chrome ของระบบ",
@@ -918,6 +908,8 @@ export const dict = {
   "settings.models.speechToTextApiKey.placeholder": "sk-...",
   "settings.models.speechToText.disabledDescription":
     "เปิดใช้งานและลงชื่อเข้าใช้ผู้ให้บริการ Kilo เพื่อใช้ Speech to Text หรือกำหนด URL พื้นฐานสำหรับการถอดเสียงเองด้านล่าง",
+  "settings.models.speechToText.remoteDescription":
+    "การป้อนด้วยเสียงไม่พร้อมใช้งานในหน้าต่างระยะไกล เปิด Kilo ในหน้าต่างภายในเครื่องเพื่อใช้ไมโครโฟน",
   "settings.models.speechToTextModel.title": "โมเดลแปลงเสียงเป็นข้อความ",
   "settings.models.speechToTextModel.description": "เลือกโมเดลการถอดเสียง Kilo Gateway สำหรับการป้อนข้อมูลด้วยเสียง",
   "settings.experimental.nativeNotebookTools.title": "เครื่องมือโน้ตบุ๊กดั้งเดิม",
@@ -1076,6 +1068,9 @@ export const dict = {
   "settings.agentBehaviour.workflows.model": "โมเดล",
   "settings.agentBehaviour.workflows.variant": "รูปแบบ",
   "settings.agentBehaviour.workflows.modelDescription": "การแทนที่โมเดลส่วนกลาง",
+  "settings.experimental.codeMode.title": "การเรียกใช้เครื่องมือแบบโปรแกรม",
+  "settings.experimental.codeMode.description":
+    "กำหนดเส้นทางการเรียกใช้เครื่องมือ MCP ผ่านรันไทม์ JavaScript ที่จำกัดขอบเขตพร้อมการค้นหาเครื่องมือตามต้องการ แทนการเปิดเผยเครื่องมือ MCP แต่ละรายการโดยตรง ช่วยประหยัดบริบทเมื่อมีเครื่องมือ MCP เชื่อมต่ออยู่เป็นจำนวนมาก",
   "settings.sandboxing.enabled.title": "Sandbox",
   "settings.sandboxing.enabled.description":
     "เรียกใช้คำสั่ง shell ของ agent ใน sandbox ระดับระบบปฏิบัติการที่จำกัดการเขียนไปยังโฟลเดอร์สถานะของโปรเจ็กต์และ Kilo",
@@ -1342,5 +1337,11 @@ export const dict = {
   "chat.search.close": "ปิดการค้นหา",
   "chat.search.invalidRegex": "นิพจน์ทั่วไปไม่ถูกต้อง",
   "chat.search.noResults": "ไม่มีผลลัพธ์",
+  "settings.experimental.browserAutomation.title": "เบราว์เซอร์ในตัว",
+  "settings.experimental.browserAutomation.description":
+    "แสดงตัวอย่างแอปพลิเคชันในเครื่องใน Agent Manager และเปิดเผยเครื่องมือ browser_open ให้กับเซสชัน Agent Manager",
+  "settings.experimental.browserAutomation.systemChrome.title": "ใช้ Chrome ของระบบ",
+  "settings.experimental.browserAutomation.systemChrome.description":
+    "ใช้ Google Chrome ที่ติดตั้งไว้สำหรับเบราว์เซอร์ในตัว ปิดใช้งานเฉพาะเมื่อติดตั้งเบราว์เซอร์ Playwright Chromium ที่เข้ากันได้ไว้แล้วเท่านั้น",
   "chat.search.searchingHistory": "กำลังค้นหาข้อความก่อนหน้า…",
 }

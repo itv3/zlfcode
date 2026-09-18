@@ -195,10 +195,12 @@ export const dict = {
   "prompt.action.send.recording": "轉錄並傳送",
   "prompt.action.stop": "停止",
   "prompt.action.enhance": "改善提示詞",
+  "prompt.paste.expand": "點擊展開貼上的文字",
   "prompt.action.autoApprove.enable": "啟用自動核准",
   "prompt.action.autoApprove.disable": "停用自動核准",
   "prompt.action.autoApprove.enabled": "自動核准已啟用。權限請求將自動獲准。",
   "prompt.action.autoApprove.disabled": "自動核准已停用。點擊以自動核准權限請求。",
+  "prompt.action.autoApprove.sandboxExcluded": "離開沙盒的提示一律被排除。",
   "prompt.action.enhanceDescription":
     "「強化提示詞」按鈕可透過提供額外內容、說明或改寫來協助改善提示詞。試著在這裡輸入提示詞，再點選一次按鈕以了解其運作方式。",
   "prompt.action.sandbox.enable": "啟用沙盒",
@@ -214,6 +216,7 @@ export const dict = {
   "prompt.action.sandbox.network.allowed": "允許",
   "prompt.action.sandbox.unrestricted": "不受限制",
   "prompt.action.sandbox.description.enabled": "寫入僅限於專案和 Kilo 目錄。",
+  "prompt.action.sandbox.description.escalation": "權限規則和自動核准在沙盒內生效。必須離開沙盒的命令一律會詢問。",
   "prompt.action.sandbox.description.disabled": "點擊以限制檔案系統寫入和網路存取。",
   "prompt.action.sandbox.description.disabledNetworkAllowed": "點擊以限制檔案系統寫入。沙盒設定仍允許網路存取。",
 
@@ -253,7 +256,9 @@ export const dict = {
   "notification.permission.title": "需要權限",
   "notification.permission.titleSubagent": "需要權限（子代理）",
   "notification.permission.titleSkillShell": "要執行技能「{{skill}}」的 shell 指令嗎？",
-  "notification.permission.titleSandboxEscalation": "要允許在沙盒外執行 Git 操作嗎？",
+  "notification.permission.titleSandboxEscalation": "要在沙盒外執行嗎？",
+  "notification.permission.descriptionSandboxEscalation":
+    "這會移除檔案系統和網路限制，執行整條命令，且僅限此命令。Git 必須寫入 .git，該路徑在沙盒中為唯讀，且在連結的 worktree 中位於該 worktree 之外。Bash 允許規則和自動核准永遠不會自動核准此提示。",
   "ui.permission.manageAutoApprove": "管理自動核准規則",
   "ui.permission.reject": "拒絕",
   "ui.permission.feedbackPlaceholder": "告訴 Kilo 應該如何修改",
@@ -306,7 +311,6 @@ export const dict = {
   "sidebar.topBar.newTask": "新建任務",
   "sidebar.topBar.history": "歷史記錄",
   "sidebar.topBar.agentManager": "代理管理器",
-  "sidebar.topBar.kiloClaw": "KiloClaw",
   "sidebar.topBar.marketplace": "市集",
   "sidebar.topBar.profile": "個人資料",
   "sidebar.topBar.settings": "設定",
@@ -526,37 +530,21 @@ export const dict = {
 
   "settings.permissions.toast.updateFailed.title": "更新權限失敗",
 
-  "settings.permissions.tool.read.title": "讀取",
   "settings.permissions.tool.read.description": "讀取檔案（符合檔案路徑）",
-  "settings.permissions.tool.edit.title": "編輯",
   "settings.permissions.tool.edit.description": "修改檔案，包括編輯、寫入、修補和多重編輯",
-  "settings.permissions.tool.glob.title": "Glob",
   "settings.permissions.tool.glob.description": "使用 glob 模式符合檔案",
-  "settings.permissions.tool.grep.title": "Grep",
   "settings.permissions.tool.grep.description": "使用正規表示式搜尋檔案內容",
-  "settings.permissions.tool.list.title": "清單",
   "settings.permissions.tool.list.description": "列出目錄中的檔案",
-  "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "執行 shell 命令",
-  "settings.permissions.tool.task.title": "任務",
   "settings.permissions.tool.task.description": "啟動 sub-agent",
-  "settings.permissions.tool.skill.title": "Skill",
   "settings.permissions.tool.skill.description": "按名稱載入技能",
-  "settings.permissions.tool.lsp.title": "LSP",
   "settings.permissions.tool.lsp.description": "執行語言伺服器查詢",
-  "settings.permissions.tool.todoread.title": "讀取待辦",
   "settings.permissions.tool.todoread.description": "讀取待辦清單",
-  "settings.permissions.tool.todowrite.title": "更新待辦",
   "settings.permissions.tool.todowrite.description": "更新待辦清單",
-  "settings.permissions.tool.webfetch.title": "網頁擷取",
   "settings.permissions.tool.webfetch.description": "從 URL 取得內容",
-  "settings.permissions.tool.websearch.title": "網頁搜尋",
   "settings.permissions.tool.websearch.description": "搜尋網頁",
-  "settings.permissions.tool.codesearch.title": "程式碼搜尋",
   "settings.permissions.tool.codesearch.description": "在網路上搜尋程式碼",
-  "settings.permissions.tool.external_directory.title": "外部目錄",
   "settings.permissions.tool.external_directory.description": "存取專案目錄之外的檔案",
-  "settings.permissions.tool.doom_loop.title": "Doom Loop",
   "settings.permissions.tool.doom_loop.description": "偵測具有相同輸入的重複工具呼叫",
 
   "session.delete.title": "刪除工作階段",
@@ -648,6 +636,7 @@ export const dict = {
   "profile.usage.source.direct": "直接",
   "profile.usage.state.stale": "正在顯示上次更新的用量。",
   "profile.usage.state.unavailable": "無法取得用量資料。",
+  "profile.usage.state.empty": "未回報任何用量限制。",
   "profile.usage.plan.pastDue": "方案：付款逾期",
   "profile.usage.plan.canceling": "方案：將於週期結束時取消",
   "profile.usage.plan.unknown": "方案：狀態未知",
@@ -804,7 +793,7 @@ export const dict = {
   "settings.agentBehaviour.subtab.skills": "Skills",
 
   "settings.browser.description":
-    "啟用後，AI Agent 可以與網頁互動，可導覽、點選、輸入並擷取螢幕截圖。Chrome 視窗將開啟，方便觀察 Agent 的工作。",
+    "設定由 Playwright 提供支援的內建瀏覽器自動化。Kilo 可以在你的工作階段中瀏覽網頁、與網頁互動，並擷取螢幕截圖。",
   "settings.browser.enable.title": "啟用瀏覽器自動化",
   "settings.browser.enable.description": "將 Playwright MCP 伺服器註冊到 CLI 後端。",
   "settings.browser.systemChrome.title": "使用系統 Chrome",
@@ -873,6 +862,8 @@ export const dict = {
   "settings.models.speechToTextApiKey.placeholder": "sk-...",
   "settings.models.speechToText.disabledDescription":
     "啟用並登入 Kilo 供應商以使用 Speech to Text，或在下方設定自訂轉錄基礎 URL。",
+  "settings.models.speechToText.remoteDescription":
+    "遠端視窗中無法使用語音輸入。請在本機視窗中開啟 Kilo 以使用麥克風。",
   "settings.models.speechToTextModel.title": "語音轉文字模型",
   "settings.models.speechToTextModel.description": "選擇用於語音輸入的 Kilo Gateway 轉錄模型。",
   "settings.experimental.nativeNotebookTools.title": "原生筆記本工具",
@@ -1028,6 +1019,9 @@ export const dict = {
   "settings.agentBehaviour.workflows.model": "模型",
   "settings.agentBehaviour.workflows.variant": "變體",
   "settings.agentBehaviour.workflows.modelDescription": "全域模型覆寫",
+  "settings.experimental.codeMode.title": "程式化工具呼叫",
+  "settings.experimental.codeMode.description":
+    "透過受限的 JavaScript 執行階段按需探索工具來路由 MCP 工具呼叫，而不是直接公開每個 MCP 工具。連接大量 MCP 工具時可節省上下文。",
   "settings.sandboxing.enabled.title": "沙盒",
   "settings.sandboxing.enabled.description":
     "在作業系統層級沙盒中執行代理 shell 指令，將寫入限制在專案和 Kilo 狀態目錄內",
@@ -1323,5 +1317,11 @@ export const dict = {
   "chat.search.close": "關閉搜尋",
   "chat.search.invalidRegex": "規則運算式無效",
   "chat.search.noResults": "無結果",
+  "settings.experimental.browserAutomation.title": "整合瀏覽器",
+  "settings.experimental.browserAutomation.description":
+    "在 Agent Manager 中顯示本機應用程式預覽，並向 Agent Manager 工作階段公開 browser_open 工具。",
+  "settings.experimental.browserAutomation.systemChrome.title": "使用系統 Chrome",
+  "settings.experimental.browserAutomation.systemChrome.description":
+    "為整合瀏覽器使用已安裝的 Google Chrome。僅在已安裝相容的 Playwright Chromium 瀏覽器時才停用。",
   "chat.search.searchingHistory": "正在搜尋較早的訊息…",
 } satisfies Partial<Record<Keys, string>>

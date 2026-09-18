@@ -33,7 +33,6 @@ import type {
   RunStatus,
   PRStatus,
   AgentManagerPRStatusMessage,
-  AgentManagerPRErrorMessage,
   AgentManagerProjectsMessage,
   AgentProjectSnapshot,
   ManagedSessionState,
@@ -80,6 +79,7 @@ import { createModeRouter } from "./mode-router"
 import * as modifier from "./modifier"
 import { ProjectList } from "./ProjectList"
 import { SidebarBody } from "./SidebarBody"
+import { reportFailure } from "./failure-toast"
 import { TabBar } from "./TabBar"
 import { createProjectLive } from "./project/live"
 import { createProjectSessionsLive } from "./project/sessions-live"
@@ -186,7 +186,7 @@ import { createRevertFile } from "./revert-file"
 import { FullScreenDiffView } from "../diff-viewer/FullScreenDiffView"
 import { createApplyToLocal } from "./apply-to-local"
 import { createWorktreeDiffs, diffDataKey, wireDiffId } from "./worktree-diffs"
-import { createWorktreeReferences } from "./worktree-references"
+import { createWorktreeMentionReferences as createMentionRefs } from "./worktree-references"
 import type { ReviewComment } from "../diff-viewer/review-comments"
 import { createReviewComposers } from "./review-composers"
 import type { SidebarSearchMenuRef } from "./SidebarSearchMenu"
@@ -209,7 +209,7 @@ import { mergeWorktreeDiffs } from "../diff-viewer/diff-state"
 import { DiffScopeControls } from "../diff-viewer/DiffScopeControls"
 import { scopeCapabilities } from "./diff-scope-state"
 import { createDiffReviewScope } from "./diff-review-scope"
-import { initialMessage, seedInitialVariant } from "./initial-message"
+import { dispatchInitialPrompt, seedInitialVariant } from "./initial-message"
 import { SidebarToggleButton } from "./SidebarToggleButton"
 import { setTabWidths } from "./tab-widths"
 import { clampPanelWidth, createPanelResize, maxPanelWidth, minPanelWidth, SidePanel } from "./side-panel-layout"
@@ -305,6 +305,7 @@ const AgentManagerContent: Component = () => {
     persisted: persisted ?? {},
     activeId: () => currentProjectId() ?? "single",
   })
+  onCleanup(session.trackScopes(registry.scopes))
   const defaultBase = (id: string) =>
     projectDefaultBase(registry.ensure(id), id === activeProjectId(), repoDetectedBranch())
   const localSessionIDs = () => registry.active().tabs.ids()
@@ -830,7 +831,7 @@ const AgentManagerContent: Component = () => {
     managed: managedSessions,
     locals: localSet,
   })
-  const references = createWorktreeReferences(vscode, registry.active, projectSessionsLive.current, selection)
+  const { references, dialogRefs } = createMentionRefs(vscode, registry.active, projectSessionsLive.current, selection)
 
   /** Session ids shown in the project-scoped history view (every session of the project). */
   const historySessionIds = createMemo(() => {
@@ -1582,10 +1583,7 @@ const AgentManagerContent: Component = () => {
         seedInitialVariant(session, ev)
 
         // Only send a message if there's text — otherwise just clear busy state
-        const init = initialMessage(ev)
-        if (init) {
-          session.submit(init)
-        }
+        dispatchInitialPrompt(session, ev)
         // Clear busy state — use worktreeId from the message directly
         // to avoid race condition where managedSessions() hasn't updated yet
         if (ev.worktreeId) {
@@ -1623,15 +1621,7 @@ const AgentManagerContent: Component = () => {
         managedSession: focusManagedSession,
       })
 
-      if (msg.type === "agentManager.prError") {
-        if (!isCurrent(msg, currentProjectId())) return
-        const ev = msg as AgentManagerPRErrorMessage
-        showToast({
-          variant: "error",
-          title: t(`agentManager.pr.error.${ev.error}.title`),
-          description: t(`agentManager.pr.error.${ev.error}.description`),
-        })
-      }
+      if (reportFailure(msg, { toast: showToast, t, project: currentProjectId() }) === "stale") return
 
       if (projectLive.apply(msg)) return
     })
@@ -1722,6 +1712,7 @@ const AgentManagerContent: Component = () => {
   })
   const prDiffComments = createPRDiffCommentState({
     post: vscode.postMessage,
+    onMessage: vscode.onMessage,
     project: activeProjectId,
     statuses: prStatuses,
   })
@@ -1821,6 +1812,7 @@ const AgentManagerContent: Component = () => {
         activeProjectId={activeProjectId()}
         defaultBase={defaultBase}
         onCreate={creation.schedule}
+        worktrees={dialogRefs}
       />
     ))
   }
@@ -2370,6 +2362,12 @@ const AgentManagerContent: Component = () => {
             busy={(id) => busyWorktrees().has(id)}
             blocked={activity.blocked}
             isStaleWorktree={(id) => staleWorktreeIds().has(id)}
+            worktreeHealth={(id) => registry.active().worktreeHealth()[id]}
+            orphanDirectories={() => registry.active().orphanDirectories()}
+            onRestoreWorktree={(id) => vscode.postMessage({ type: "agentManager.restoreWorktree", worktreeId: id })}
+            onRemoveStaleKeepSessions={(id) =>
+              vscode.postMessage({ type: "agentManager.removeStaleWorktree", worktreeId: id, keepSessions: true })
+            }
             shortcutMap={shortcutMap}
             worktreeStats={worktreeStats}
             prStatuses={prStatuses}

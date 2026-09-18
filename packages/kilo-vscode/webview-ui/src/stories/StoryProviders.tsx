@@ -239,6 +239,10 @@ export function mockSessionValue(overrides?: {
     selected: () => ({ providerID: "kilo", modelID: "anthropic/claude-sonnet-4-6" }),
     modelForAgent: () => ({ providerID: "kilo", modelID: "anthropic/claude-sonnet-4-6" }),
     selectModel: noop,
+    preferredSelection: () => undefined,
+    preferencesReady: () => true,
+    rememberSelection: noop,
+    trackScopes: () => noop,
     costBreakdown: () => [],
     contextUsage: () => undefined,
     modelUsage: () => undefined,
@@ -267,6 +271,7 @@ export function mockSessionValue(overrides?: {
     variantList: () => [],
     currentVariant: () => undefined,
     variantForAgent: () => undefined,
+    variantPreference: () => undefined,
     selectVariant: noop,
     sendMessage: () => true,
     sendCommand: () => true,
@@ -351,6 +356,7 @@ const ConfigWrapper: ParentComponent<{
         indexing: props.features?.indexing ?? hasIndexingPlugin(config.plugin ?? []),
         sandboxControls: props.features?.sandboxControls ?? false,
         backgroundSubagents: props.features?.backgroundSubagents ?? false,
+        speechToText: props.features?.speechToText ?? true,
       }
     })
 

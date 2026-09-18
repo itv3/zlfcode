@@ -20,7 +20,7 @@ import type { PermissionRequest } from "./permissions"
 import type { AnacondaDesktopExtensionMessage } from "../../../../src/shared/anaconda-desktop-messages"
 import type { BrowserFeedbackData, BrowserReference } from "../../../../src/shared/browser-feedback"
 import type { CodeContext } from "../../../../src/shared/code-context"
-import type { PRMergeResult } from "../../../../src/shared/pr-comment-actions"
+import type { PRMergeResult, PRReviewResult } from "../../../../src/shared/pr-comment-actions"
 
 export type { BrowserReference } from "../../../../src/shared/browser-feedback"
 
@@ -896,6 +896,18 @@ export interface AgentManagerStateMessage {
   sessions: ManagedSessionState[]
   sections?: SectionState[]
   staleWorktreeIds?: string[]
+  /** Why each unhealthy worktree is unhealthy; healthy worktrees are omitted. */
+  worktreeHealth?: Record<string, "absent-restorable" | "absent-gone" | "unregistered" | "unavailable">
+  /**
+   * Directories under `.kilo/worktrees/` that no worktree claims.
+   *
+   * `broken` still holds a git checkout, so it can contain work that exists nowhere else; `leftover`
+   * is a bare directory. The notice says which, because the two do not deserve the same warning.
+   *
+   * `sized` is set once the size pass is done with a folder; without `bytes` it means the folder
+   * could not be measured, which is how the UI knows to stop saying it is still calculating.
+   */
+  orphanDirectories?: { path: string; kind: "broken" | "leftover"; bytes?: number; sized?: boolean }[]
   tabOrder?: Record<string, string[]>
   worktreeOrder?: string[]
   sessionsCollapsed?: boolean
@@ -1113,10 +1125,11 @@ export interface FavoritesLoadedMessage {
   favorites: ModelSelection[]
 }
 
-// Per-mode model selections loaded from model.json (extension → webview)
+// Preferred and per-mode model selections loaded from persisted state (extension → webview)
 export interface ModelSelectionsLoadedMessage {
   type: "modelSelectionsLoaded"
   selections: Record<string, ModelSelection>
+  preferred?: ModelSelection & { variant?: string }
 }
 
 export interface AgentManagerBranchesMessage {
@@ -1282,6 +1295,9 @@ export interface AgentManagerSendInitialMessage {
   sessionId: string
   worktreeId: string
   text?: string
+  /** When set, run a slash command instead of sending the text as a prompt. */
+  command?: string
+  arguments?: string
   providerID?: string
   modelID?: string
   agent?: string
@@ -1745,6 +1761,7 @@ export type ExtensionMessage =
   | AgentManagerPRErrorMessage
   | AgentManagerCommentReactionResultMessage
   | PRMergeResult
+  | PRReviewResult
   | AgentManagerTerminalCreatedMessage
   | AgentManagerTerminalRestartedMessage
   | AgentManagerTerminalFontChangedMessage
