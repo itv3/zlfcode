@@ -62,6 +62,19 @@ export function compileProviderInfo(input: {
  * 逐字段对照 provider.ts 全量构建路径："配置值 → 既有模型值 → models.dev
  * 目录值（仅全量传入）→ 内置默认值"。
  */
+/**
+ * Cloudflare AI Gateway 把 OpenAI / Anthropic 模型经原生直通 SDK（Responses / Messages API）路由。
+ * 在计算 variants 之前解析出原生 npm，推理档位才会生成原生 SDK 认识的载荷
+ *（例如 anthropic 的 `effort` 而非兼容层的 `reasoningEffort`）。
+ * 与上游 provider.ts 的 cloudflareGatewayNpm 保持同步。
+ */
+function gatewayNpm(providerID: string, modelID: string) {
+  if (providerID !== "cloudflare-ai-gateway") return undefined
+  if (modelID.startsWith("openai/")) return "@ai-sdk/openai"
+  if (modelID.startsWith("anthropic/")) return "@ai-sdk/anthropic"
+  return undefined
+}
+
 export function compileConfigModels(input: {
   providerID: ProviderV2.ID
   config: ConfigProviderV1.Info
@@ -77,6 +90,9 @@ export function compileConfigModels(input: {
       configModel.provider?.npm ??
       config.npm ??
       existing?.api.npm ??
+      // 与上游 provider.ts 同步（v7.7.9）：config 定义的网关模型不走 fromModelsDevModel，
+      // 需在回落目录默认值之前解析 Cloudflare 原生直通 npm。
+      gatewayNpm(input.providerID, apiID) ??
       input.modelsDev?.npm ??
       "@ai-sdk/openai-compatible"
     const name = (() => {

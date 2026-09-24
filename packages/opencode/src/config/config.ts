@@ -43,6 +43,7 @@ import z from "zod" // kilocode_change - Kilo config compatibility schemas
 // kilocode_change start
 import { ZodOverride } from "@opencode-ai/core/effect-zod"
 import { KilocodeConfig } from "../kilocode/config/config"
+import { Excess } from "../kilocode/config/excess"
 import { sanitizeProjectMcpHeaders } from "../kilocode/config/mcp-headers"
 import { primaryPaths } from "../kilocode/primary-worktree"
 import { Git } from "@/git"
@@ -320,6 +321,7 @@ const layer = Layer.effect(
       // kilocode_change start - trusted allows {env:}; fileScope confines untrusted {file:} reads to a root
       trusted?: boolean,
       fileScope?: ConfigVariable.FileScope,
+      configWarnings?: Warning[],
       // kilocode_change end
     ) {
       const source = "path" in options ? options.path : options.source
@@ -331,7 +333,21 @@ const layer = Layer.effect(
         ),
       )
       const parsed = ConfigParse.jsonc(expanded, source)
-      const data = ConfigParse.schema(ConfigV1.Info, normalizeLoadedConfig(parsed, source), source)
+      const normalized = normalizeLoadedConfig(parsed, source) // kilocode_change
+      // kilocode_change start - preserve upstream excess-key compatibility while warning Kilo users about typos
+      if (configWarnings) {
+        const keys = Excess.keys(ConfigV1.Info, normalized)
+        if (keys.length) {
+          const detail = Excess.issue(keys)
+          configWarnings.push({
+            path: source,
+            message: `Configuration is invalid at ${source}: ${detail}`,
+            detail,
+          })
+        }
+      }
+      // kilocode_change end
+      const data = ConfigParse.schema(ConfigV1.Info, normalized, source) // kilocode_change
       if (!("path" in options)) return data
 
       yield* Effect.promise(() => resolveLoadedPlugins(data, options.path))
@@ -373,6 +389,7 @@ const layer = Layer.effect(
         trusted === false ? undefined : env,
         trusted,
         fileScope,
+        configWarnings,
       )
       // kilocode_change end
       return data
@@ -382,7 +399,10 @@ const layer = Layer.effect(
 
     // kilocode_change - 上游此函数名为 loadGlobal；改名为 loadSnapshot 拆出单次快照加载，
     // 由下方带稳定性重试的 loadGlobal 包装（加载前后 stamp 一致才算稳定快照）
-    const loadSnapshot = Effect.fnUntraced(function* (env?: Record<string, string>) {
+    const loadSnapshot = Effect.fnUntraced(function* (
+      env?: Record<string, string>,
+      configWarnings?: Warning[], // kilocode_change - retain excess-key diagnostics for cached trusted config
+    ) {
       // kilocode_change start
       yield* Effect.promise(() => KilocodeConfig.migrateBashPermission())
       if (Flag.KILO_EXPERIMENTAL_CLAUDE_MIGRATION && !ClaudeMigration.unsupportedContext()) {
@@ -414,13 +434,28 @@ const layer = Layer.effect(
         }
       }
       // kilocode_change - global config is user-owned and trusted to resolve {file:}/{env:} tokens
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "config.json"), env, true))
+      result = mergeConfig(
+        result,
+        yield* loadFile(path.join(Global.Path.config, "config.json"), env, true, undefined, configWarnings),
+      )
       // kilocode_change start
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "kilo.json"), env, true))
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "kilo.jsonc"), env, true))
+      result = mergeConfig(
+        result,
+        yield* loadFile(path.join(Global.Path.config, "kilo.json"), env, true, undefined, configWarnings),
+      )
+      result = mergeConfig(
+        result,
+        yield* loadFile(path.join(Global.Path.config, "kilo.jsonc"), env, true, undefined, configWarnings),
+      )
       // kilocode_change end
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.json"), env, true)) // kilocode_change
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.jsonc"), env, true)) // kilocode_change
+      result = mergeConfig(
+        result,
+        yield* loadFile(path.join(Global.Path.config, "opencode.json"), env, true, undefined, configWarnings),
+      ) // kilocode_change
+      result = mergeConfig(
+        result,
+        yield* loadFile(path.join(Global.Path.config, "opencode.jsonc"), env, true, undefined, configWarnings),
+      ) // kilocode_change
 
       const legacy = path.join(Global.Path.config, "config")
       if (existsSync(legacy)) {
@@ -443,7 +478,7 @@ const layer = Layer.effect(
     })
 
     // kilocode_change start - 仅缓存加载期间保持稳定的全局配置快照
-    const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {
+    const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>, configWarnings?: Warning[]) {
       // 稳定性重试有上限（审核条目 F44）：正常场景（schema 种子写入、legacy TOML
       // 迁移）两轮内即可收敛；若外部进程持续改写配置文件，无上限重试会以
       // 「6 个文件全文读取 + 解析 + 可能写盘」为单位自旋。超限后采用最后一次
@@ -466,12 +501,20 @@ const layer = Layer.effect(
     })
     // kilocode_change end
 
+    // kilocode_change start - cache global diagnostics with the parsed config so every instance can surface them
+    const loadGlobalState = Effect.fnUntraced(function* (env?: Record<string, string>) {
+      const warnings: Warning[] = []
+      const config = yield* loadGlobal(env, warnings)
+      return { config, warnings }
+    })
+    // kilocode_change end
+
     const [cachedGlobal, invalidateGlobal] = yield* Effect.cachedInvalidateWithTTL(
-      loadGlobal().pipe(
+      loadGlobalState().pipe(
         Effect.tapError((error) =>
           Effect.logError("failed to load global config, using defaults", { error: String(error) }),
         ),
-        Effect.orElseSucceed((): Info => ({})),
+        Effect.orElseSucceed(() => ({ config: {} as Info, warnings: [] as Warning[] })), // kilocode_change
       ),
       Duration.infinity,
     )
@@ -484,6 +527,13 @@ const layer = Layer.effect(
       // before invalidation reloads can hide a stale cached value from the next check.
       yield* invalidateGlobal
       return true
+    })
+    // kilocode_change end
+
+    // kilocode_change start - instance loading also consumes cached global warnings
+    const getGlobalState = Effect.fnUntraced(function* () {
+      yield* refreshGlobal() // kilocode_change
+      return yield* cachedGlobal
     })
     // kilocode_change end
 
@@ -672,6 +722,8 @@ const layer = Layer.effect(
                 },
                 authEnv,
                 true, // kilocode_change - well-known org config is a trusted source
+                undefined,
+                warnings, // kilocode_change - retain excess-key diagnostics from trusted org config
               )
               yield* merge(source, next, "global")
               yield* Effect.logDebug("loaded remote config from well-known", { url })
@@ -690,7 +742,17 @@ const layer = Layer.effect(
         }
 
         // kilocode_change start - capture global config failures as warnings
-        const global = yield* (Object.keys(authEnv).length ? loadGlobal(authEnv) : cachedGlobal).pipe(
+        const global = yield* (
+          Object.keys(authEnv).length
+            ? loadGlobal(authEnv, warnings)
+            : // kilocode_change - 直读 cachedGlobal（不经 getGlobalState 的 refreshGlobal），
+              // 避免实例加载期间再触发全局刷新造成递归；诊断仍从缓存的 state 中收集
+              Effect.gen(function* () {
+                const state = yield* cachedGlobal
+                warnings.push(...state.warnings)
+                return state.config
+              })
+        ).pipe(
           Effect.catchDefect((err: unknown) => {
             caughtWarning(warnings, "global config", err)
             return Effect.succeed({} as Info)
@@ -705,7 +767,7 @@ const layer = Layer.effect(
           yield* merge(
             Flag.KILO_CONFIG,
             // kilocode_change - KILO_CONFIG is an explicit user-provided path, trusted for {file:}/{env:}
-            yield* loadFile(Flag.KILO_CONFIG, authEnv, true).pipe(
+            yield* loadFile(Flag.KILO_CONFIG, authEnv, true, undefined, warnings).pipe(
               Effect.catchDefect((err: unknown) => {
                 caughtWarning(warnings, Flag.KILO_CONFIG!, err)
                 return Effect.succeed({} as Info)
@@ -776,7 +838,7 @@ const layer = Layer.effect(
               yield* Effect.logDebug(`loading config from ${source}`)
               // kilocode_change - untrusted config dirs confine {file:} reads to projectRoot
               const fileScope = dirTrusted ? undefined : { root: projectRoot, source }
-              const next = yield* loadFile(source, authEnv, dirTrusted, fileScope, dirTrusted ? undefined : warnings).pipe(
+              const next = yield* loadFile(source, authEnv, dirTrusted, fileScope, warnings).pipe(
                 Effect.catchDefect((err: unknown) => {
                   caughtWarning(warnings, source, err)
                   return Effect.succeed({} as Info)
@@ -848,6 +910,8 @@ const layer = Layer.effect(
               },
               undefined,
               true, // kilocode_change - KILO_CONFIG_CONTENT is user-provided, trusted for {file:}/{env:}
+              undefined,
+              warnings, // kilocode_change - retain excess-key diagnostics from inline config
             ).pipe(
               Effect.tap(() => Effect.logDebug("loaded custom config from KILO_CONFIG_CONTENT")),
               Effect.catchDefect((err: unknown) => {
@@ -888,6 +952,8 @@ const layer = Layer.effect(
                 },
                 undefined,
                 true, // kilocode_change - console-managed org config is a trusted source
+                undefined,
+                warnings, // kilocode_change - retain excess-key diagnostics from console-managed config
               )
               for (const providerID of Object.keys(next.provider ?? {})) {
                 consoleManagedProviders.add(providerID)
@@ -910,7 +976,7 @@ const layer = Layer.effect(
           for (const file of KilocodeConfig.ALL_CONFIG_FILES) {
             const source = path.join(managedDir, file)
             // kilocode_change - MDM/enterprise-managed config is a trusted source
-            yield* merge(source, yield* loadFile(source, undefined, true), "global")
+            yield* merge(source, yield* loadFile(source, undefined, true, undefined, warnings), "global")
           }
         }
         // kilocode_change end
@@ -929,6 +995,8 @@ const layer = Layer.effect(
               },
               undefined,
               true, // kilocode_change - MDM-managed preferences are a trusted source
+              undefined,
+              warnings, // kilocode_change - retain excess-key diagnostics from managed preferences
             ),
             "global",
           )
@@ -1038,7 +1106,8 @@ const layer = Layer.effect(
 
     const getGlobal = Effect.fn("Config.getGlobal")(function* () {
       yield* reload()
-      return yield* cachedGlobal
+      // kilocode_change - cachedGlobal 自上游 v7.7.9 起缓存 { config, warnings }
+      return (yield* cachedGlobal).config
     })
 
     // kilocode_change end
@@ -1129,7 +1198,11 @@ const layer = Layer.effect(
                 file,
               )
               const next = KilocodeConfig.mergeConfig(writable(existing), patch)
-              const serialized = JSON.stringify(next, null, 2)
+              const serialized = JSON.stringify(
+                KilocodeConfig.preserve(normalizeLoadedConfig(ConfigParse.jsonc(before, file), file), patch, file),
+                null,
+                2,
+              )
               const changed = serialized !== before || propagated
               if (serialized !== before) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
               return { next, changed }

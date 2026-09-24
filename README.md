@@ -1,6 +1,6 @@
 # ZLF Code
 
-ZLF Code 是面向内部使用的 AI coding agent。当前版本已接入官方 `v7.7.5` 历史，并在共同祖先基础上保留 ZLF 自定义功能、发布身份和 workflow。
+ZLF Code 是面向内部使用的 AI coding agent。当前版本已接入官方 `v7.7.9` 历史，并在共同祖先基础上保留 ZLF 自定义功能、发布身份和 workflow。
 
 ## 当前版本
 
@@ -22,7 +22,7 @@ VS Marketplace / Open VSX 的 `package.json.version` 必须是普通 SemVer，�
 
 ## 维护原则
 
-本轮升级通过双父节点合并提交接入官方 `v7.7.5` 历史，并在共同祖先基础上三方应用上游增量。后续升级应直接以当前共同祖先合并新的官方 tag，继续保持 ZLF 补丁最小化。
+本轮升级通过双父节点合并提交接入官方 `v7.7.9` 历史，并在共同祖先基础上三方应用上游增量。后续升级应直接以当前共同祖先合并新的官方 tag，继续保持 ZLF 补丁最小化。
 
 1. 优先把 ZLF 改动放在 `packages/kilo-vscode` 和 `packages/opencode/src/kilocode/`。
 2. 共享 `packages/opencode` 文件只保留必要小补丁，并用 `kilocode_change` 标记。

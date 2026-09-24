@@ -130,7 +130,6 @@ export class KiloConnectionService {
   private healthPollTimer: ReturnType<typeof setInterval> | null = null
   private healthFailures = 0
   private disposed = false
-  private remoteService: import("../RemoteStatusService").RemoteStatusService | null = null
 
   private readonly eventListeners: Set<SSEEventListener> = new Set()
   private readonly filteredListeners = new Set<{ filter: SSEEventFilter; listener: SSEEventListener }>()
@@ -344,16 +343,11 @@ export class KiloConnectionService {
   setRemoteService(service: import("../RemoteStatusService").RemoteStatusService | null): void {
     this.unsubRemote?.()
     this.unsubRemote = null
-    this.remoteService = service
     if (service) {
       this.unsubRemote = service.onChange((state) => {
         if (state.enabled) this.flushViewed()
       })
     }
-  }
-
-  private isRemoteEnabled(): boolean {
-    return this.remoteService?.getState().enabled ?? false
   }
 
   /**
