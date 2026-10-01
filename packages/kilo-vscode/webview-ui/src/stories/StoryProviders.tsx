@@ -288,6 +288,7 @@ export function mockSessionValue(overrides?: {
     loadSessions: noop,
     loadMoreSessions: noop,
     sessionsHasMore: () => false,
+    keepSessions: () => noop,
     sessionsLoadingMore: () => false,
     loadOlderMessages: () => false,
     selectSession: noop,

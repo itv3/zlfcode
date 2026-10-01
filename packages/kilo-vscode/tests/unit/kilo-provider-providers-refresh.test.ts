@@ -8,7 +8,7 @@ type Internal = {
   connectionState: "connecting" | "connected" | "disconnected" | "error"
   cachedConfigMessage: unknown
   cachedProvidersMessage: unknown
-  providersRetry: ReturnType<typeof setTimeout> | null
+  providersBackoff: ReturnType<typeof setTimeout> | null
   fetchAndSendProviders: (mode?: Mode) => Promise<void>
   handleProvidersChange: (source: string | undefined, revision: number, message?: unknown) => void
   takeProviderFetch: () => Mode | null
@@ -168,7 +168,7 @@ describe("KiloProvider Provider 权威快照", () => {
     expect(item.calls).toEqual({ connected: 1, catalog: 1 })
     expect(loaded(item.messages).map((message) => message.mode)).toEqual(["connected", "catalog"])
     expect(item.internal.cachedProvidersMessage).toEqual(expect.objectContaining({ mode: "connected" }))
-    expect(item.internal.providersRetry).toBeNull()
+    expect(item.internal.providersBackoff).toBeNull()
   })
 
   it("同模式重试会去重排队并在首次失败后自愈", async () => {
@@ -231,7 +231,7 @@ describe("KiloProvider Provider 权威快照", () => {
 
     await item.internal.fetchAndSendProviders("connected")
     expect(loaded(item.messages)).toHaveLength(1)
-    expect(item.internal.providersRetry).not.toBeNull()
+    expect(item.internal.providersBackoff).not.toBeNull()
 
     // 第一次自愈重试延迟 1 秒；结果仍缺 kilo 且内容与缓存一致。
     await Bun.sleep(1_100)
@@ -240,7 +240,7 @@ describe("KiloProvider Provider 权威快照", () => {
 
     expect(loaded(item.messages)).toHaveLength(1)
     // 缺 kilo 时重试必须继续排期（不破坏缺失自愈语义），只是不再重复推送。
-    expect(item.internal.providersRetry).not.toBeNull()
+    expect(item.internal.providersBackoff).not.toBeNull()
     expect(item.internal.cachedProvidersMessage).toEqual(expect.objectContaining({ mode: "connected" }))
   })
 
@@ -269,7 +269,7 @@ describe("KiloProvider Provider 权威快照", () => {
     await waitFor(() => loaded(item.messages).at(-1)?.providers.kilo !== undefined)
 
     expect(loaded(item.messages)).toHaveLength(2)
-    expect(item.internal.providersRetry).toBeNull()
+    expect(item.internal.providersBackoff).toBeNull()
     expect(item.internal.cachedProvidersMessage).toEqual(
       expect.objectContaining({
         mode: "connected",

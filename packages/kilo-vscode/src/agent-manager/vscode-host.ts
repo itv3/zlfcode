@@ -32,6 +32,7 @@ const PR_MERGE_METHODS_KEY = "agentManager.prMergeMethod"
 export class VscodeHost implements Host {
   private diffVirtual: DiffVirtualProvider | undefined
   private autoApprove: AutoApproveController | undefined
+  private focus: { gained: () => void; lost: () => void } | undefined
   /**
    * Shared project route registry for every Agent Manager panel opened by
    * this host. One service keeps raw session id ambiguity consistent across
@@ -53,6 +54,11 @@ export class VscodeHost implements Host {
 
   setAutoApproveController(ctrl: AutoApproveController): void {
     this.autoApprove = ctrl
+  }
+
+  /** Report Agent Manager panel focus so commands can find the user's surface. */
+  setFocusListener(listener: { gained: () => void; lost: () => void }): void {
+    this.focus = listener
   }
 
   openPanel(opts: {
@@ -136,6 +142,7 @@ export class VscodeHost implements Host {
         mainTerminal: "kilo-code.new.agentManagerMainTerminalFocused",
         sideTerminal: "kilo-code.new.agentManagerSideTerminalFocused",
       },
+      onFocused: () => this.focus?.gained(),
       routeService: this.routes,
       projectQualifier: () => {
         const projectId = opts.projectId?.()
@@ -152,7 +159,10 @@ export class VscodeHost implements Host {
       }
     }
     const unsubscribe = this.caffeination?.onChange(snapshot)
-    panel.onDidDispose(() => unsubscribe?.())
+    panel.onDidDispose(() => {
+      unsubscribe?.()
+      this.focus?.lost()
+    })
     provider.attachToWebview(panel.webview, {
       onBeforeMessage: async (msg) => {
         if (msg.type === "agentManager.setCaffeination") {
@@ -197,6 +207,7 @@ export class VscodeHost implements Host {
       isSessionRouteAmbiguous: (sessionId) => provider.isSessionRouteAmbiguous(sessionId),
       routeSessionDirectoryFor: (ref) => provider.routeSessionDirectoryFor(ref),
       refreshGitStatus: () => void provider.refreshGitStatus(),
+      retryInitialization: () => void provider.retryInitialization(),
       dispose: () => provider.dispose(),
     }
 
@@ -408,6 +419,15 @@ export class VscodeHost implements Host {
     return vscode.workspace.getConfiguration("kilo-code.new.experimental").get("browserAutomation", false)
   }
 
+  async approveBrowserNavigation(origin: string): Promise<boolean> {
+    const answer = await vscode.window.showWarningMessage(
+      `Allow the Agent Manager browser to navigate to ${origin}?`,
+      { modal: true },
+      "Allow",
+    )
+    return answer === "Allow"
+  }
+
   worktreePool(): boolean {
     return vscode.workspace.getConfiguration("kilo-code.new.agentManager").get("worktreePool", true)
   }
@@ -525,8 +545,12 @@ export class VscodeHost implements Host {
     return ext?.packageJSON?.contributes?.keybindings ?? []
   }
 
-  copyToClipboard(text: string): void {
-    void vscode.env.clipboard.writeText(text)
+  async copyToClipboard(text: string): Promise<void> {
+    await vscode.env.clipboard.writeText(text)
+  }
+
+  async readClipboard(): Promise<string> {
+    return vscode.env.clipboard.readText()
   }
 
   capture(event: string, properties?: Record<string, unknown>): void {

@@ -363,6 +363,7 @@ describe("kilocode tool registry indexing", () => {
         "kilo_memory_save",
         "recall",
         "background_process",
+        "agent_manager_models",
         "notify_user",
         "send_file",
         "link_pr",
@@ -376,24 +377,11 @@ describe("kilocode tool registry indexing", () => {
         "kilo_memory_save",
         "recall",
         "background_process",
+        "agent_manager_models",
         "notify_user",
         "send_file",
         "link_pr",
       ])
-
-      for (const client of ["cli", "run", "acp"]) {
-        process.env["KILO_CLIENT"] = client
-        const enabled = KiloToolRegistry.extra(tools, { experimental: { task_model_selection: true } }, flags).map(
-          (tool) => tool.id,
-        )
-        expect(enabled).toContain("agent_manager_models")
-        expect(enabled).not.toContain("agent_manager")
-        expect(
-          KiloToolRegistry.extra(tools, { experimental: { task_model_selection: false } }, flags).map(
-            (tool) => tool.id,
-          ),
-        ).not.toContain("agent_manager_models")
-      }
 
       process.env["KILO_CLIENT"] = "vscode"
       expect(KiloToolRegistry.extra(tools, {}, flags).map((tool) => tool.id)).toEqual([
@@ -408,7 +396,6 @@ describe("kilocode tool registry indexing", () => {
         "browser_open",
         "notify_user",
         "send_file",
-        "link_pr",
       ])
       expect(
         KiloToolRegistry.extra(
@@ -433,7 +420,6 @@ describe("kilocode tool registry indexing", () => {
         "notebook_execute",
         "notify_user",
         "send_file",
-        "link_pr",
       ])
       expect(KiloToolRegistry.extra({ ...tools, semantic: undefined }, {}, flags).map((tool) => tool.id)).toEqual([
         "kilo_memory_recall",
@@ -446,7 +432,6 @@ describe("kilocode tool registry indexing", () => {
         "browser_open",
         "notify_user",
         "send_file",
-        "link_pr",
       ])
 
       process.env["KILO_CLIENT"] = "desktop"
@@ -455,9 +440,9 @@ describe("kilocode tool registry indexing", () => {
         "kilo_memory_recall",
         "kilo_memory_save",
         "recall",
+        "agent_manager_models",
         "notify_user",
         "send_file",
-        "link_pr",
       ])
 
       process.env["KILO_CLIENT"] = "run"
@@ -466,9 +451,9 @@ describe("kilocode tool registry indexing", () => {
         "kilo_memory_recall",
         "kilo_memory_save",
         "recall",
+        "agent_manager_models",
         "notify_user",
         "send_file",
-        "link_pr",
       ])
 
       process.env["KILO_CLIENT"] = "acp"
@@ -477,9 +462,9 @@ describe("kilocode tool registry indexing", () => {
         "kilo_memory_recall",
         "kilo_memory_save",
         "recall",
+        "agent_manager_models",
         "notify_user",
         "send_file",
-        "link_pr",
       ])
       for (const client of ["cli", "vscode", "jetbrains", "desktop", "run", "acp"]) {
         process.env["KILO_CLIENT"] = client
@@ -539,6 +524,7 @@ describe("kilocode tool registry indexing", () => {
         schedule: () => Effect.die(new Error("wakeup schedule is not used by this test")),
         list: () => Effect.succeed([]),
         pending: () => Effect.succeed([]),
+        scheduled: () => Effect.succeed(new Map()),
         cancel: () => Effect.succeed(undefined),
         cancelSession: () => Effect.succeed(0),
         adopt: () => Effect.void,

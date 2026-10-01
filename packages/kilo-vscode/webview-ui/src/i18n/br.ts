@@ -96,6 +96,8 @@ export const dict = {
     "Conversa revertida. O status da restauração do espaço de trabalho não está disponível para esta reversão anterior.",
   "revert.banner.workspace.enableSnapshots": "Ativar snapshots",
   "revert.disabled.agentBusy": "Aguarde o agente terminar",
+  "revert.error.body":
+    "O repositório pode estar em uso. Tente novamente ou consulte os logs do Kilo para mais detalhes.",
   "command.session.compact": "Compactar sessão",
   "command.session.export": "Exportar transcrição da sessão",
 
@@ -203,6 +205,8 @@ export const dict = {
   "prompt.action.send.blocked": "Responda ou feche a pergunta pendente primeiro",
   "prompt.action.send.recording": "Transcrever e enviar",
   "prompt.action.stop": "Parar",
+  "prompt.action.stop.background": "Parar o agente principal. Os agentes em segundo plano continuam em execução.",
+  "prompt.agents.show": "Mostrar agentes em segundo plano",
   "prompt.action.enhance": "Melhorar prompt",
   "prompt.paste.expand": "Clique para expandir o texto colado",
   "prompt.action.autoApprove.enable": "Ativar aprovação automática",
@@ -483,6 +487,7 @@ export const dict = {
   // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
   // CustomProviderDialog.tsx 仍在用它，合并 v7.4.17 时恢复。
   "provider.custom.models.fetch.error": "Falha ao buscar modelos: {{error}}",
+  "provider.custom.models.fetch.button": "Buscar modelos",
   "provider.custom.models.fetch.authError": "Falha na autenticação. Verifique a chave de API acima e tente novamente.",
   "provider.custom.models.fetch.empty": "Nenhum modelo encontrado neste servidor.",
   "provider.custom.models.fetch.added": "{{count}} modelo(s) adicionado(s).",
@@ -858,7 +863,8 @@ export const dict = {
   "settings.browser.description":
     "Configure a automação de navegador integrada com tecnologia Playwright. O Kilo pode navegar, interagir e capturar telas de páginas da web nas suas sessões.",
   "settings.browser.enable.title": "Ativar Automação do Navegador",
-  "settings.browser.enable.description": "Registrar o servidor Playwright MCP no backend CLI.",
+  "settings.browser.enable.description":
+    "Ativar o navegador do Agent Manager específico de cada sessão para aplicações locais e páginas HTTPS públicas.",
   "settings.browser.systemChrome.title": "Usar Chrome do Sistema",
   "settings.browser.systemChrome.description":
     "Usar o navegador Chrome instalado em vez de uma instância separada do Chromium.",
@@ -960,9 +966,6 @@ export const dict = {
     "Importe uma vez instruções globais CLAUDE.md compatíveis, habilidades simples e definições MCP desativadas. Os arquivos originais do Claude permanecem inalterados; reinicie o backend após ativar.",
   "settings.experimental.multiProject.description":
     "Ativar gerenciamento de sessões e worktrees em múltiplos repositórios no Agent Manager. O repositório do workspace atual é sempre o projeto padrão.",
-  "settings.experimental.taskModelSelection.title": "Seleção de modelo de subagente do Task",
-  "settings.experimental.taskModelSelection.description":
-    "Permite selecionar explicitamente o modelo, o provedor e o esforço de raciocínio dos subagentes do Task.",
   "settings.experimental.mcpTimeout.title": "Tempo limite MCP (ms)",
   "settings.experimental.mcpTimeout.description": "Tempo limite para solicitações do servidor MCP em milissegundos",
   "settings.experimental.remote.title": "Controle Remote",
@@ -1170,6 +1173,9 @@ export const dict = {
   "settings.autoCleanup.runNow": "Executar limpeza agora",
   "settings.autoCleanup.runNow.confirm":
     "Excluir permanentemente as sessões expiradas em todos os projetos e em todos os clientes Kilo desta máquina?",
+  "settings.autoCleanup.stop": "Parar a limpeza",
+  "settings.autoCleanup.progress.cancelling": "Parando a limpeza de sessões...",
+  "settings.autoCleanup.lastRun.cancelled": "interrompida",
   "settings.context.autoCompaction.title": "Compactação automática",
   "settings.context.autoCompaction.description": "Compactar automaticamente o contexto antes que atinja o limite",
   "settings.context.compaction.title": "Compactação",
@@ -1340,14 +1346,12 @@ export const dict = {
   "task.todos.allDone": "{{count}} tarefas concluídas",
   "task.backgroundAgents.running.one": "1 agente em segundo plano",
   "task.backgroundAgents.running.many": "{{count}} agentes em segundo plano",
-  "task.backgroundAgents.more": "+{{count}} mais",
   "task.backgroundAgents.open": "Abrir agente em segundo plano",
   "task.backgroundAgents.openAll": "Abrir todos os agentes em segundo plano",
   "task.backgroundAgents.cancel": "Parar",
   "task.backgroundAgents.continueInBackground": "Continuar em segundo plano",
   "task.backgroundAgents.waiting": "Um agente em segundo plano precisa da sua entrada",
   "task.backgroundAgents.needsInput": "Entrada necessária",
-  "task.backgroundAgents.dismiss": "Dispensar",
   "task.backgroundAgents.clearFinished": "Limpar concluídos",
   "task.backgroundAgents.summary": "{{running}} de {{total}} agentes em segundo plano em execução",
   "task.backgroundAgents.status.running": "Em execução",
@@ -1356,6 +1360,8 @@ export const dict = {
   "task.backgroundAgents.status.error": "Erro",
   "task.backgroundAgents.untitled": "Agente em segundo plano",
   "task.backgroundAgents.stopAll": "Parar todos ({{count}})",
+  "task.backgroundAgents.finished": "Agentes em segundo plano concluídos",
+  "task.stop": "Parar subagente",
   "settings.saveBar.unsavedChanges": "Alterações não salvas",
   "settings.saveBar.discard": "Descartar",
   "settings.saveBar.save": "Salvar",

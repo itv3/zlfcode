@@ -414,7 +414,7 @@ export class AgentManagerProvider implements Disposable {
       panel.dispose()
     }
     this.panel = ctx
-    this.browserLifecycle.replay()
+    this.browserLifecycle.attach(ctx)
 
     for (const poller of [this.statsPoller, this.projectPollers]) poller.setVisible(ctx.visible)
     this.diffs.setVisible(ctx.visible).catch((err) => this.log("Failed to update diff visibility:", err))
@@ -878,6 +878,14 @@ export class AgentManagerProvider implements Disposable {
       this.openWorktreeFile(m.sessionId, m.filePath, m.line, m.column)
       return null
     }
+    if (m.type === "agentManager.copyFilePath") {
+      const target = resolveWorktreeFile(this.getStateManager(), m.sessionId, m.filePath, this.getRoot())
+      if (target)
+        void Promise.resolve(this.host.copyToClipboard(target)).catch((err) =>
+          this.log("Failed to copy file path:", err instanceof Error ? err.message : String(err)),
+        )
+      return null
+    }
     if (m.type === "agentManager.requestDocument") return this.diffs.document(m.sessionId, m.file, m.contextKey)
   }
 
@@ -1236,7 +1244,6 @@ export class AgentManagerProvider implements Disposable {
     if (!ctx) return null
     return closeLifecycleSession(ctx, this.lifecycleHost, sessionId)
   }
-
   // Multi-version worktree creation
 
   /** Create N worktree sessions for the same prompt (multi-version mode). */
@@ -1589,6 +1596,7 @@ export class AgentManagerProvider implements Disposable {
       this.projectPollers.sync(this.contexts)
     }
     this.panel?.sessions.refreshGitStatus?.()
+    this.panel?.sessions.retryInitialization?.()
   }
   private onWorkspaceChanged(): void {
     if (this.contexts.syncPinned()) {

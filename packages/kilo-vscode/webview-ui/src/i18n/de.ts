@@ -102,6 +102,8 @@ export const dict = {
     "Unterhaltung zurückgesetzt. Der Status der Arbeitsbereichswiederherstellung ist für dieses frühere Zurücksetzen nicht verfügbar.",
   "revert.banner.workspace.enableSnapshots": "Snapshots aktivieren",
   "revert.disabled.agentBusy": "Warten bis der Agent fertig ist",
+  "revert.error.body":
+    "Das Repository wird möglicherweise gerade verwendet. Versuchen Sie es erneut oder prüfen Sie die Kilo-Logs.",
   "command.session.compact": "Sitzung komprimieren",
   "command.session.export": "Sitzungsprotokoll exportieren",
 
@@ -209,6 +211,8 @@ export const dict = {
   "prompt.action.send.blocked": "Beantworten oder verwerfen Sie zuerst die ausstehende Frage",
   "prompt.action.send.recording": "Transkribieren und senden",
   "prompt.action.stop": "Stopp",
+  "prompt.action.stop.background": "Hauptagent stoppen. Hintergrund-Agenten laufen weiter.",
+  "prompt.agents.show": "Hintergrund-Agenten anzeigen",
   "prompt.action.enhance": "Prompt verbessern",
   "prompt.paste.expand": "Klicken, um eingefügten Text zu erweitern",
   "prompt.action.autoApprove.enable": "Automatische Genehmigung aktivieren",
@@ -532,6 +536,7 @@ export const dict = {
   // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
   // CustomProviderDialog.tsx 仍在用它，合并 v7.4.17 时恢复。
   "provider.custom.models.fetch.error": "Modelle konnten nicht abgerufen werden: {{error}}",
+  "provider.custom.models.fetch.button": "Modelle abrufen",
   "provider.custom.models.fetch.authError":
     "Authentifizierung fehlgeschlagen. Überprüfen Sie den API-Schlüssel oben und versuchen Sie es erneut.",
   "provider.custom.models.fetch.empty": "Keine Modelle auf diesem Server gefunden.",
@@ -868,7 +873,8 @@ export const dict = {
   "settings.browser.description":
     "Integrierte Browser-Automatisierung auf Basis von Playwright konfigurieren. Kilo kann in Ihren Sitzungen Webseiten aufrufen, mit ihnen interagieren und Screenshots erstellen.",
   "settings.browser.enable.title": "Browser-Automatisierung aktivieren",
-  "settings.browser.enable.description": "Den Playwright-MCP-Server beim CLI-Backend registrieren.",
+  "settings.browser.enable.description":
+    "Den sitzungsgebundenen Browser im Agent Manager für lokale Anwendungen und öffentliche HTTPS-Seiten aktivieren.",
   "settings.browser.systemChrome.title": "System-Chrome verwenden",
   "settings.browser.systemChrome.description":
     "Verwenden Sie Ihren installierten Chrome-Browser anstelle einer separaten Chromium-Instanz.",
@@ -972,9 +978,6 @@ export const dict = {
     "Unterstützte globale CLAUDE.md-Anweisungen, einfache Skills und deaktivierte MCP-Definitionen einmalig importieren. Originale Claude-Dateien bleiben unverändert; Backend nach dem Aktivieren neu starten.",
   "settings.experimental.multiProject.description":
     "Aktivieren Sie die Verwaltung von Sitzungen und Worktrees über mehrere Repositories im Agent Manager. Das aktuelle Workspace-Repository ist immer das Standardprojekt.",
-  "settings.experimental.taskModelSelection.title": "Task-Subagent-Modellauswahl",
-  "settings.experimental.taskModelSelection.description":
-    "Erlaubt die explizite Auswahl von Modell, Anbieter und Schlussfolgerungsaufwand für Task-Subagenten.",
   "settings.experimental.mcpTimeout.title": "MCP-Zeitlimit (ms)",
   "settings.experimental.mcpTimeout.description": "Zeitlimit für MCP-Server-Anfragen in Millisekunden",
   "settings.experimental.remote.title": "Remote-Steuerung",
@@ -1181,6 +1184,9 @@ export const dict = {
   "settings.autoCleanup.runNow": "Bereinigung jetzt ausführen",
   "settings.autoCleanup.runNow.confirm":
     "Abgelaufene Sitzungen endgültig in allen Projekten und allen Kilo-Clients auf diesem Rechner löschen?",
+  "settings.autoCleanup.stop": "Bereinigung stoppen",
+  "settings.autoCleanup.progress.cancelling": "Sitzungsbereinigung wird gestoppt...",
+  "settings.autoCleanup.lastRun.cancelled": "abgebrochen",
   "settings.context.autoCompaction.title": "Automatische Komprimierung",
   "settings.context.autoCompaction.description": "Kontext automatisch komprimieren, bevor er das Limit erreicht",
   "settings.context.compaction.title": "Komprimierung",
@@ -1354,14 +1360,12 @@ export const dict = {
   "task.todos.allDone": "{{count}} Aufgaben erledigt",
   "task.backgroundAgents.running.one": "1 Hintergrund-Agent",
   "task.backgroundAgents.running.many": "{{count}} Hintergrund-Agenten",
-  "task.backgroundAgents.more": "+{{count}} weitere",
   "task.backgroundAgents.open": "Hintergrund-Agent öffnen",
   "task.backgroundAgents.openAll": "Alle Hintergrund-Agenten öffnen",
   "task.backgroundAgents.cancel": "Stoppen",
   "task.backgroundAgents.continueInBackground": "Im Hintergrund fortsetzen",
   "task.backgroundAgents.waiting": "Ein Hintergrund-Agent benötigt deine Eingabe",
   "task.backgroundAgents.needsInput": "Eingabe erforderlich",
-  "task.backgroundAgents.dismiss": "Ausblenden",
   "task.backgroundAgents.clearFinished": "Abgeschlossene löschen",
   "task.backgroundAgents.summary": "{{running}} von {{total}} Hintergrund-Agenten aktiv",
   "task.backgroundAgents.status.running": "Läuft",
@@ -1370,6 +1374,8 @@ export const dict = {
   "task.backgroundAgents.status.error": "Fehler",
   "task.backgroundAgents.untitled": "Hintergrund-Agent",
   "task.backgroundAgents.stopAll": "Alle stoppen ({{count}})",
+  "task.backgroundAgents.finished": "Hintergrund-Agenten abgeschlossen",
+  "task.stop": "Subagent stoppen",
   "settings.saveBar.unsavedChanges": "Nicht gespeicherte Änderungen",
   "settings.saveBar.discard": "Verwerfen",
   "settings.saveBar.save": "Speichern",

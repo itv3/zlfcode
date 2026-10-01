@@ -24,6 +24,7 @@ import * as Network from "@/kilocode/sandbox/network"
 import { Notebook } from "@/kilocode/notebook/service"
 import { AgentManager, HostError } from "@/kilocode/agent-manager/service"
 import { KiloSessions } from "@/kilo-sessions/kilo-sessions"
+import { enabled as prEnabled } from "@/kilo-sessions/pr-link"
 import * as Log from "@opencode-ai/core/util/log"
 import type { Config } from "@/config/config"
 import type { RuntimeFlags } from "@/effect/runtime-flags"
@@ -324,7 +325,6 @@ export namespace KiloToolRegistry {
       experimental?: {
         image_generation?: boolean
         native_notebook_tools?: boolean
-        task_model_selection?: boolean
       }
       shared_agent_board?: boolean
     },
@@ -347,9 +347,7 @@ export namespace KiloToolRegistry {
       ...((Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode") && tools.cronCreate ? [tools.cronCreate] : []),
       ...((Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode") && tools.cronList ? [tools.cronList] : []),
       ...((Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode") && tools.cronDelete ? [tools.cronDelete] : []),
-      ...(Flag.KILO_CLIENT === "vscode" || cfg.experimental?.task_model_selection === true
-        ? [tools.managerModels]
-        : []),
+      tools.managerModels,
       ...(Flag.KILO_CLIENT === "vscode" ? [tools.manager] : []),
       ...(Flag.KILO_CLIENT === "vscode" && tools.browser ? [tools.browser] : []),
       ...(Flag.KILO_CLIENT === "vscode" &&
@@ -362,7 +360,7 @@ export namespace KiloToolRegistry {
       tools.notify,
       ...(Flag.KILO_CLIENT === "vscode" && tools.openPlan ? [tools.openPlan] : []),
       tools.send,
-      tools.linkPr,
+      ...(prEnabled() ? [tools.linkPr] : []),
     ]
   }
 

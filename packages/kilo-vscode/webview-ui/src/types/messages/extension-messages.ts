@@ -19,6 +19,7 @@ import type { AgentManagerSidebarTarget } from "./webview-messages"
 import type { PermissionRequest } from "./permissions"
 import type { AnacondaDesktopExtensionMessage } from "../../../../src/shared/anaconda-desktop-messages"
 import type { BrowserFeedbackData, BrowserReference } from "../../../../src/shared/browser-feedback"
+import type { BrowserFrame } from "../../../../src/shared/browser-stream"
 import type { CodeContext } from "../../../../src/shared/code-context"
 import type { PRMergeResult, PRReviewResult } from "../../../../src/shared/pr-comment-actions"
 
@@ -200,6 +201,7 @@ export interface SessionErrorMessage {
   eventID: string
   sessionID?: string
   error?: { name: string; data?: Record<string, unknown> }
+  phase?: "admission" | "execution"
 }
 
 export interface PermissionRequestMessage {
@@ -612,6 +614,19 @@ export interface SpeechToTextErrorMessage {
 export interface FileSearchItem {
   path: string
   type: "file" | "folder" | "opened-file"
+  /**
+   * Owning workspace folder name, set only when the workspace has more than one
+   * folder. Entries outside the session's own project carry an absolute path and
+   * are mention-only: they are never auto-attached, so the agent must Read them
+   * under the normal external-directory permission check.
+   */
+  root?: string
+  /**
+   * Path within the owning folder, set only when `path` is absolute. The `@`
+   * menu is ranked again in the webview, and scoring an absolute path there
+   * would let the filesystem prefix match every entry under that folder.
+   */
+  relative?: string
 }
 
 export interface FileSearchResultMessage {
@@ -814,6 +829,8 @@ export interface AutoCleanupLastResult {
   skippedActive: number
   failed: number
   durationMs: number
+  cancelled?: boolean
+  reclaimedBytes?: number
 }
 
 export interface AutoCleanupStateLoadedMessage {
@@ -823,7 +840,7 @@ export interface AutoCleanupStateLoadedMessage {
   pending?: boolean
   error?: "status" | "timeout" | "run"
   progress?: {
-    phase: "scanning" | "deleting"
+    phase: "scanning" | "deleting" | "cancelling"
     total: number
     processed: number
     deleted: number
@@ -1508,6 +1525,15 @@ export interface OpenInstallModalMessage {
   mpItem: MarketplaceItem
 }
 
+export interface FocusMarketplaceItemMessage {
+  type: "focusMarketplaceItem"
+  mpItem: MarketplaceItem
+}
+
+export interface ResetMarketplaceFiltersMessage {
+  type: "resetMarketplaceFilters"
+}
+
 export interface MarketplaceRemoveResultMessage {
   type: "marketplaceRemoveResult"
   success: boolean
@@ -1616,7 +1642,10 @@ export interface AgentManagerBrowserStateMessage {
   errors: number
   logs?: string[]
   error?: string
+  missing?: "chrome" | "chromium"
   frameError?: string
+  back?: boolean
+  forward?: boolean
 }
 
 export interface AgentManagerBrowserInspectionMessage {
@@ -1641,6 +1670,12 @@ export interface AgentManagerBrowserInspectionMessage {
   }
   logs: string[]
   hover?: boolean
+}
+
+interface AgentManagerBrowserFrameMessage extends BrowserFrame {
+  type: "agentManager.browserFrame"
+  projectId?: string
+  sessionId: string
 }
 
 export interface AgentManagerBrowserDevtoolsMessage {
@@ -1668,6 +1703,7 @@ export type ExtensionMessage =
   | AgentManagerBrowserStateMessage
   | AgentManagerBrowserInspectionMessage
   | AgentManagerBrowserDevtoolsMessage
+  | AgentManagerBrowserFrameMessage
   | ReadyMessage
   | FontSizeChangedMessage
   | GitStatusMessage
@@ -1848,6 +1884,8 @@ export type ExtensionMessage =
   | MarketplaceInstallResultMessage
   | MarketplaceRemoveResultMessage
   | OpenInstallModalMessage
+  | FocusMarketplaceItemMessage
+  | ResetMarketplaceFiltersMessage
   | ProviderOAuthReadyMessage
   | ProviderConnectedMessage
   | ProviderDisconnectedMessage

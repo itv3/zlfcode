@@ -96,6 +96,8 @@ export const dict = {
     "Konwersacja została cofnięta. Stan przywracania obszaru roboczego nie jest dostępny dla tego wcześniejszego cofnięcia.",
   "revert.banner.workspace.enableSnapshots": "Włącz migawki",
   "revert.disabled.agentBusy": "Poczekaj aż agent zakończy",
+  "revert.error.body":
+    "Repozytorium może być w użyciu. Spróbuj ponownie lub sprawdź dzienniki Kilo, aby poznać szczegóły.",
   "command.session.compact": "Kompaktuj sesję",
   "command.session.export": "Eksportuj transkrypcję sesji",
 
@@ -203,6 +205,8 @@ export const dict = {
   "prompt.action.send.blocked": "Najpierw odpowiedz na oczekujące pytanie lub je odrzuć",
   "prompt.action.send.recording": "Transkrybuj i wyślij",
   "prompt.action.stop": "Zatrzymaj",
+  "prompt.action.stop.background": "Zatrzymaj głównego agenta. Agenci w tle nadal działają.",
+  "prompt.agents.show": "Pokaż agentów w tle",
   "prompt.action.enhance": "Ulepsz prompt",
   "prompt.paste.expand": "Kliknij, aby rozwinąć wklejony tekst",
   "prompt.action.autoApprove.enable": "Włącz automatyczne zatwierdzanie",
@@ -481,6 +485,7 @@ export const dict = {
   // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
   // CustomProviderDialog.tsx 仍在用它，合并 v7.4.17 时恢复。
   "provider.custom.models.fetch.error": "Nie udało się pobrać modeli: {{error}}",
+  "provider.custom.models.fetch.button": "Pobierz modele",
   "provider.custom.models.fetch.authError":
     "Uwierzytelnianie nie powiodło się. Sprawdź klucz API powyżej i spróbuj ponownie.",
   "provider.custom.models.fetch.empty": "Nie znaleziono modeli na tym serwerze.",
@@ -811,7 +816,8 @@ export const dict = {
   "settings.browser.description":
     "Skonfiguruj wbudowaną automatyzację przeglądarki opartą na Playwright. Kilo może nawigować po stronach internetowych, wchodzić z nimi w interakcję i robić zrzuty ekranu w Twoich sesjach.",
   "settings.browser.enable.title": "Włącz automatyzację przeglądarki",
-  "settings.browser.enable.description": "Zarejestruj serwer Playwright MCP w backendzie CLI.",
+  "settings.browser.enable.description":
+    "Włącz przeglądarkę Agent Manager przypisaną do sesji dla lokalnych aplikacji i publicznych stron HTTPS.",
   "settings.browser.systemChrome.title": "Użyj systemowego Chrome",
   "settings.browser.systemChrome.description":
     "Użyj zainstalowanej przeglądarki Chrome zamiast oddzielnej instancji Chromium.",
@@ -910,9 +916,6 @@ export const dict = {
     "Jednorazowo importuj obsługiwane globalne instrukcje CLAUDE.md, proste umiejętności i wyłączone definicje MCP. Oryginalne pliki Claude pozostają niezmienione; po włączeniu uruchom ponownie backend.",
   "settings.experimental.multiProject.description":
     "Włącz zarządzanie sesjami i worktree w wielu repozytoriach w Agent Managerze. Bieżące repozytorium obszaru roboczego jest zawsze projektem domyślnym.",
-  "settings.experimental.taskModelSelection.title": "Wybór modelu podagenta Task",
-  "settings.experimental.taskModelSelection.description":
-    "Umożliwia jawny wybór modelu, dostawcy i wysiłku wnioskowania dla podagentów Task.",
   "settings.experimental.mcpTimeout.title": "Limit czasu MCP (ms)",
   "settings.experimental.mcpTimeout.description": "Limit czasu żądań serwera MCP w milisekundach",
   "settings.experimental.remote.title": "Sterowanie Remote",
@@ -1161,6 +1164,9 @@ export const dict = {
   "settings.autoCleanup.runNow": "Uruchom czyszczenie teraz",
   "settings.autoCleanup.runNow.confirm":
     "Trwale usunąć wygasłe sesje we wszystkich projektach i we wszystkich klientach Kilo na tym komputerze?",
+  "settings.autoCleanup.stop": "Zatrzymaj czyszczenie",
+  "settings.autoCleanup.progress.cancelling": "Zatrzymywanie czyszczenia sesji...",
+  "settings.autoCleanup.lastRun.cancelled": "przerwane",
   "settings.context.autoCompaction.title": "Automatyczna kompakcja",
   "settings.context.autoCompaction.description": "Automatycznie kompaktuj kontekst, zanim osiągnie limit",
   "settings.context.compaction.title": "Kompaktowanie",
@@ -1330,14 +1336,12 @@ export const dict = {
   "task.todos.allDone": "{{count}} zadań ukończono",
   "task.backgroundAgents.running.one": "1 agent w tle",
   "task.backgroundAgents.running.many": "{{count}} agentów w tle",
-  "task.backgroundAgents.more": "+{{count}} więcej",
   "task.backgroundAgents.open": "Otwórz agenta w tle",
   "task.backgroundAgents.openAll": "Otwórz wszystkich agentów w tle",
   "task.backgroundAgents.cancel": "Zatrzymaj",
   "task.backgroundAgents.continueInBackground": "Kontynuuj w tle",
   "task.backgroundAgents.waiting": "Agent w tle potrzebuje danych wejściowych",
   "task.backgroundAgents.needsInput": "Wymagane dane wejściowe",
-  "task.backgroundAgents.dismiss": "Odrzuć",
   "task.backgroundAgents.clearFinished": "Wyczyść ukończone",
   "task.backgroundAgents.summary": "{{running}} z {{total}} agentów w tle działa",
   "task.backgroundAgents.status.running": "Działa",
@@ -1346,6 +1350,8 @@ export const dict = {
   "task.backgroundAgents.status.error": "Błąd",
   "task.backgroundAgents.untitled": "Agent w tle",
   "task.backgroundAgents.stopAll": "Zatrzymaj wszystkich ({{count}})",
+  "task.backgroundAgents.finished": "Agenci w tle zakończyli pracę",
+  "task.stop": "Zatrzymaj podagenta",
   "settings.saveBar.unsavedChanges": "Niezapisane zmiany",
   "settings.saveBar.discard": "Odrzuć",
   "settings.saveBar.save": "Zapisz",

@@ -267,7 +267,7 @@ export async function fetchProviderData(
   signal?: AbortSignal,
 ) {
   const configRequest =
-    mode === "connected" && typeof client.config.get === "function"
+    mode === "connected" && typeof client.config?.get === "function"
       ? client.config
           .get({ directory: dir }, { throwOnError: true, signal })
           .then((r) => r.data ?? undefined)
@@ -651,12 +651,13 @@ export async function authorizeProviderOAuth(
   requestId: string,
   providerID: string,
   method: number,
+  inputs?: Record<string, string>,
 ) {
   const id = validateID(ctx, requestId, providerID, "authorize")
   if (!id) return
   try {
     const { data: authorization } = await ctx.client.provider.oauth.authorize(
-      { providerID: id, method, directory: ctx.workspaceDir },
+      { providerID: id, method, directory: ctx.workspaceDir, inputs },
       { throwOnError: true },
     )
     if (!authorization) {

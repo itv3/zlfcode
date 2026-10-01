@@ -317,21 +317,31 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   const [fetchKey, setFetchKey] = createSignal("")
   let fetchVersion = 0
 
+  // Whether a model-listing fetch is possible for the current package + URL.
+  // kilocode_change - 上游在此还排除 @ai-sdk/anthropic；ZLF 的 fetchModels 支持
+  // openai/anthropic/gemini 三种协议，故只校验 URL（effect 守卫与手动按钮共用，
+  // 包名参数因此不再需要）
+  const canFetch = (url: string) => /^https?:\/\//.test(url.trim())
+
   createEffect(() => {
     void fetchPackage()
     const url = fetchURL()
     const key = fetchKey()
     void key // 只订阅 key 变化,这里不直接使用该值。
 
-    // URL 或 key 变化时清空上一轮结果。
+    // 连接信息一变就作废在途请求（含手动触发的那次），避免用户改完 URL/key/包之后
+    // 旧响应才落回。URL 或 key 变化时同时清空上一轮结果。
+    fetchVersion++
+    setFetching(false)
+
     setFetchedModels(undefined)
     setFetchError(undefined)
     setFetchStatus(undefined)
     setSearch("")
 
-    fetchVersion++
+    if (!canFetch(url)) return
+
     const version = fetchVersion
-    if (!/^https?:\/\//.test(url.trim())) return
 
     const timer = setTimeout(() => {
       if (version === fetchVersion) doFetch()
@@ -1137,6 +1147,16 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                 </Show>
               </div>
               <div style={{ display: "flex", gap: "8px", "align-items": "center", "flex-wrap": "wrap" }}>
+                <Button
+                  type="button"
+                  size="small"
+                  variant="ghost"
+                  icon="reset"
+                  onClick={doFetch}
+                  disabled={fetching() || !canFetch(form.baseURL)}
+                >
+                  {language.t("provider.custom.models.fetch.button")}
+                </Button>
                 <Button
                   type="button"
                   size="small"

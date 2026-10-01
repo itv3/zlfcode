@@ -440,6 +440,10 @@ export const dict = {
   "agentManager.documents.loading": "Caricamento del documento...",
   "agentManager.documents.preview": "Visualizza anteprima del documento",
   "agentManager.documents.source": "Mostra il codice sorgente",
+  "agentManager.documents.copy": "Copia contenuto",
+  "agentManager.documents.copyPath": "Copia percorso",
+  "agentManager.documents.copyRelativePath": "Copia percorso relativo",
+  "agentManager.documents.copyFileName": "Copia nome file",
   "agentManager.documents.comments": "{{count}} commenti",
   "agentManager.import.pullRequest": "Pull Request",
   "agentManager.import.pastePrUrl": "Incolla URL PR...",
@@ -459,16 +463,27 @@ export const dict = {
   "agentManager.caffeination.unavailable":
     "La modalità per mantenere il computer attivo non è disponibile su questa piattaforma",
   "agentManager.browser.title": "Browser integrato",
-  "agentManager.browser.url": "URL dell'applicazione locale",
+  "agentManager.browser.url": "Indirizzo",
   "agentManager.browser.urlPlaceholder": "http://localhost:3000",
   "agentManager.browser.open": "Apri",
   "agentManager.browser.inspect": "Seleziona elemento",
   "agentManager.browser.devtoolsTitle": "Strumenti per sviluppatori",
   "agentManager.browser.refresh": "Aggiorna browser",
+  "agentManager.browser.back": "Indietro",
+  "agentManager.browser.forward": "Avanti",
   "agentManager.browser.close": "Chiudi browser",
-  "agentManager.browser.empty": "Apri un'applicazione locale per visualizzarla qui.",
-  "agentManager.browser.noSession":
-    "Avvia o seleziona una sessione in Agent Manager per navigare in un'applicazione locale.",
+  "agentManager.browser.empty":
+    "Apri un'applicazione locale o una pagina HTTPS pubblica per visualizzarne qui l'anteprima.",
+  "agentManager.browser.requirement":
+    "Richiede Google Chrome o un browser Playwright Chromium compatibile. I browser non vengono installati automaticamente.",
+  "agentManager.browser.missingTitle": "Browser non trovato",
+  "agentManager.browser.missingChrome":
+    "Google Chrome non è stato trovato. Installa Chrome per usare il browser integrato, poi riprova.",
+  "agentManager.browser.missingChromium":
+    "Playwright Chromium non è stato trovato. Installa un browser compatibile o abilita «Usa Chrome di sistema» in «Impostazioni del browser».",
+  "agentManager.browser.downloadChrome": "Scarica Chrome",
+  "agentManager.browser.settings": "Impostazioni del browser",
+  "agentManager.browser.noSession": "Avvia o seleziona una sessione in Agent Manager.",
   "agentManager.browser.screenshotAlt": "Pagina corrente del browser",
   "agentManager.browser.errors": "Problemi del browser: {{count}}",
   "agentManager.browser.diagnostics": "Diagnostica del browser",

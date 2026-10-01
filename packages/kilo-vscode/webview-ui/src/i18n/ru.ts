@@ -96,6 +96,7 @@ export const dict = {
     "Диалог отменён. Статус восстановления рабочей области недоступен для этого более раннего отката.",
   "revert.banner.workspace.enableSnapshots": "Включить снимки",
   "revert.disabled.agentBusy": "Дождитесь завершения агента",
+  "revert.error.body": "Репозиторий может использоваться. Повторите попытку или проверьте журналы Kilo.",
   "command.session.compact": "Сжать сессию",
   "command.session.export": "Экспортировать запись сеанса",
 
@@ -202,6 +203,8 @@ export const dict = {
   "prompt.action.send.blocked": "Сначала ответьте на ожидающий вопрос или отклоните его",
   "prompt.action.send.recording": "Расшифровать и отправить",
   "prompt.action.stop": "Остановить",
+  "prompt.action.stop.background": "Остановить основного агента. Фоновые агенты продолжат работу.",
+  "prompt.agents.show": "Показать фоновых агентов",
   "prompt.action.enhance": "Улучшить промпт",
   "prompt.paste.expand": "Нажмите, чтобы развернуть вставленный текст",
   "prompt.action.autoApprove.enable": "Включить автоодобрение",
@@ -520,6 +523,7 @@ export const dict = {
   // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
   // CustomProviderDialog.tsx 仍在用它，合并 v7.4.17 时恢复。
   "provider.custom.models.fetch.error": "Не удалось получить модели: {{error}}",
+  "provider.custom.models.fetch.button": "Получить модели",
   "provider.custom.models.fetch.authError": "Ошибка аутентификации. Проверьте API-ключ выше и попробуйте снова.",
   "provider.custom.models.fetch.empty": "На этом сервере модели не найдены.",
   "provider.custom.models.fetch.added": "Добавлено {{count}} модель(ей).",
@@ -851,7 +855,8 @@ export const dict = {
   "settings.browser.description":
     "Настройте встроенную автоматизацию браузера на основе Playwright. Kilo может переходить по веб-страницам, взаимодействовать с ними и делать скриншоты в ваших сессиях.",
   "settings.browser.enable.title": "Включить автоматизацию браузера",
-  "settings.browser.enable.description": "Зарегистрировать сервер Playwright MCP в CLI-бэкенде.",
+  "settings.browser.enable.description":
+    "Включить привязанный к сеансу браузер Agent Manager для локальных приложений и общедоступных HTTPS-страниц.",
   "settings.browser.systemChrome.title": "Использовать системный Chrome",
   "settings.browser.systemChrome.description":
     "Использовать установленный браузер Chrome вместо отдельного экземпляра Chromium.",
@@ -949,9 +954,6 @@ export const dict = {
     "Однократно импортируйте поддерживаемые глобальные инструкции CLAUDE.md, простые навыки и отключённые определения MCP. Исходные файлы Claude не изменяются; после включения перезапустите backend.",
   "settings.experimental.multiProject.description":
     "Включите управление сессиями и рабочими деревьями в нескольких репозиториях в Agent Manager. Текущий репозиторий рабочего пространства всегда является проектом по умолчанию.",
-  "settings.experimental.taskModelSelection.title": "Выбор модели субагента Task",
-  "settings.experimental.taskModelSelection.description":
-    "Позволяет явно выбирать модель, провайдера и уровень рассуждения для субагентов Task.",
   "settings.experimental.mcpTimeout.title": "Таймаут MCP (мс)",
   "settings.experimental.mcpTimeout.description": "Таймаут запросов MCP-сервера в миллисекундах",
   "settings.experimental.remote.title": "Управление Remote",
@@ -1155,6 +1157,9 @@ export const dict = {
   "settings.autoCleanup.runNow": "Запустить очистку сейчас",
   "settings.autoCleanup.runNow.confirm":
     "Безвозвратно удалить устаревшие сессии во всех проектах и во всех клиентах Kilo на этом компьютере?",
+  "settings.autoCleanup.stop": "Остановить очистку",
+  "settings.autoCleanup.progress.cancelling": "Остановка очистки сессий...",
+  "settings.autoCleanup.lastRun.cancelled": "прервана",
   "settings.context.autoCompaction.title": "Автоматическое сжатие",
   "settings.context.autoCompaction.description": "Автоматически сжимать контекст до достижения лимита",
   "settings.context.compaction.title": "Сжатие",
@@ -1323,14 +1328,12 @@ export const dict = {
   "task.todos.allDone": "{{count}} задач выполнено",
   "task.backgroundAgents.running.one": "1 фоновый агент",
   "task.backgroundAgents.running.many": "Фоновых агентов: {{count}}",
-  "task.backgroundAgents.more": "+{{count}} ещё",
   "task.backgroundAgents.open": "Открыть фонового агента",
   "task.backgroundAgents.openAll": "Открыть всех фоновых агентов",
   "task.backgroundAgents.cancel": "Остановить",
   "task.backgroundAgents.continueInBackground": "Продолжить в фоне",
   "task.backgroundAgents.waiting": "Фоновому агенту требуется ваш ввод",
   "task.backgroundAgents.needsInput": "Требуется ввод",
-  "task.backgroundAgents.dismiss": "Скрыть",
   "task.backgroundAgents.clearFinished": "Очистить завершённые",
   "task.backgroundAgents.summary": "Фоновые агенты: {{running}} из {{total}} выполняются",
   "task.backgroundAgents.status.running": "Выполняется",
@@ -1339,6 +1342,8 @@ export const dict = {
   "task.backgroundAgents.status.error": "Ошибка",
   "task.backgroundAgents.untitled": "Фоновый агент",
   "task.backgroundAgents.stopAll": "Остановить всех ({{count}})",
+  "task.backgroundAgents.finished": "Фоновые агенты завершили работу",
+  "task.stop": "Остановить субагента",
   "settings.saveBar.unsavedChanges": "Несохранённые изменения",
   "settings.saveBar.discard": "Отменить",
   "settings.saveBar.save": "Сохранить",

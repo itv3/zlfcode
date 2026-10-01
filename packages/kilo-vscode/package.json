@@ -110,6 +110,16 @@
         "icon": "$(add)"
       },
       {
+        "command": "kilo-code.new.closeTask",
+        "title": "Close Task",
+        "category": "Kilo Code"
+      },
+      {
+        "command": "kilo-code.new.closeAllTasks",
+        "title": "Close All Tasks",
+        "category": "Kilo Code"
+      },
+      {
         "command": "kilo-code.new.agentManagerOpen",
         "title": "Agent Manager",
         "category": "ZLF Code",
@@ -1354,6 +1364,7 @@
     "@kilocode/kilo-memory": "workspace:*",
     "@kilocode/kilo-ui": "workspace:*",
     "@kilocode/plugin": "workspace:*",
+    "@kilocode/sandbox": "workspace:*",
     "@kilocode/sdk": "workspace:*",
     "@lottiefiles/dotlottie-web": "0.63.0",
     "@opencode-ai/core": "workspace:*",
@@ -1375,6 +1386,7 @@
     "js-tiktoken": "^1.0.18",
     "lru-cache": "^11.0.2",
     "marked": "catalog:",
+    "minimatch": "10.2.6",
     "openai": "^4.85.4",
     "playwright-core": "1.57.0",
     "quick-lru": "^7.0.0",

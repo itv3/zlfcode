@@ -96,6 +96,8 @@ export const dict = {
     "Conversation annulée. L’état de restauration de l’espace de travail n’est pas disponible pour cette annulation antérieure.",
   "revert.banner.workspace.enableSnapshots": "Activer les instantanés",
   "revert.disabled.agentBusy": "Attendre la fin de l'agent",
+  "revert.error.body":
+    "Le dépôt est peut-être en cours d'utilisation. Réessayez ou consultez les journaux Kilo pour plus de détails.",
   "command.session.compact": "Compacter la session",
   "command.session.export": "Exporter la transcription de la session",
 
@@ -204,6 +206,8 @@ export const dict = {
   "prompt.action.send.blocked": "Répondez ou rejetez d'abord la question en attente",
   "prompt.action.send.recording": "Transcrire et envoyer",
   "prompt.action.stop": "Arrêter",
+  "prompt.action.stop.background": "Arrêter l'agent principal. Les agents en arrière-plan continuent de s'exécuter.",
+  "prompt.agents.show": "Afficher les agents en arrière-plan",
   "prompt.action.enhance": "Améliorer le prompt",
   "prompt.paste.expand": "Cliquez pour développer le texte collé",
   "prompt.action.autoApprove.enable": "Activer l'approbation automatique",
@@ -527,6 +531,7 @@ export const dict = {
   // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
   // CustomProviderDialog.tsx 仍在用它，合并 v7.4.17 时恢复。
   "provider.custom.models.fetch.error": "Échec de la récupération des modèles : {{error}}",
+  "provider.custom.models.fetch.button": "Récupérer les modèles",
   "provider.custom.models.fetch.authError": "Échec de l'authentification. Vérifiez la clé API ci-dessus et réessayez.",
   "provider.custom.models.fetch.empty": "Aucun modèle trouvé sur ce serveur.",
   "provider.custom.models.fetch.added": "{{count}} modèle(s) ajouté(s).",
@@ -870,7 +875,8 @@ export const dict = {
   "settings.browser.description":
     "Configurez l'automatisation de navigateur intégrée propulsée par Playwright. Kilo peut naviguer, interagir et prendre des captures d'écran de pages web dans vos sessions.",
   "settings.browser.enable.title": "Activer l'automatisation du navigateur",
-  "settings.browser.enable.description": "Enregistrer le serveur Playwright MCP auprès du backend CLI.",
+  "settings.browser.enable.description":
+    "Activer le navigateur d'Agent Manager propre à chaque session pour les applications locales et les pages HTTPS publiques.",
   "settings.browser.systemChrome.title": "Utiliser le Chrome système",
   "settings.browser.systemChrome.description":
     "Utiliser votre navigateur Chrome installé au lieu d'une instance Chromium séparée.",
@@ -974,9 +980,6 @@ export const dict = {
     "Importer une fois les instructions CLAUDE.md globales prises en charge, les compétences simples et les définitions MCP désactivées. Les fichiers Claude d'origine restent inchangés ; redémarrez le backend après activation.",
   "settings.experimental.multiProject.description":
     "Activer la gestion des sessions et worktrees sur plusieurs dépôts dans Agent Manager. Le dépôt de l'espace de travail actuel est toujours le projet par défaut.",
-  "settings.experimental.taskModelSelection.title": "Sélection du modèle des sous-agents Task",
-  "settings.experimental.taskModelSelection.description":
-    "Permet de sélectionner explicitement le modèle, le fournisseur et l'effort de raisonnement des sous-agents Task.",
   "settings.experimental.mcpTimeout.title": "Délai MCP (ms)",
   "settings.experimental.mcpTimeout.description": "Délai des requêtes du serveur MCP en millisecondes",
   "settings.experimental.remote.title": "Contrôle Remote",
@@ -1187,6 +1190,9 @@ export const dict = {
   "settings.autoCleanup.runNow": "Lancer le nettoyage maintenant",
   "settings.autoCleanup.runNow.confirm":
     "Supprimer définitivement les sessions expirées dans tous les projets et tous les clients Kilo de cette machine ?",
+  "settings.autoCleanup.stop": "Arrêter le nettoyage",
+  "settings.autoCleanup.progress.cancelling": "Arrêt du nettoyage des sessions...",
+  "settings.autoCleanup.lastRun.cancelled": "interrompu",
   "settings.context.autoCompaction.title": "Compaction automatique",
   "settings.context.autoCompaction.description":
     "Compacter automatiquement le contexte avant qu'il n'atteigne la limite",
@@ -1363,14 +1369,12 @@ export const dict = {
   "task.todos.allDone": "{{count}} tâches terminées",
   "task.backgroundAgents.running.one": "1 agent en arrière-plan",
   "task.backgroundAgents.running.many": "{{count}} agents en arrière-plan",
-  "task.backgroundAgents.more": "+{{count}} de plus",
   "task.backgroundAgents.open": "Ouvrir l'agent en arrière-plan",
   "task.backgroundAgents.openAll": "Ouvrir tous les agents en arrière-plan",
   "task.backgroundAgents.cancel": "Arrêter",
   "task.backgroundAgents.continueInBackground": "Continuer en arrière-plan",
   "task.backgroundAgents.waiting": "Un agent en arrière-plan attend votre saisie",
   "task.backgroundAgents.needsInput": "Saisie requise",
-  "task.backgroundAgents.dismiss": "Ignorer",
   "task.backgroundAgents.clearFinished": "Effacer les agents terminés",
   "task.backgroundAgents.summary": "{{running}} agent(s) en arrière-plan sur {{total}} en cours",
   "task.backgroundAgents.status.running": "En cours",
@@ -1379,6 +1383,8 @@ export const dict = {
   "task.backgroundAgents.status.error": "Erreur",
   "task.backgroundAgents.untitled": "Agent en arrière-plan",
   "task.backgroundAgents.stopAll": "Tout arrêter ({{count}})",
+  "task.backgroundAgents.finished": "Agents en arrière-plan terminés",
+  "task.stop": "Arrêter le sous-agent",
   "settings.saveBar.unsavedChanges": "Modifications non enregistrées",
   "settings.saveBar.discard": "Ignorer",
   "settings.saveBar.save": "Enregistrer",
