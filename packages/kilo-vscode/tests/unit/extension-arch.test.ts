@@ -201,13 +201,14 @@ describe("Extension — package.json command sync", () => {
 
   it("routes task-close commands to the focused Kilo surface", () => {
     const commands = pkg.contributes?.commands ?? []
+    // kilocode_change - ZLF 发布身份：全部命令的 category 统一为 "ZLF Code"（上游为 "Kilo Code"）
     expect(commands).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ command: "kilo-code.new.closeTask", title: "Close Task", category: "Kilo Code" }),
+        expect.objectContaining({ command: "kilo-code.new.closeTask", title: "Close Task", category: "ZLF Code" }),
         expect.objectContaining({
           command: "kilo-code.new.closeAllTasks",
           title: "Close All Tasks",
-          category: "Kilo Code",
+          category: "ZLF Code",
         }),
       ]),
     )
