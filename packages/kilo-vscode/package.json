@@ -1366,7 +1366,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.3",
-    "@babel/core": "^7.28.4",
+    "@babel/core": "^8.0.6",
     "@babel/preset-typescript": "^7.27.1",
     "@playwright/test": "1.57.0",
     "@storybook/addon-a11y": "10.2.10",
