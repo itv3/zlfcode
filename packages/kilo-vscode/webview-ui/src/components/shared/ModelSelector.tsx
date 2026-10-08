@@ -60,6 +60,7 @@ const FAVORITES_KEY = "favorites"
 const AUTO_KEY = "auto"
 const RECOMMENDED_KEY = "recommended"
 const MOST_USED_KEY = "most-used"
+const EMPTY = new Map<string, never>()
 
 function modelKey(providerID: string, modelID: string) {
   return `${providerID}/${modelID}`
@@ -104,7 +105,7 @@ interface ModelRow {
 interface ModelGroup {
   key: string
   label?: string
-  // kilocode_change - ZLF 按显示名分组需统计组内 provider 数；上游搜索结果组不带此字段，保持可选
+  // ZLF 适配：ZLF 按显示名分组需统计组内 provider 数；上游搜索结果组不带此字段，保持可选
   providers?: number
   rows: ModelRow[]
 }
@@ -182,7 +183,7 @@ export interface ModelSelectorBaseProps {
 }
 
 export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
-  const { connected, models, visibleModels: visible, findModel } = useProvider()
+  const { connected, models, visibleModels: visible, findModel, kiloUnavailable } = useProvider()
   const language = useLanguage()
   const vscode = useVSCode()
   // Session context is optional — ModelSelectorBase is also used in Settings
@@ -200,7 +201,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   })
 
   const [open, setOpen] = createSignal(false)
-  // kilocode_change start - ZLF 的 initialExpanded 定制与上游 collapsed（`@` 内联模型引用
+  // ZLF 适配开始 - ZLF 的 initialExpanded 定制与上游 collapsed（`@` 内联模型引用
   // 强制紧凑布局、不读写宿主偏好）共存：collapsed 优先强制折叠；否则 initialExpanded
   // 未传时走宿主持久化偏好（上游行为），传了则走本组件的本地状态。
   const [localExpanded, setLocalExpanded] = createSignal(props.initialExpanded ?? vscode.getModelSelectorExpanded())
@@ -215,7 +216,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     }
     setLocalExpanded(value)
   }
-  // kilocode_change end
+  // ZLF 适配结束
   const [search, setSearch] = createSignal("")
   const hasSearch = () => search().trim().length > 0
   const [selectedKey, setSelectedKey] = createSignal(CLEAR_KEY)
@@ -273,18 +274,27 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
 
   // Only show models from Kilo Gateway or connected providers.
   // kilo-auto/small is excluded unless includeAutoSmall is explicitly true.
+  const available = (m: EnrichedModel, c: string[]) => isVisibleModel(m, c, props.includeAutoSmall ?? false)
+
   const visibleModels = createMemo(() => {
+    if (!open()) return []
     if (props.models) return props.models
     if (!props.includeAutoSmall) return visible()
     const c = connected()
-    return models().filter((m) => isVisibleModel(m, c, true))
+    return models().filter((m) => available(m, c))
   })
 
-  const hasProviders = () => visibleModels().length > 0
+  // Keep trigger availability live without constructing the closed popup's catalog.
+  const hasProviders = createMemo(() => {
+    if (props.models) return props.models.length > 0
+    const c = connected()
+    return models().some((m) => available(m, c))
+  })
   const canOpen = () => hasProviders() || ((props.allowClear ?? false) && !!props.value)
 
   // Flat filtered list for keyboard navigation
   const filtered = createMemo(() => {
+    if (!open()) return []
     const q = search().trim()
     if (!q) {
       return visibleModels()
@@ -299,12 +309,14 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   // Live set of favorited keys — drives star icon visual state (filled vs outline).
   // Toggling never changes the list structure, so no items jump.
   const favoriteKeys = createMemo(() => {
+    if (!open()) return new Set<string>()
     if (props.favorites === false) return new Set<string>()
     if (!session) return new Set<string>()
     return new Set(session.favoriteModels().map((f) => modelKey(f.providerID, f.modelID)))
   })
 
   const favoriteModels = createMemo(() => {
+    if (!open()) return []
     if (props.favorites === false) return []
     if (!session || hasSearch()) return []
     const map = new Map(visibleModels().map((m) => [modelKey(m.providerID, m.id), m]))
@@ -322,6 +334,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   })
 
   const groups = createMemo<ModelGroup[]>(() => {
+    if (!open()) return []
     const autos: EnrichedModel[] = []
     const recommended: EnrichedModel[] = []
     const mostUsed: EnrichedModel[] = []
@@ -342,11 +355,11 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         autos.push(m)
         continue
       }
-      // kilocode_change start - 上游会把「最常用」模型从提供商分组中剔除，导致只有
+      // ZLF 适配开始 - 上游会把「最常用」模型从提供商分组中剔除，导致只有
       // 一个常用模型的自定义提供商整组消失（按提供商找模型的心智被破坏）。ZLF 改为
       // 与收藏组一致的重复显示：最常用组是快捷入口，提供商分组始终保持完整。
       // （原上游剔除逻辑：!hasSearch() && mostUsed.some(同 provider+id) → continue）
-      // kilocode_change end
+      // ZLF 适配结束
       if (m.recommendedIndex !== undefined) {
         recommended.push(m)
         continue
@@ -409,7 +422,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
       ]
     }
 
-    // kilocode_change start - ZLF 分组重排：自有 provider 在前，auto/recommended/mostUsed 居中，Kilo gateway 收尾
+    // ZLF 适配开始 - ZLF 分组重排：自有 provider 在前，auto/recommended/mostUsed 居中，Kilo gateway 收尾
     const owned = rest.filter((group) => group.key !== KILO_GATEWAY_ID)
     const kilo = rest.filter((group) => group.key === KILO_GATEWAY_ID)
 
@@ -464,7 +477,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
       ...(recommendedGroup ? [recommendedGroup] : []),
       ...kilo,
     ]
-    // kilocode_change end
+    // ZLF 适配结束
   })
 
   // Search results are flattened so matching provider variants stay adjacent.
@@ -485,6 +498,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   }
 
   const rows = createMemo<ModelRow[]>(() => {
+    if (!open()) return []
     const c = collapsed()
     const list = groups().flatMap((g) => (hasSearch() || !c.has(g.key) ? g.rows : []))
     if (!props.allowClear) return list
@@ -492,6 +506,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   })
 
   const nodes = createMemo<ModelNode[]>(() => {
+    if (!open()) return []
     const result: ModelNode[] = []
     if (props.allowClear) result.push({ key: CLEAR_KEY, kind: "row", row: { key: CLEAR_KEY, kind: "clear" } })
     for (const group of groups()) {
@@ -505,10 +520,11 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     }
     return result
   })
-  const nodeMap = createMemo(() => new Map(nodes().map((node) => [node.key, node] as const)))
-  const nodeIndex = createMemo(() => new Map(nodes().map((node, i) => [node.key, i] as const)))
-  const rowMap = createMemo(() => new Map(rows().map((row) => [row.key, row] as const)))
+  const nodeMap = createMemo(() => (open() ? new Map(nodes().map((node) => [node.key, node] as const)) : EMPTY))
+  const nodeIndex = createMemo(() => (open() ? new Map(nodes().map((node, i) => [node.key, i] as const)) : EMPTY))
+  const rowMap = createMemo(() => (open() ? new Map(rows().map((row) => [row.key, row] as const)) : EMPTY))
   const mounted = createMemo(() => {
+    if (!open()) return []
     const map = nodeIndex()
     const indexes = [selectedKey(), preActiveKey(), previewKey()]
       .map((key) => (key ? map.get(key) : undefined))
@@ -542,6 +558,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   // active descendant remains rendered. Collapsing a group moves focus to
   // its heading before removing the child nodes.
   createEffect(() => {
+    if (!open()) return
     nodes() // track
     setSelectedKey((prev) => {
       if (nodeMap().has(prev)) return prev
@@ -553,6 +570,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   })
 
   createEffect(() => {
+    if (!open()) return
     const saved = anchor()
     nodes()
     if (!saved) return
@@ -575,6 +593,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   // which would cause star/unstar to reset selection mid-interaction.
   // Falls back to defaultKey when the active model is filtered out.
   createEffect(() => {
+    if (!open()) return
     const query = search()
     const list = filtered()
     const searchChanged = query !== previousSearch
@@ -616,6 +635,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
       // Defer key resolution to next microtask so favoriteModels/groups/rows
       // recompute with the snapshot before we try to resolve the key.
       queueMicrotask(() => {
+        if (!open()) return
         const next = activeKey(activeModel())
         setSelectedKey(next ?? defaultKey())
         setBrowsing(true)
@@ -623,6 +643,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         setPreActiveKey(next)
         setPreviewKey(next)
         requestAnimationFrame(() => {
+          if (!open()) return
           searchRef?.focus()
           scrollRow(next ?? CLEAR_KEY, "center")
         })
@@ -633,7 +654,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
     setBrowsing(false)
     setNavigating(false)
     setSearch("")
-    if (props.initialExpanded !== undefined) setExpanded(props.initialExpanded) // kilocode_change: ZLF initialExpanded 定制
+    if (props.initialExpanded !== undefined) setExpanded(props.initialExpanded) // ZLF 适配： ZLF initialExpanded 定制
     clearTimeout(previewTimer)
     if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame)
     scrollFrame = undefined
@@ -864,7 +885,9 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
       hasProviders(),
       {
         select: language.t("dialog.model.select.title"),
-        noProviders: language.t("dialog.model.noProviders"),
+        noProviders: kiloUnavailable()
+          ? language.t("dialog.model.unavailable")
+          : language.t("dialog.model.noProviders"),
         notSet: language.t("dialog.model.notSet"),
       },
       // 默认 "configured"＝上游行为；聊天路径（下方 ModelSelector 包装组件、
@@ -1102,13 +1125,13 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                           const hovered = () => isSelected(row.key)
                           const preActive = () => isPreActive(row.key)
                           const starred = () => favoriteKeys().has(modelKey(model.providerID, model.id))
-                          // kilocode_change start - ZLF 按显示名分组：多 provider 组内标签显示 providerID 作为来源
+                          // ZLF 适配开始 - ZLF 按显示名分组：多 provider 组内标签显示 providerID 作为来源
                           const group = node.group
                           const source = () =>
                             props.groupByDisplayName === true && row.kind !== "favorite" && (group?.providers ?? 0) > 1
                               ? model.providerID
                               : model.providerName
-                          // kilocode_change end
+                          // ZLF 适配结束
                           const showSelect = () => expanded() && preActive() && !isActive(model)
                           const starLabel = () =>
                             `${starred() ? language.t("model.favorite.remove") : language.t("model.favorite.add")}: ${sanitizeName(model.name)}`
@@ -1179,7 +1202,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                       </Show>
                                     </span>
                                   </Show>
-                                  {/* kilocode_change: ZLF 分组模式下显示 providerID 作为来源 */}
+                                  {/* ZLF 适配： ZLF 分组模式下显示 providerID 作为来源 */}
                                   <span class="model-selector-item-provider-tag">{source()}</span>
                                 </div>
                               </div>

@@ -53,7 +53,7 @@ function connection(online = true, custom?: unknown) {
     onLanguageChanged: () => () => undefined,
     onProfileChanged: () => () => undefined,
     onFavoritesChanged: () => () => undefined,
-    // kilocode_change - ZLF 的 provider 热刷新在初始化时无条件订阅此通道
+    // ZLF 适配：ZLF 的 provider 热刷新在初始化时无条件订阅此通道
     onProvidersChanged: () => () => undefined,
     onModelSelectorExpandedChanged: () => () => undefined,
     registerDirectoryProvider: () => () => undefined,
@@ -98,7 +98,7 @@ describe("KiloProvider providers on reconnect", () => {
     const internal = provider(
       connection(true, {
         kilo: { authStatus: async () => ({ data: { authenticated: false } }) },
-        // kilocode_change - ZLF 的 connected 模式经 config.providers 取数（Remote-SSH 性能定制），
+        // ZLF 适配：ZLF 的 connected 模式经 config.providers 取数（Remote-SSH 性能定制），
         // 只有 catalog 模式才走 provider.list，故两条路径都要 stub
         config: {
           providers: async (input: { directory: string }) => {

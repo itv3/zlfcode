@@ -16,7 +16,7 @@ export interface ServerInstance {
   shared?: boolean
 }
 
-// kilocode_change start - CLI 后端启动超时按运行环境分级：
+// ZLF 适配开始 - CLI 后端启动超时按运行环境分级：
 // - 本地环境：CLI 与扩展宿主在同一台机器，正常启动只需数秒；二进制损坏、端口
 //   占用等启动挂死问题应尽快反馈给用户，45 秒已远超正常本地启动耗时。
 // - 远程环境（Remote SSH / WSL / Dev Container，vscode.env.remoteName 非空）：
@@ -28,12 +28,12 @@ const KILL_FALLBACK_MS = 5_000
 const LOCK_STALE_MS = 90_000
 const LOCK_WAIT_MS = 250
 const HEALTH_TIMEOUT_MS = 1_500
-// kilocode_change end
+// ZLF 适配结束
 const STARTUP_OUTPUT_LIMIT = 1024
 
 type WorkspaceFolderLike = { uri: { fsPath: string } }
 type ServerExitListener = (code: number | null, signal: NodeJS.Signals | null) => void
-// kilocode_change start - ZLF：多窗口共享后端进程的持久化状态
+// ZLF 适配开始 - ZLF：多窗口共享后端进程的持久化状态
 type SharedState = {
   pid: number
   port: number
@@ -41,7 +41,7 @@ type SharedState = {
   cliPath: string
   version: string
 }
-// kilocode_change end
+// ZLF 适配结束
 
 export function resolveServerCwd(folders: readonly WorkspaceFolderLike[] | undefined, storage: string): string {
   return folders?.[0]?.uri.fsPath ?? storage
@@ -61,7 +61,7 @@ export function resolveManagedServerEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessE
   }
 }
 
-// kilocode_change start - ZLF：按运行环境分级的启动超时（本地 45s / 远程 180s）
+// ZLF 适配开始 - ZLF：按运行环境分级的启动超时（本地 45s / 远程 180s）
 /**
  * 按运行环境返回 CLI 后端启动超时秒数。
  * `remoteName` 传 `vscode.env.remoteName`：本地窗口为 undefined（用较短的本地
@@ -70,7 +70,7 @@ export function resolveManagedServerEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessE
 export function resolveStartupTimeoutSeconds(remoteName: string | undefined): number {
   return remoteName ? REMOTE_STARTUP_TIMEOUT_SECONDS : LOCAL_STARTUP_TIMEOUT_SECONDS
 }
-// kilocode_change end
+// ZLF 适配结束
 
 export function resolveClaudeMigrationEnv(env: NodeJS.ProcessEnv, enabled: boolean): string {
   return env.KILO_EXPERIMENTAL_CLAUDE_MIGRATION ?? String(enabled)
@@ -264,7 +264,7 @@ export class ServerManager {
 
       serverProcess.on("exit", (code, signal) => {
         console.warn("[Kilo New] ServerManager: 🛑 Process exited:", { code, signal })
-        this.clearSharedState(serverProcess.pid) // kilocode_change - ZLF 清理共享后端状态
+        this.clearSharedState(serverProcess.pid) // ZLF 适配：ZLF 清理共享后端状态
         if (this.instance?.process === serverProcess) {
           this.instance = null
           this.onExit?.(code, signal)

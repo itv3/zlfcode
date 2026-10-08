@@ -8,6 +8,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { filterPromptTrainingModels, nonEmptyProviders } from "@/kilocode/provider/model-filter"
 // kilocode_change end
 import { Provider } from "@/provider/provider"
+import { ModelCache } from "@/provider/model-cache" // kilocode_change - 读取与供应商目录同源的失败状态
 import * as InstanceState from "@/effect/instance-state"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -19,6 +20,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     const providerSvc = yield* Provider.Service
     const configSvc = yield* Config.Service
     const auth = yield* Auth.Service // kilocode_change
+    const cache = yield* ModelCache.Service // kilocode_change - 在处理器构建时获取稳定服务
 
     const get = Effect.fn("ConfigHttpApi.get")(function* () {
       return yield* configSvc.get()
@@ -64,6 +66,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       return {
         providers: Object.values(providers).map(Provider.toPublicInfo),
         default: defaults,
+        failed: yield* cache.failedProviders(), // kilocode_change - 避免组织目录失败后界面失去重试提示
       }
     })
 

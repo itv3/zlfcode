@@ -195,6 +195,14 @@ export const dict = {
   "prompt.worktrees.title": "Worktrees",
   "prompt.worktrees.search": "البحث في Worktrees",
   "prompt.thinking.tooltip": "جهد الاستدلال",
+  "prompt.shortcutHint.addSelection": "لإضافة التحديد",
+  "prompt.shortcutHint.waiting": "للرد على جلسة منتظرة",
+  "prompt.shortcutHint.type": "للكتابة",
+  "prompt.shortcutHint.sessions": "لتبديل الجلسة",
+  "prompt.shortcutHint.stop": "للإيقاف",
+  "prompt.shortcutHint.changes": "لمراجعة التغييرات",
+  "prompt.shortcutHint.pr": "لفتح PR",
+  "prompt.shortcutHint.mode": "الوضع التالي",
   "prompt.action.send": "إرسال",
   "prompt.action.continue": "متابعة",
   "prompt.action.send.blocked": "أجب عن السؤال المعلق أو تجاهله أولاً",
@@ -204,6 +212,10 @@ export const dict = {
   "prompt.agents.show": "إظهار الوكلاء الخلفيين",
   "prompt.action.enhance": "تحسين النص",
   "prompt.paste.expand": "انقر لتوسيع النص الملصق",
+  "prompt.issues.title": "مشكلات الجلسة",
+  "prompt.mcp.provider": "خادم MCP لـ {{name}}",
+  "prompt.mcp.openSettings": "فتح في الإعدادات",
+  "prompt.mcp.signIn.busy": "جارٍ تسجيل الدخول…",
   "prompt.action.autoApprove.enable": "تفعيل الموافقة التلقائية",
   "prompt.action.autoApprove.disable": "تعطيل الموافقة التلقائية",
   "prompt.action.autoApprove.enabled": "الموافقة التلقائية مفعلة. ستتم الموافقة على طلبات الأذونات تلقائياً.",
@@ -464,15 +476,15 @@ export const dict = {
   "provider.custom.models.toggleReasoning": "تبديل التفكير للكل",
   "provider.custom.models.toggleImages": "تبديل الصور للكل",
 
-  // kilocode_change start - ZLF 自有键：limit/cost/image 配置与预设预览；
+  // ZLF 适配开始 - ZLF 自有键：limit/cost/image 配置与预设预览；
   // variants.reasoningEffort.label 仍被预设悬停预览引用，其余变体编辑键已随上游 v7.4.21 退役
   "provider.custom.models.image.label": "صورة",
   "provider.custom.models.variants.reasoningEffort.label": "جهد الاستدلال",
   "provider.custom.models.variants.reasoningEffort.placeholder": "reasoningEffort",
-  // kilocode_change end
+  // ZLF 适配结束
   "provider.custom.models.remove": "إزالة النموذج",
   "provider.custom.models.add": "إضافة نموذج",
-  // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
+  // ZLF 适配： 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
   // CustomProviderDialog.tsx 仍在用它，合并 v7.4.17 时恢复。
   "provider.custom.models.fetch.error": "فشل جلب النماذج: {{error}}",
   "provider.custom.models.fetch.button": "جلب النماذج",
@@ -505,6 +517,9 @@ export const dict = {
   "provider.custom.error.duplicate": "مكرر",
   "settings.openLocalConfig": "تكوين محلي",
   "settings.openGlobalConfig": "تكوين عام",
+  "settings.search.placeholder": "البحث في الإعدادات",
+  "settings.search.noResults": "لم يتم العثور على إعدادات",
+  "settings.search.clear": "مسح البحث",
   "settings.config.scope.local": "محلي",
   "settings.config.scope.global": "عالمي",
   "settings.config.status.loaded": "محمل",
@@ -564,6 +579,7 @@ export const dict = {
   "session.tabs.switcher.pending": "جديد",
   "session.tabs.switcher.busy": "جارٍ العمل",
   "session.tabs.switcher.scheduled": "مجدولة",
+  "session.tabs.pinHint": "Shift+النقر للتثبيت أو إلغاء التثبيت",
   "session.tab.local": "محلي",
   "session.tab.cloud": "السحابة",
   "session.tab.worktree": "شجرة العمل",
@@ -780,10 +796,12 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "...جارٍ التفكير في الخطوات التالية",
 
   "dialog.model.noProviders": "لا يوجد موفرون",
+  "dialog.model.unavailable": "نماذج Kilo غير متاحة",
 
   "prompt.placeholder.connecting": "جارٍ الاتصال بالخادم...",
   "prompt.placeholder.error": "فشل الاتصال. تحقق من لوحة الإخراج أو أعد تشغيل الإضافة.",
   "prompt.placeholder.default": "اكتب رسالة، @ للإشارة إلى الملفات... (Enter للإرسال، Shift+Enter لسطر جديد)",
+  "prompt.placeholder.hint": "اكتب رسالة، @ للإشارة إلى الملفات... ({{key}} {{action}})",
 
   "context.usage.sessionCost": "تكلفة الجلسة",
   "context.usage.olderSessions": "{{count}} جلسات أقدم",
@@ -928,12 +946,12 @@ export const dict = {
   "settings.sandboxing.writablePaths.title": "مسارات قابلة للكتابة إضافية",
   "settings.sandboxing.writablePaths.description":
     "مسارات نظام ملفات إضافية يسمح صندوق الرمل بالكتابة إليها (مثل /tmp، /var/log). يتم دمجها مع مسارات الكتابة الافتراضية عندما يكون صندوق الرمل نشطًا.",
-  "settings.experimental.multiProject.title": "إدارة متعددة المشاريع",
+  "settings.experimental.conversationPromptHistory.title": "سجل مطالبات لكل محادثة",
+  "settings.experimental.conversationPromptHistory.description":
+    "إبقاء سجل مطالبات الإدخال (استدعاء بالسهمين لأعلى/لأسفل) منفصلاً لكل محادثة بدلاً من مشاركة سجل واحد بين جميع المحادثات.",
   "settings.experimental.claudeMigration.title": "ترحيل Claude Code",
   "settings.experimental.claudeMigration.description":
     "استورد مرة واحدة تعليمات CLAUDE.md العامة المدعومة والمهارات البسيطة وتعريفات MCP المعطلة. تبقى ملفات Claude الأصلية دون تغيير؛ أعد تشغيل الخلفية بعد التفعيل.",
-  "settings.experimental.multiProject.description":
-    "تفعيل إدارة الجلسات وأشجار العمل عبر مستودعات متعددة في Agent Manager. المستودع الحالي هو دائمًا المشروع الافتراضي.",
   "settings.experimental.mcpTimeout.title": "مهلة MCP (مللي ثانية)",
   "settings.experimental.mcpTimeout.description": "مهلة طلبات خادم MCP بالمللي ثانية",
   "settings.experimental.remote.title": "التحكم Remote",
@@ -1020,12 +1038,31 @@ export const dict = {
   "settings.agentBehaviour.removeAgent.button": "إزالة",
   "settings.agentBehaviour.removeMcp.title": "إزالة خادم MCP",
   "settings.agentBehaviour.removeMcp.confirm": 'هل تريد إزالة خادم MCP "{{name}}"؟ سيؤدي هذا إلى إزالته من الإعدادات.',
+  "settings.agentBehaviour.removeMcp.bundleConfirm":
+    'إزالة خادم MCP "{{name}}" ومهاراته المرافقة؟ سيؤدي هذا إلى إزالة الخادم وكل مهارة يملكها هذا التثبيت من المتجر.',
   "settings.agentBehaviour.removeMcp.button": "إزالة",
   "settings.agentBehaviour.editMcp": "تعديل خادم MCP",
   "settings.agentBehaviour.editMcp.transportLocal": "خادم محلي (نقل stdio)",
   "settings.agentBehaviour.editMcp.transportRemote": "خادم بعيد (نقل SSE/HTTP)",
   "settings.agentBehaviour.editMcp.env": "متغيرات البيئة",
   "settings.agentBehaviour.editMcp.env.help": "المتغيرات التي يتم تمريرها إلى عملية خادم MCP.",
+  "settings.agentBehaviour.editMcp.oauth": "OAuth",
+  "settings.agentBehaviour.editMcp.oauth.help":
+    "اتركه على التلقائي إلا إذا كان الخادم يتطلب عميلاً مسجلاً مسبقًا. يتم تخزين سر العميل في ملف تهيئة Kilo.",
+  "settings.agentBehaviour.editMcp.oauth.mode": "الوضع",
+  "settings.agentBehaviour.editMcp.oauth.mode.automatic": "تلقائي",
+  "settings.agentBehaviour.editMcp.oauth.mode.disabled": "معطل",
+  "settings.agentBehaviour.editMcp.oauth.mode.custom": "عميل مخصص",
+  "settings.agentBehaviour.editMcp.oauth.clientId": "معرف العميل",
+  "settings.agentBehaviour.editMcp.oauth.clientSecret": "سر العميل",
+  "settings.agentBehaviour.editMcp.oauth.scope": "النطاق",
+  "settings.agentBehaviour.editMcp.oauth.callbackPort": "منفذ الاستدعاء",
+  "settings.agentBehaviour.editMcp.oauth.redirectUri": "عنوان URL لإعادة التوجيه",
+  "settings.agentBehaviour.editMcp.oauth.redirectUri.help":
+    "الافتراضي هو http://127.0.0.1:19876/mcp/oauth/callback ويتجاوز منفذ الاستدعاء.",
+  "settings.agentBehaviour.editMcp.oauth.port.invalid": "أدخل منفذًا بين 1 و65535.",
+  "settings.agentBehaviour.editMcp.oauth.secret.invalid": "سر العميل يتطلب معرف عميل.",
+  "settings.agentBehaviour.editMcp.oauth.redirectUri.invalid": "أدخل عنوان URL صالحًا لإعادة التوجيه.",
   "settings.agentBehaviour.addMcp.command": "الأمر",
   "settings.agentBehaviour.addMcp.command.placeholder": "e.g. npx",
   "settings.agentBehaviour.addMcp.args": "الوسائط",
@@ -1039,6 +1076,8 @@ export const dict = {
   "settings.agentBehaviour.removeSkill.title": "إزالة المهارة",
   "settings.agentBehaviour.removeSkill.confirm":
     'هل تريد إزالة المهارة "{{name}}"؟ سيؤدي هذا إلى حذف ملفات المهارة من القرص.',
+  "settings.agentBehaviour.removeSkill.bundleConfirm":
+    'إزالة المهارة "{{name}}"؟ سيؤدي هذا أيضًا إلى إلغاء تثبيت خادم MCP {{mcp}} وكل مهارة مرافقة من نفس تثبيت المتجر.',
   "settings.agentBehaviour.removeSkill.button": "إزالة",
   "settings.agentBehaviour.rules.description":
     "القواعد هي ملفات تعليمات توجه سلوك الوكيل. يتم تضمينها في موجه النظام لكل محادثة. أضف مسارات الملفات أدناه لتضمين قواعد إضافية.",
@@ -1054,6 +1093,12 @@ export const dict = {
   "settings.agentBehaviour.mcpDetail.command": "الأمر",
   "settings.agentBehaviour.mcpDetail.args": "الوسائط",
   "settings.agentBehaviour.mcpDetail.env": "البيئة",
+  "settings.agentBehaviour.mcpSignIn.cancel": "إلغاء تسجيل الدخول",
+  "settings.agentBehaviour.mcpRemoving": "جارٍ الإزالة…",
+  "settings.agentBehaviour.mcpResetAuth": "إعادة تعيين تسجيل الدخول",
+  "settings.agentBehaviour.mcpResetAuth.title": "إعادة تعيين تسجيل دخول MCP",
+  "settings.agentBehaviour.mcpResetAuth.confirm":
+    'مسح تسجيل الدخول المحفوظ لـ "{{name}}"؟ ستحتاج إلى تسجيل الدخول مرة أخرى.',
   "settings.agentBehaviour.mcpBrowseMarketplace": "تصفح Marketplace",
   "settings.agentBehaviour.mcpEmpty":
     "لم يتم تهيئة خوادم MCP. أضف خوادم MCP في kilo.jsonc، أو اطلب من الوكيل إضافتها لك.",
@@ -1218,6 +1263,9 @@ export const dict = {
   "settings.display.mcpTool.expanded": "موسّعة",
   "settings.display.mcpTool.collapsed": "مطوية",
 
+  "settings.display.shortcutHints.title": "إظهار تلميحات الاختصارات",
+  "settings.display.shortcutHints.description":
+    "إظهار اختصار لوحة المفاتيح الذي يناسب ما تفعله الآن في الموجّه الفارغ، مثل كيفية إضافة الكود المحدد أو العودة إلى الموجّه.",
   "settings.display.tokenThroughput.title": "إظهار إنتاجية الرموز",
   "settings.display.tokenThroughput.description":
     "عرض معدل توليد النص (tokens/sec) في أحدث رسالة للمساعد وفي رأس المهمة. يظهر افتراضيًا؛ عطّل هذا الإعداد لإخفائه عند الحاجة.",
@@ -1295,6 +1343,8 @@ export const dict = {
 
   "task.todos.progress": "{{done}}/{{total}} مهام مكتملة",
   "task.todos.allDone": "{{count}} مهام مكتملة",
+  "task.todos.title": "المهام",
+  "task.todos.done": "اكتمل الكل",
   "task.backgroundAgents.running.one": "وكيل خلفي واحد",
   "task.backgroundAgents.running.many": "{{count}} وكلاء خلفيون",
   "task.backgroundAgents.open": "فتح الوكيل الخلفي",
@@ -1377,5 +1427,11 @@ export const dict = {
   "settings.experimental.browserAutomation.systemChrome.title": "استخدام Chrome النظام",
   "settings.experimental.browserAutomation.systemChrome.description":
     "استخدام Google Chrome المثبّت للمتصفح المدمج. عطّله فقط عند تثبيت متصفح Playwright Chromium متوافق.",
+  "settings.experimental.browserLinks.title": "فتح الروابط في",
+  "settings.experimental.browserLinks.description": "اختر مكان فتح روابط الويب من محادثات Kilo. يتطلب المتصفح المدمج.",
+  "settings.experimental.browserLinks.external": "متصفح النظام",
+  "settings.experimental.browserLinks.integrated": "المتصفح المدمج",
   "chat.search.searchingHistory": "جارٍ البحث في الرسائل السابقة…",
+  "browserTab.noSession": "افتح المتصفح من جلسة لمعاينة تطبيق محلي أو صفحة HTTPS عامة.",
+  "browserTab.disabled": "المتصفح المدمج معطّل. فعّله من إعدادات Kilo > تجريبي.",
 }

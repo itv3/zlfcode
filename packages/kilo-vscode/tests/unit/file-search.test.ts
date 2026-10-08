@@ -145,7 +145,7 @@ describe("handleFileSearch", () => {
     ])
   })
 
-  // kilocode_change start - ZLF 契约：后端短暂不可用时 early-return 也携带真实工作目录
+  // ZLF 适配开始 - ZLF 契约：后端短暂不可用时 early-return 也携带真实工作目录
   //（而非 ""），避免 webview 侧 workspaceDir 被清空导致相对路径附件解析失败
   //（见 zlfcode-v7.4.1-v0.05 修复）。
   it("returns the resolved directory when the backend client is unavailable", async () => {
@@ -169,7 +169,7 @@ describe("handleFileSearch", () => {
       },
     ])
   })
-  // kilocode_change end
+  // ZLF 适配结束
   it("searches every workspace folder and returns outside roots as labelled absolute paths", async () => {
     const api = multiClient({ "/repo": { files: ["src/a.ts"], folders: ["src"] } })
     const index = editorIndex({ "/repo": [], "/other": ["lib/b.ts"] })

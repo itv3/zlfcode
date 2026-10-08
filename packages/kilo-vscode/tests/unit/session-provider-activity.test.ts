@@ -9,7 +9,7 @@ const webview = path.join(root, "webview-ui")
 const fixture = path.join(root, "tests/fixtures/session-provider-activity.tsx")
 
 describe("SessionProvider activity", () => {
-  // kilocode_change - TODO(ZLF)：上游 org 场景端到端 fixture 在 ZLF 变体解析链下
+  // ZLF 适配：TODO(ZLF)：上游 org 场景端到端 fixture 在 ZLF 变体解析链下
   // 断言 sendCommand 携带 org 推荐模型的首个变体（"low"），ZLF 链返回 undefined。
   // org 账户场景 ZLF 不使用；fixture 已补 mode/revision（ZLF 状态机必需）。待专项
   // 对照上游变体注入路径后恢复本用例。

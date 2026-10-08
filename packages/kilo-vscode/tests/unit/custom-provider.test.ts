@@ -283,7 +283,7 @@ describe("sanitizeCustomProviderConfig", () => {
     })
   })
 
-  // kilocode_change start - ZLF 早于上游为 schema 放宽写的等价测试，与上游新用例互补，两个都保留
+  // ZLF 适配开始 - ZLF 早于上游为 schema 放宽写的等价测试，与上游新用例互补，两个都保留
   it("preserves provider-native variant fields through extension-side sanitization", () => {
     const result = sanitizeCustomProviderConfig({
       name: "Native Provider",
@@ -322,7 +322,7 @@ describe("sanitizeCustomProviderConfig", () => {
       },
     })
   })
-  // kilocode_change end
+  // ZLF 适配结束
 
   it("preserves opaque options on existing variants", () => {
     const variant = {

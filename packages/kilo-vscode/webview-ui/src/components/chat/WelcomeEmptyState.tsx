@@ -4,23 +4,25 @@ import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
 import { recentSessions } from "../../context/session-utils"
+import type { SessionInfo } from "../../types/messages"
 import { formatRelativeDate } from "../../utils/date"
 import { FeedbackDialog } from "./FeedbackDialog"
 
 interface WelcomeEmptyStateProps {
+  sessions?: () => SessionInfo[]
   onSelectSession?: (id: string) => void
   onShowHistory?: () => void
   footer?: JSX.Element
 }
 
 /**
- * ZLF 静态品牌 logo（kilocode_change）。上游在此处为 Kilo 方形标志加了悬停旋转 + Lottie
+ * ZLF 静态品牌 logo（ZLF 适配）。上游在此处为 Kilo 方形标志加了悬停旋转 + Lottie
  * 动画（AnimatedKiloLogo），属 Kilo 品牌专属，ZLF 不引入。
  */
 export const KiloLogo = () => {
   const icons = (window as { ICONS_BASE_URI?: string }).ICONS_BASE_URI || ""
 
-  // kilocode_change - ZLF 静态品牌 logo；上游 v7.7.3 的悬停动画（AnimatedKiloLogo）是 Kilo 标志专属，不引入
+  // ZLF 适配：ZLF 静态品牌 logo；上游 v7.7.3 的悬停动画（AnimatedKiloLogo）是 Kilo 标志专属，不引入
   return (
     <div class="kilo-logo">
       <img src={`${icons}/zlfcode-logo.svg`} alt="ZLF Code" />
@@ -32,7 +34,7 @@ export const WelcomeEmptyState: Component<WelcomeEmptyStateProps> = (props) => {
   const session = useSession()
   const language = useLanguage()
   const dialog = useDialog()
-  const recent = () => recentSessions(session.sessions())
+  const recent = () => recentSessions(props.sessions?.() ?? session.sessions())
 
   return (
     <div class="message-list-empty">

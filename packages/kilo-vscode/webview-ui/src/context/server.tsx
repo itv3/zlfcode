@@ -93,7 +93,7 @@ export const ServerProvider: ParentComponent = (props) => {
   }
 
   onMount(() => {
-    // kilocode_change: 上游内联 switch 的复杂度恰为上限 21，下方 connectionState case 内
+    // ZLF 适配： 上游内联 switch 的复杂度恰为上限 21，下方 connectionState case 内
     // 的单行行为补丁使其达到 22；按仓库既有先例（ModelSelector.tsx）就地豁免，
     // 保持与上游一致的结构以最小化合并冲突面（见 F12/F76）。
     // eslint-disable-next-line complexity
@@ -129,7 +129,7 @@ export const ServerProvider: ParentComponent = (props) => {
         case "connectionState":
           console.log("[Kilo New] Connection state changed:", message.state)
           setConnectionState(message.state)
-          // kilocode_change: 连接状态离开 connected 时清空 serverInfo，避免断连/重连
+          // ZLF 适配： 连接状态离开 connected 时清空 serverInfo，避免断连/重连
           // 窗口内界面继续使用已失效的服务器地址与凭据（remote ssh Provider 同步修复）。
           if (message.state !== "connected") setServerInfo(undefined)
           if (message.error) {

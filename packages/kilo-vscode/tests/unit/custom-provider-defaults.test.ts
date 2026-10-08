@@ -422,7 +422,7 @@ describe("custom provider default matching", () => {
       },
     })
 
-    // kilocode_change - 变体编辑 UI 随上游 v7.4.21 退役后 parseVariant 整体透传原配置（raw），
+    // ZLF 适配：变体编辑 UI 随上游 v7.4.21 退役后 parseVariant 整体透传原配置（raw），
     // 不再拆分 extras；解析出的展示字段（thinking/outputEffort）继续保留。
     expect(out.map((item) => [item.name, item.raw, item.thinking, item.outputEffort])).toEqual([
       ["xhigh", { reasoning: { effort: "xhigh" } }, undefined, undefined],

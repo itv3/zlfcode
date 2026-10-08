@@ -200,6 +200,14 @@ export const dict = {
   "prompt.worktrees.title": "Worktrees",
   "prompt.worktrees.search": "Pretraži Worktree-ove",
   "prompt.thinking.tooltip": "Napor razmišljanja",
+  "prompt.shortcutHint.addSelection": "za dodavanje odabira",
+  "prompt.shortcutHint.waiting": "za odgovor sesiji koja čeka",
+  "prompt.shortcutHint.type": "za pisanje",
+  "prompt.shortcutHint.sessions": "za promjenu sesije",
+  "prompt.shortcutHint.stop": "za zaustavljanje",
+  "prompt.shortcutHint.changes": "za pregled izmjena",
+  "prompt.shortcutHint.pr": "za otvaranje PR-a",
+  "prompt.shortcutHint.mode": "Sljedeći način",
   "prompt.action.send": "Pošalji",
   "prompt.action.continue": "Nastavi",
   "prompt.action.send.blocked": "Prvo odgovorite ili odbacite pitanje na čekanju",
@@ -209,6 +217,10 @@ export const dict = {
   "prompt.agents.show": "Prikaži agente u pozadini",
   "prompt.action.enhance": "Poboljšaj prompt",
   "prompt.paste.expand": "Kliknite da proširite zalijepljeni tekst",
+  "prompt.issues.title": "Problemi sesije",
+  "prompt.mcp.provider": "MCP {{name}}",
+  "prompt.mcp.openSettings": "Otvori u Postavkama",
+  "prompt.mcp.signIn.busy": "Prijavljivanje u toku…",
   "prompt.action.autoApprove.enable": "Uključi automatsko odobravanje",
   "prompt.action.autoApprove.disable": "Isključi automatsko odobravanje",
   "prompt.action.autoApprove.enabled":
@@ -517,15 +529,15 @@ export const dict = {
   "provider.custom.models.toggleReasoning": "Uključi/isključi rezonovanje za sve",
   "provider.custom.models.toggleImages": "Uključi/isključi slike za sve",
 
-  // kilocode_change start - ZLF 自有键：limit/cost/image 配置与预设预览；
+  // ZLF 适配开始 - ZLF 自有键：limit/cost/image 配置与预设预览；
   // variants.reasoningEffort.label 仍被预设悬停预览引用，其余变体编辑键已随上游 v7.4.21 退役
   "provider.custom.models.image.label": "Slika",
   "provider.custom.models.variants.reasoningEffort.label": "Napor zaključivanja",
   "provider.custom.models.variants.reasoningEffort.placeholder": "reasoningEffort",
-  // kilocode_change end
+  // ZLF 适配结束
   "provider.custom.models.remove": "Ukloni model",
   "provider.custom.models.add": "Dodaj model",
-  // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
+  // ZLF 适配： 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
   // CustomProviderDialog.tsx 仍在用它，合并 v7.4.17 时恢复。
   "provider.custom.models.fetch.error": "Preuzimanje modela nije uspjelo: {{error}}",
   "provider.custom.models.fetch.button": "Dohvati modele",
@@ -559,6 +571,9 @@ export const dict = {
   "provider.custom.error.duplicate": "Duplikat",
   "settings.openLocalConfig": "Lokalna konfig.",
   "settings.openGlobalConfig": "Globalna konfig.",
+  "settings.search.placeholder": "Pretraži postavke",
+  "settings.search.noResults": "Nisu pronađene postavke",
+  "settings.search.clear": "Očisti pretragu",
   "settings.config.scope.local": "Lokalno",
   "settings.config.scope.global": "Globalno",
   "settings.config.status.loaded": "učitano",
@@ -619,6 +634,7 @@ export const dict = {
   "session.tabs.switcher.pending": "Novo",
   "session.tabs.switcher.busy": "Radi",
   "session.tabs.switcher.scheduled": "Zakazano",
+  "session.tabs.pinHint": "Shift+klik za zakačiti ili otkačiti",
   "session.tab.local": "Lokalno",
   "session.tab.cloud": "Oblak",
   "session.tab.worktree": "Radno stablo",
@@ -797,11 +813,13 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "Razmatram sljedeće korake...",
 
   "dialog.model.noProviders": "Nema pružatelja",
+  "dialog.model.unavailable": "Kilo modeli nisu dostupni",
 
   "prompt.placeholder.connecting": "Povezivanje na server...",
   "prompt.placeholder.error": "Povezivanje nije uspjelo. Provjerite panel za izlaz ili ponovo pokrenite ekstenziju.",
   "prompt.placeholder.default":
     "Unesite poruku, @ za spominjanje datoteka... (Enter za slanje, Shift+Enter za novi red)",
+  "prompt.placeholder.hint": "Unesite poruku, @ za spominjanje datoteka... ({{key}} {{action}})",
 
   "context.usage.sessionCost": "Cijena sesije",
   "context.usage.olderSessions": "{{count}} starijih sesija",
@@ -952,12 +970,12 @@ export const dict = {
   "settings.sandboxing.writablePaths.title": "Dodatne upisive putanje",
   "settings.sandboxing.writablePaths.description":
     "Dodatne putanje sistema datoteka u koje sandbox dozvoljava upis (npr. /tmp, /var/log). Spajaju se sa zadanim upisivim putanjama kada je sandbox aktivan.",
-  "settings.experimental.multiProject.title": "Višeprojektni Agent Manager",
+  "settings.experimental.conversationPromptHistory.title": "Historija upita po razgovoru",
+  "settings.experimental.conversationPromptHistory.description":
+    "Čuvajte historiju upita (ArrowUp/ArrowDown) zasebno za svaki razgovor umjesto da dijelite jednu historiju među svim razgovorima.",
   "settings.experimental.claudeMigration.title": "Claude Code migracija",
   "settings.experimental.claudeMigration.description":
     "Jednom uvezite podržane globalne CLAUDE.md upute, jednostavne vještine i onemogućene MCP definicije. Originalne Claude datoteke ostaju nepromijenjene; ponovo pokrenite backend nakon uključivanja.",
-  "settings.experimental.multiProject.description":
-    "Omogući upravljanje sesijama i worktree-ima kroz više repozitorija u Agent Manager-u. Trenutni workspace repozitorij je uvijek zadani projekat.",
   "settings.experimental.mcpTimeout.title": "MCP istek vremena (ms)",
   "settings.experimental.mcpTimeout.description": "Istek vremena za MCP server zahtjeve u milisekundama",
   "settings.experimental.remote.title": "Remote kontrola",
@@ -1046,12 +1064,31 @@ export const dict = {
   "settings.agentBehaviour.removeMcp.title": "Ukloni MCP server",
   "settings.agentBehaviour.removeMcp.confirm":
     'Ukloniti MCP server "{{name}}"? Ovo će ga ukloniti iz vaše konfiguracije.',
+  "settings.agentBehaviour.removeMcp.bundleConfirm":
+    'Ukloniti MCP server "{{name}}" i njegove pratećeg vještine? Ovo uklanja server i svaku vještinu koja pripada ovoj instalaciji sa Marketplace-a.',
   "settings.agentBehaviour.removeMcp.button": "Ukloni",
   "settings.agentBehaviour.editMcp": "Uredi MCP Server",
   "settings.agentBehaviour.editMcp.transportLocal": "Lokalni server (stdio transport)",
   "settings.agentBehaviour.editMcp.transportRemote": "Udaljeni server (SSE/HTTP transport)",
   "settings.agentBehaviour.editMcp.env": "Varijable okruženja",
   "settings.agentBehaviour.editMcp.env.help": "Varijable proslijeđene procesu MCP servera.",
+  "settings.agentBehaviour.editMcp.oauth": "OAuth",
+  "settings.agentBehaviour.editMcp.oauth.help":
+    "Ostavite na Automatski osim ako server ne zahtijeva prethodno registrovanog klijenta. Tajni klijent se čuva u vašoj Kilo konfiguracionoj datoteci.",
+  "settings.agentBehaviour.editMcp.oauth.mode": "Način rada",
+  "settings.agentBehaviour.editMcp.oauth.mode.automatic": "Automatski",
+  "settings.agentBehaviour.editMcp.oauth.mode.disabled": "Onemogućeno",
+  "settings.agentBehaviour.editMcp.oauth.mode.custom": "Prilagođeni klijent",
+  "settings.agentBehaviour.editMcp.oauth.clientId": "ID klijenta",
+  "settings.agentBehaviour.editMcp.oauth.clientSecret": "Tajni klijent",
+  "settings.agentBehaviour.editMcp.oauth.scope": "Opseg",
+  "settings.agentBehaviour.editMcp.oauth.callbackPort": "Povratni port",
+  "settings.agentBehaviour.editMcp.oauth.redirectUri": "URI preusmjeravanja",
+  "settings.agentBehaviour.editMcp.oauth.redirectUri.help":
+    "Zadano je http://127.0.0.1:19876/mcp/oauth/callback i poništava povratni port.",
+  "settings.agentBehaviour.editMcp.oauth.port.invalid": "Unesite port između 1 i 65535.",
+  "settings.agentBehaviour.editMcp.oauth.secret.invalid": "Tajni klijent zahtijeva ID klijenta.",
+  "settings.agentBehaviour.editMcp.oauth.redirectUri.invalid": "Unesite važeći URI preusmjeravanja.",
   "settings.agentBehaviour.addMcp.command": "Naredba",
   "settings.agentBehaviour.addMcp.command.placeholder": "e.g. npx",
   "settings.agentBehaviour.addMcp.args": "Argumenti",
@@ -1064,6 +1101,8 @@ export const dict = {
   "settings.agentBehaviour.removeSkill.title": "Ukloni vještinu",
   "settings.agentBehaviour.removeSkill.confirm":
     'Ukloniti vještinu "{{name}}"? Ovo će obrisati datoteke vještine sa diska.',
+  "settings.agentBehaviour.removeSkill.bundleConfirm":
+    'Ukloniti vještinu "{{name}}"? Ovo će također deinstalirati MCP server {{mcp}} i svaku pratećeg vještinu iz iste instalacije sa Marketplace-a.',
   "settings.agentBehaviour.removeSkill.button": "Ukloni",
   "settings.agentBehaviour.rules.description":
     "Pravila su datoteke uputa koje usmjeravaju ponašanje agenta. Uključena su u sistemski prompt za svaki razgovor. Dodajte putanje datoteka ispod kako biste uključili dodatna pravila.",
@@ -1079,6 +1118,12 @@ export const dict = {
   "settings.agentBehaviour.mcpDetail.command": "Naredba",
   "settings.agentBehaviour.mcpDetail.args": "Argumenti",
   "settings.agentBehaviour.mcpDetail.env": "Okruženje",
+  "settings.agentBehaviour.mcpSignIn.cancel": "Otkaži prijavu",
+  "settings.agentBehaviour.mcpRemoving": "Uklanjanje…",
+  "settings.agentBehaviour.mcpResetAuth": "Resetuj prijavu",
+  "settings.agentBehaviour.mcpResetAuth.title": "Resetuj MCP prijavu",
+  "settings.agentBehaviour.mcpResetAuth.confirm":
+    'Ukloniti sačuvanu prijavu za "{{name}}"? Morat ćete se ponovo prijaviti.',
   "settings.agentBehaviour.mcpBrowseMarketplace": "Pregledaj Marketplace",
   "settings.agentBehaviour.mcpEmpty":
     "Nema konfiguriranih MCP servera. Dodajte MCP servere u kilo.jsonc ili zamolite agenta da ih doda.",
@@ -1256,6 +1301,9 @@ export const dict = {
   "settings.display.mcpTool.expanded": "Prošireni",
   "settings.display.mcpTool.collapsed": "Sažeti",
 
+  "settings.display.shortcutHints.title": "Prikaži savjete za prečice",
+  "settings.display.shortcutHints.description":
+    "Prikazuje u praznom promptu prečicu tastature koja odgovara onome što sada radite, na primjer kako dodati odabrani kod ili se vratiti u prompt.",
   "settings.display.tokenThroughput.title": "Prikaži protok tokena",
   "settings.display.tokenThroughput.description":
     "Prikažite brzinu generisanja teksta (tokens/sec) u najnovijoj poruci asistenta i zaglavlju zadatka. Prikazuje se podrazumijevano; onemogućite ovu postavku da biste je po potrebi sakrili.",
@@ -1333,6 +1381,8 @@ export const dict = {
 
   "task.todos.progress": "{{done}}/{{total}} zadataka završeno",
   "task.todos.allDone": "{{count}} zadataka završeno",
+  "task.todos.title": "Zadaci",
+  "task.todos.done": "Sve završeno",
   "task.backgroundAgents.running.one": "1 agent u pozadini",
   "task.backgroundAgents.running.many": "{{count}} agenata u pozadini",
   "task.backgroundAgents.open": "Otvori agenta u pozadini",
@@ -1415,5 +1465,12 @@ export const dict = {
   "settings.experimental.browserAutomation.systemChrome.title": "Koristi sistemski Chrome",
   "settings.experimental.browserAutomation.systemChrome.description":
     "Koristite instalirani Google Chrome za Integrirani preglednik. Onemogućite samo kada je kompatibilni Playwright Chromium preglednik već instaliran.",
+  "settings.experimental.browserLinks.title": "Otvori linkove u",
+  "settings.experimental.browserLinks.description":
+    "Odaberite gdje se web linkovi otvaraju iz Kilo razgovora. Zahtijeva Integrirani preglednik.",
+  "settings.experimental.browserLinks.external": "Sistemski preglednik",
+  "settings.experimental.browserLinks.integrated": "Integrirani preglednik",
   "chat.search.searchingHistory": "Pretraživanje ranijih poruka…",
+  "browserTab.noSession": "Otvorite preglednik iz sesije da pregledate lokalnu aplikaciju ili javnu HTTPS stranicu.",
+  "browserTab.disabled": "Integrirani preglednik je onemogućen. Omogućite ga u Kilo postavkama > Eksperimentalno.",
 }

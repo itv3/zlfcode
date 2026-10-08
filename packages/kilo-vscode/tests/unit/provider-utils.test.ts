@@ -104,7 +104,7 @@ describe("isModelValid", () => {
     expect(isModelValid(providers, [], { providerID: "kilo", modelID: "kilo-auto/free" })).toBe(true)
   })
 
-  // kilocode_change - v7.5.14 起 kilo 目录由后端按认证/组织态过滤，校验层不再叠加 free-only
+  // ZLF 适配：v7.5.14 起 kilo 目录由后端按认证/组织态过滤，校验层不再叠加 free-only
   it("accepts paid Kilo models exposed by the backend-filtered catalog", () => {
     expect(isModelValid(providers, [], { providerID: "kilo", modelID: "anthropic/paid" })).toBe(true)
   })

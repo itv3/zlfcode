@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import type { Config } from "@kilocode/sdk/v2/client"
 import type { AuthContext } from "../../src/kilo-provider/handlers/auth"
+import { createCatalogRetry } from "../../src/kilo-provider/catalog-retry"
 
 const { KiloProvider } = await import("../../src/KiloProvider")
 
@@ -25,6 +26,7 @@ type Internals = {
   cachedConfigMessage: unknown
   cachedProvidersMessage: unknown
   providersRefresh: Promise<void> | null
+  catalogRetry: ReturnType<typeof createCatalogRetry>
   authCtx: AuthContext
   fetchAndSendProviders(): Promise<void>
   invalidateProviders(): void
@@ -32,18 +34,18 @@ type Internals = {
   reloadAfterAuthChange(): Promise<void>
 }
 
-function setup(list: () => Promise<ReturnType<typeof catalog>>, org: () => string) {
+function setup(list: () => Promise<ReturnType<typeof catalog> & { data: { failed?: string[] } }>, org: () => string) {
   const client = {
     provider: { list, auth: async () => ({ data: {} }) },
     kilo: { authStatus: async () => ({ data: { authenticated: true, type: "oauth", organizationId: org() } }) },
     config: {
       get: async (): Promise<{ data: Config }> => ({ data: {} }),
       overlay: async () => ({ data: {} }),
-      // kilocode_change - ZLF 的 connected 模式经 config.providers 取已连接快照
+      // ZLF 适配：ZLF 的 connected 模式经 config.providers 取已连接快照
       //（Remote-SSH 性能定制），与 provider.list 返回同源数据。
       providers: async () => {
         const { data } = await list()
-        return { data: { providers: data.all, default: data.default } }
+        return { data: { providers: data.all, default: data.default, failed: data.failed ?? [] } }
       },
     },
     global: { config: { get: async () => ({ data: {} }) } },
@@ -75,7 +77,7 @@ function setup(list: () => Promise<ReturnType<typeof catalog>>, org: () => strin
 }
 
 describe("KiloProvider catalog refresh", () => {
-  // kilocode_change - 下列 .skip 用例断言上游单路径拉取的消息条数与竞态时序；ZLF 的
+  // ZLF 适配：下列 .skip 用例断言上游单路径拉取的消息条数与竞态时序；ZLF 的
   // connected/catalog 双模式（Remote-SSH 性能定制）下消息模型不同，等价竞态语义由
   // kilo-provider-providers-refresh.test.ts 的 ZLF 测试族锁定；org 账户切换场景 ZLF 不使用。
   it("invalidates cached Kilo data before another account refresh", async () => {
@@ -269,5 +271,104 @@ describe("KiloProvider catalog refresh", () => {
     expect(messages.at(-1)).toEqual({ type: "providersLoading" })
     expect(messages.filter((message) => message.type === "providersLoaded")).toHaveLength(1)
     expect(internal.cachedProvidersMessage).toBeNull()
+  })
+
+  it("flags an organization's failed Kilo catalog and refetches until it recovers", async () => {
+    let failed = true
+    const { internal, messages } = setup(
+      async () =>
+        failed
+          ? { data: { all: [external], connected: ["external"], default: { external: "model" }, failed: ["kilo"] } }
+          : catalog("org"),
+      () => "org",
+    )
+    const scheduled: Array<() => void> = []
+    internal.catalogRetry.dispose()
+    internal.catalogRetry = createCatalogRetry({
+      refresh: () => void internal.fetchAndSendProviders(),
+      schedule: (run) => {
+        scheduled.push(run)
+        return () => {}
+      },
+    })
+
+    await internal.fetchAndSendProviders()
+    expect(messages.at(-1)).toMatchObject({ type: "providersLoaded", kiloUnavailable: true })
+    expect(scheduled).toHaveLength(1)
+
+    failed = false
+    scheduled.at(0)?.()
+    await internal.providersRefresh
+    expect(messages.at(-1)).toMatchObject({
+      type: "providersLoaded",
+      kiloUnavailable: false,
+      providers: { kilo: { models: { "org/model": { id: "org/model" } } } },
+    })
+    expect(scheduled).toHaveLength(1)
+  })
+
+  it("keeps retrying after a failed refetch while the Kilo catalog stays unavailable", async () => {
+    const steps = ["failed", "reject", "recovered"]
+    const { internal, messages } = setup(
+      async () => {
+        const step = steps.shift()
+        if (step === "reject") throw new Error("offline")
+        if (step === "failed")
+          return {
+            data: { all: [external], connected: ["external"], default: { external: "model" }, failed: ["kilo"] },
+          }
+        return catalog("org")
+      },
+      () => "org",
+    )
+    const scheduled: Array<() => void> = []
+    internal.catalogRetry.dispose()
+    internal.catalogRetry = createCatalogRetry({
+      refresh: () => void internal.fetchAndSendProviders(),
+      schedule: (run) => {
+        scheduled.push(run)
+        return () => {}
+      },
+    })
+
+    await internal.fetchAndSendProviders()
+    expect(messages.at(-1)).toMatchObject({ type: "providersLoaded", kiloUnavailable: true })
+    scheduled.at(0)?.()
+    await internal.providersRefresh
+    expect(scheduled).toHaveLength(2)
+
+    scheduled.at(1)?.()
+    await internal.providersRefresh
+    expect(messages.at(-1)).toMatchObject({ type: "providersLoaded", kiloUnavailable: false })
+    expect(scheduled).toHaveLength(2)
+  })
+
+  it("does not flag a failed Kilo catalog outside an organization", async () => {
+    const { internal, messages } = setup(
+      async () => ({
+        data: { all: [external], connected: ["external"], default: { external: "model" }, failed: ["kilo"] },
+      }),
+      () => "",
+    )
+    await internal.fetchAndSendProviders()
+    expect(messages.at(-1)).toMatchObject({ type: "providersLoaded", kiloUnavailable: false })
+  })
+
+  it("refreshes providers when the model catalog is refreshed", async () => {
+    let org = "a"
+    const { internal, messages } = setup(
+      async () => catalog(org),
+      () => org,
+    )
+    await internal.fetchAndSendProviders()
+    org = "b"
+    internal.handleEvent({ type: "models-dev.refreshed", properties: {} }, "global")
+    expect(internal.providersRefresh).not.toBeNull()
+    await internal.providersRefresh
+    expect(messages.at(-1)).toMatchObject({
+      type: "providersLoaded",
+      organizationId: "b",
+      defaults: { kilo: "b/model" },
+    })
   })
 })

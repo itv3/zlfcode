@@ -1,10 +1,11 @@
 // kilocode_change - new file
 import { fetchKiloModels, type KiloModelsResult } from "@kilocode/kilo-gateway"
-import { Clock, Context, Deferred, Duration, Effect, Exit, Layer, Schema, Scope } from "effect"
+import { Clock, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Schema, Scope } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { Config } from "../config/config"
 import { Auth } from "../auth"
 import { compatible, organization, token } from "@/kilocode/provider/catalog"
+import { delay, retryable } from "@/kilocode/provider/catalog-recovery"
 import type { Provider } from "@opencode-ai/core/models-dev"
 import * as Log from "@opencode-ai/core/util/log"
 import * as ModelsRefresh from "@opencode-ai/core/kilocode/models-refresh"
@@ -17,7 +18,7 @@ type KiloOptions = NonNullable<Parameters<typeof fetchKiloModels>[0]>
 type Options = { -readonly [K in keyof KiloOptions]?: KiloOptions[K] } & { apiKey?: string }
 type Failure = NonNullable<KiloModelsResult["error"]>
 type Result = { readonly models: Models; readonly error?: Failure }
-type View = { models?: Models; timestamp?: number }
+type View = { models?: Models; timestamp?: number; empty?: boolean }
 type Flight = { readonly done: Deferred.Deferred<Result, unknown>; version: number }
 
 export interface KiloModels {
@@ -38,6 +39,7 @@ type Cell = {
   readonly view: View
   cached?: { readonly result: Result; readonly expires: number }
   flight?: Flight
+  recovery?: Fiber.Fiber<void>
 }
 
 export interface Interface {
@@ -72,9 +74,10 @@ export const layer: Layer.Layer<
     const scope = yield* Scope.Scope
     const cells = new Map<string, Cell>()
     const active = new Map<string, Cell>()
+    const selected = new Map<string, Cell>()
     const versions = new Map<string, number>()
     const failures = new Map<string, Failure>()
-    const pending = new Set<string>()
+    const pending = new Set<Cell>()
 
     const getFailure = Effect.fn("ModelCache.getFailure")(function* (providerID: string) {
       return failures.get(providerID)
@@ -165,6 +168,11 @@ export const layer: Layer.Layer<
     }
 
     const load = Effect.fn("ModelCache.load")(function* (providerID: string, options: Options) {
+      if (providerID === "kilo" && !compatible(options)) return { models: {}, error: { kind: "schema" as const } }
+      return yield* fetchModels(providerID, options)
+    })
+
+    const resolve = Effect.fn("ModelCache.resolve")(function* (providerID: string, options: Options) {
       const resolved = yield* authOptions(providerID).pipe(
         Effect.catchCause((cause) =>
           Effect.sync(() => {
@@ -173,9 +181,7 @@ export const layer: Layer.Layer<
           }),
         ),
       )
-      const input = { ...resolved, ...options }
-      if (providerID === "kilo" && !compatible(input)) return { models: {}, error: { kind: "schema" as const } }
-      return yield* fetchModels(providerID, input)
+      return { ...resolved, ...options }
     })
 
     const key = (providerID: string, options?: Options) => {
@@ -187,11 +193,12 @@ export const layer: Layer.Layer<
     }
 
     const cell = Effect.fn("ModelCache.cell")(function* (providerID: string, options: Options = {}) {
-      const id = key(providerID, options)
+      const input = yield* resolve(providerID, options)
+      const id = key(providerID, input)
       const existing = cells.get(id)
       if (existing) return existing
       const view: View = {}
-      const next: Cell = { providerID, options, view }
+      const next: Cell = { providerID, options: input, view }
       cells.set(id, next)
       return next
     })
@@ -203,6 +210,7 @@ export const layer: Layer.Layer<
 
     const detach = (entry: Cell) =>
       invalidate(entry).pipe(
+        Effect.tap(() => (entry.recovery ? Fiber.interrupt(entry.recovery) : Effect.void)),
         Effect.tap(() =>
           Effect.sync(() => {
             entry.flight = undefined
@@ -217,32 +225,27 @@ export const layer: Layer.Layer<
       result: Result,
     ) {
       const now = yield* Clock.currentTimeMillis
-      const out = yield* Effect.sync(() => {
-        if ((versions.get(providerID) ?? 0) !== version) return { models: result.models, recovered: false }
-        const previous = active.get(providerID)?.view.models
-        const failed = failures.has(providerID)
-        const recovered =
-          !result.error &&
-          Object.keys(result.models).length > 0 &&
-          (failed || (previous !== undefined && Object.keys(previous).length === 0))
-        if (result.error) {
-          failures.set(providerID, result.error)
-          log.warn("model fetch error", { providerID, error: result.error })
-        } else {
-          failures.delete(providerID)
-        }
-        entry.view.models = result.models
-        entry.view.timestamp = now
-        active.set(providerID, entry)
-        log.info("models fetched and cached", { providerID, count: Object.keys(result.models).length })
-        return { models: result.models, recovered }
-      })
-      if (out.recovered) yield* ModelsRefresh.notify()
-      return out.models
+      // 只有当前账号与请求代次可以更新缓存，旧账号的后台结果不得覆盖新目录。
+      if ((versions.get(providerID) ?? 0) !== version || selected.get(providerID) !== entry) return result.models
+      const empty = Object.keys(result.models).length === 0
+      const recovered = !result.error && !empty && (entry.view.empty === true || failures.has(providerID))
+      if (result.error) {
+        failures.set(providerID, result.error)
+        log.warn("model fetch error", { providerID, error: result.error })
+      } else {
+        failures.delete(providerID)
+      }
+      entry.view.models = result.models
+      entry.view.timestamp = now
+      entry.view.empty = empty
+      active.set(providerID, entry)
+      log.info("models fetched and cached", { providerID, count: Object.keys(result.models).length })
+      if (recovered) yield* ModelsRefresh.notify()
+      return result.models
     })
 
     // A refresh belongs to the cache service, not the caller that happened to start it.
-    const evaluate = (entry: Cell, version: number) =>
+    const evaluate = (entry: Cell, version: number): Effect.Effect<Result, unknown> =>
       Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const cached = entry.cached
@@ -250,6 +253,7 @@ export const layer: Layer.Layer<
           // 避免 view.timestamp 与 entry.cached 两套过期判定在测试时钟下互相矛盾（审核条目 F45）
           if (cached && cached.expires > (yield* Clock.currentTimeMillis)) {
             yield* commit(entry.providerID, version, entry, cached.result)
+            yield* recover(entry, cached.result)
             return cached.result
           }
 
@@ -278,6 +282,7 @@ export const layer: Layer.Layer<
                 }
               }
               yield* Deferred.done(done, exit)
+              if (Exit.isSuccess(exit)) yield* recover(entry, exit.value)
             }),
           ).pipe(Effect.forkIn(scope, { startImmediately: true }))
           return yield* restore(Deferred.await(done))
@@ -301,49 +306,93 @@ export const layer: Layer.Layer<
       return entry.view.models
     })
 
-    const reload = Effect.fn("ModelCache.reload")(function* (providerID: string, options?: Options) {
-      const version = (versions.get(providerID) ?? 0) + 1
-      versions.set(providerID, version)
-      const entry = yield* cell(providerID, options)
-      log.info("refreshing models", { providerID })
-      yield* invalidate(entry)
-      const result = yield* evaluate(entry, version)
-      return result.models
-    })
-
-    const background = Effect.fn("ModelCache.background")(function* (providerID: string, options?: Options) {
-      if (pending.has(providerID)) return
-      pending.add(providerID)
-      yield* reload(providerID, options).pipe(
-        Effect.ensuring(Effect.sync(() => pending.delete(providerID))),
-        Effect.ignore,
-        Effect.forkDetach,
+    // 过期的非空目录立即返回；刷新按账号缓存单元去重，并随服务关闭而取消。
+    const background = Effect.fn("ModelCache.background")(function* (entry: Cell) {
+      if (pending.has(entry) || selected.get(entry.providerID) !== entry) return
+      pending.add(entry)
+      yield* Effect.gen(function* () {
+        const version = (versions.get(entry.providerID) ?? 0) + 1
+        versions.set(entry.providerID, version)
+        yield* invalidate(entry)
+        yield* evaluate(entry, version)
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() => log.error("background model refresh failed", { providerID: entry.providerID, cause })),
+        ),
+        Effect.ensuring(Effect.sync(() => pending.delete(entry))),
+        Effect.forkIn(scope),
       )
     })
 
     const fetch = Effect.fn("ModelCache.fetch")(function* (providerID: string, options?: Options) {
-      const previous = active.get(providerID)?.view.models
-      const cached = yield* get(providerID)
-      if (cached) return cached
-      // kilocode_change - 下一行 stale 快速路径只对非空的历史结果生效：一次失败
-      // （或空结果）也会把 view.models 写为 {}，若把空对象当可用缓存，TTL 过期后
-      // 前台请求会一直拿到空列表、只能等后台刷新恢复。空结果过期后与上游语义
-      // 一致，走下方的同步 evaluate 重新拉取（审核条目 F08）。
+      const entry = yield* cell(providerID, options)
+      selected.set(providerID, entry)
+      const previous = active.get(providerID) === entry ? entry.view.models : undefined
+      const cached = active.get(providerID) === entry ? yield* get(providerID) : undefined
+      if (cached) {
+        if (entry.cached) yield* recover(entry, entry.cached.result)
+        return cached
+      }
+      // 空目录过期后同步重取；仅同一账号的非空历史目录允许后台刷新。
       if (previous && Object.keys(previous).length > 0) {
         log.info("using stale models while refreshing", { providerID, count: Object.keys(previous).length })
-        yield* background(providerID, options)
+        yield* background(entry)
         return previous
       }
       const version = (versions.get(providerID) ?? 0) + 1
       versions.set(providerID, version)
-      const entry = yield* cell(providerID, options)
       log.info("fetching models", { providerID })
       const result = yield* evaluate(entry, version)
       return result.models
     })
 
     const refresh = Effect.fn("ModelCache.refresh")(function* (providerID: string, options?: Options) {
-      return yield* reload(providerID, options)
+      const version = (versions.get(providerID) ?? 0) + 1
+      versions.set(providerID, version)
+      const entry = yield* cell(providerID, options)
+      selected.set(providerID, entry)
+      log.info("refreshing models", { providerID })
+      yield* invalidate(entry)
+      const result = yield* evaluate(entry, version)
+      return result.models
+    })
+
+    const recover = Effect.fn("ModelCache.recover")(function* (entry: Cell, result: Result) {
+      if (
+        entry.providerID !== "kilo" ||
+        selected.get(entry.providerID) !== entry ||
+        active.get(entry.providerID) !== entry ||
+        entry.recovery ||
+        !retryable(result)
+      )
+        return
+      entry.recovery = yield* Effect.gen(function* () {
+        let next = result
+        for (let attempt = 0; ; attempt++) {
+          yield* Effect.sleep(Duration.seconds(delay(next, attempt)))
+          // A newer account or endpoint must not be replaced by this retry.
+          if (selected.get(entry.providerID) !== entry || active.get(entry.providerID) !== entry) return
+          if (entry.cached && !retryable(entry.cached.result)) return
+          yield* invalidate(entry)
+          const version = (versions.get(entry.providerID) ?? 0) + 1
+          versions.set(entry.providerID, version)
+          // Catalog fetches report network and HTTP problems as results, so a failure
+          // here is unexpected: log it and stop instead of retrying it as a network error.
+          const value = yield* evaluate(entry, version).pipe(
+            Effect.catch((error) =>
+              Effect.sync(() => {
+                log.error("catalog recovery failed", { providerID: entry.providerID, error })
+                return undefined
+              }),
+            ),
+          )
+          if (!value) return
+          next = value
+          if (selected.get(entry.providerID) !== entry || active.get(entry.providerID) !== entry) return
+          if (retryable(next)) continue
+          return
+        }
+      }).pipe(Effect.ensuring(Effect.sync(() => (entry.recovery = undefined))), Effect.forkIn(scope))
     })
 
     const clear = Effect.fn("ModelCache.clear")(function* (providerID: string) {
@@ -354,6 +403,7 @@ export const layer: Layer.Layer<
         { discard: true },
       )
       active.delete(providerID)
+      selected.delete(providerID)
       failures.delete(providerID)
       if (entries.some(([, entry]) => entry.view.models)) {
         log.info("cache cleared", { providerID })

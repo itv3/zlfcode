@@ -11,6 +11,7 @@ import { Plugin } from "../plugin"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { type LanguageModelV3 } from "@ai-sdk/provider"
 import * as ModelsDev from "./models" // kilocode_change - assemble dynamic Kilo models around upstream core catalog
+import { failure } from "@/kilocode/provider/catalog-recovery" // kilocode_change
 import { Auth } from "../auth"
 import { Env } from "../env"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
@@ -1168,6 +1169,7 @@ export type ListResult = Types.DeepMutable<Schema.Schema.Type<typeof ListResult>
 export const ConfigProvidersResult = Schema.Struct({
   providers: Schema.Array(Info),
   default: DefaultModelIDs,
+  failed: Schema.optional(Schema.Array(Schema.String)), // kilocode_change - 让快速供应商接口保留目录失败状态
 })
 export type ConfigProvidersResult = Types.DeepMutable<Schema.Schema.Type<typeof ConfigProvidersResult>>
 
@@ -1196,11 +1198,12 @@ export class ModelNotFoundError extends Schema.TaggedErrorClass<ModelNotFoundErr
   modelID: ModelV2.ID,
   suggestions: Schema.optional(Schema.Array(Schema.String)),
   modelsEmpty: Schema.optional(Schema.Boolean), // kilocode_change
+  catalogError: Schema.optional(Schema.String), // kilocode_change
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message() {
     const suggestions = this.suggestions?.length ? ` Did you mean: ${this.suggestions.join(", ")}?` : ""
-    return `Model not found: ${this.providerID}/${this.modelID}.${suggestions}`
+    return `Model not found: ${this.providerID}/${this.modelID}.${suggestions}${this.catalogError ? ` ${this.catalogError}` : ""}` // kilocode_change
   }
 
   static isInstance(input: unknown): input is ModelNotFoundError {
@@ -2011,8 +2014,12 @@ const layer = Layer.effect(
           : fuzzysort
               .go(providerID, Object.keys({ ...s.catalog, ...s.providers }), { limit: 3, threshold: -10000 })
               .map((m) => m.target)
-        const empty = false // kilocode_change
-        return yield* new ModelNotFoundError({ providerID, modelID, suggestions, modelsEmpty: empty }) // kilocode_change
+        const empty = !!catalogProvider && Object.keys(catalogProvider.models).length === 0 // kilocode_change
+        // kilocode_change start
+        const catalogError =
+          empty && providerID === "kilo" ? failure(yield* modelsDevSvc.getFailure(providerID)) : undefined
+        return yield* new ModelNotFoundError({ providerID, modelID, suggestions, modelsEmpty: empty, catalogError })
+        // kilocode_change end
       }
 
       const info = provider.models[modelID]

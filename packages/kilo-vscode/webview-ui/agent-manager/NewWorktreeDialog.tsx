@@ -208,14 +208,10 @@ export const NewWorktreeDialog: Component<{
     agent: initialAgent,
     fallback: session.modelForAgent,
     effort: session.variantPreference,
-    preferred: session.preferredSelection,
-    hydrated: session.preferencesReady,
     ready: provider.ready,
     valid: provider.isModelValid,
     variants: (value) => Object.keys(provider.findModel(value)?.variants ?? {}),
-    compare: compareMode,
-    remember: session.rememberSelection,
-    // kilocode_change - ZLF：注入模型置顶档，供 effectiveVariant 在无任何显式/记忆选择时回退
+    // 保留自定义模型配置的默认推理强度，并遵循上游按模式保存选择的规则。
     defaultVariant: (value) => (provider.findModel(value) as { defaultVariant?: string } | undefined)?.defaultVariant,
   })
   const { selection, model, agent, variants, effectiveVariant, selectAgent, selectModel, selectVariant } = preferences
@@ -241,7 +237,7 @@ export const NewWorktreeDialog: Component<{
   const speechModels = useSpeechToTextModels()
   const canUseSpeech = () => canUseSpeechToText(config(), provider.authStates(), features().speechToText)
   const speechModel = () => selectedSpeechToTextModel(config(), speechModels.models())
-  // kilocode_change start: ZLF 过滤不可用模型的分配项（provider 断连/模型失效时不展示也不提交）
+  // ZLF 适配开始: ZLF 过滤不可用模型的分配项（provider 断连/模型失效时不展示也不提交）
   const validModel = (selection: { providerID: string; modelID: string }) =>
     isModelUsable(provider.providers(), provider.connected(), selection)
 
@@ -258,7 +254,7 @@ export const NewWorktreeDialog: Component<{
     const visible = visibleAllocations()
     if (visible.size !== current.size) setModelAllocations(visible)
   })
-  // kilocode_change end
+  // ZLF 适配结束
   let prior: string | null = null
   let request: string | undefined
   const cancel = () => {
@@ -466,7 +462,7 @@ export const NewWorktreeDialog: Component<{
     // In goal mode the objective replaces the prompt, so a session can only
     // start once the objective has been typed.
     if (goalMode() && !prompt().trim()) return false
-    return selection.canSubmit(compareMode() ? visibleAllocations() : undefined) // kilocode_change - ZLF：仅统计可用模型的分配
+    return selection.canSubmit(compareMode() ? visibleAllocations() : undefined) // ZLF 适配：ZLF：仅统计可用模型的分配
   }
   const total = () => (compareMode() ? totalAllocations(visibleAllocations()) : versions())
   const mode = () => (compareMode() ? "compare_models" : versions() > 1 ? "multiple_versions" : "single")
@@ -483,7 +479,7 @@ export const NewWorktreeDialog: Component<{
     return files.length > 0 ? files : undefined
   }
 
-  // kilocode_change - ZLF 的 validModel 校验叠加上游 v7.5.6 的 variant 兜底后复杂度 22
+  // ZLF 适配：ZLF 的 validModel 校验叠加上游 v7.5.6 的 variant 兜底后复杂度 22
   // 略超上限 20，按 F76 先例就地豁免，不为凑指标拆散提交流程。
   // eslint-disable-next-line complexity
   const handleSubmit = () => {
@@ -517,7 +513,7 @@ export const NewWorktreeDialog: Component<{
     const isCompare = compareMode()
     const allocations = isCompare ? allocationsToArray(visibleAllocations()) : undefined
     const count = total()
-    // kilocode_change - ZLF：模型选择需通过 validModel 校验，不可用模型不带入 worktree 会话
+    // ZLF 适配：ZLF：模型选择需通过 validModel 校验，不可用模型不带入 worktree 会话
     const selected = model()
     const sel = !isCompare && selected && validModel(selected) ? selected : null
     const target = project()
@@ -534,7 +530,7 @@ export const NewWorktreeDialog: Component<{
       providerID: sel?.providerID,
       modelID: sel?.modelID,
       agent: selectedAgent,
-      // kilocode_change - ZLF：未通过校验的模型不带 variant；effectiveVariant 已含置顶档回退
+      // ZLF 适配：ZLF：未通过校验的模型不带 variant；effectiveVariant 已含置顶档回退
       variant:
         !isCompare && sel ? (effectiveVariant() ?? (variants().length > 0 ? DEFAULT_VARIANT : undefined)) : undefined,
       baseBranch: effectiveBaseBranch(),
@@ -544,6 +540,8 @@ export const NewWorktreeDialog: Component<{
       files: resolveFiles(payload.text),
     })
 
+    // A submitted dialog starts fresh next time: keep only the agent and sandbox restore.
+    preferences.clear()
     persistPrompt("")
     persistImages([])
     props.onClose()

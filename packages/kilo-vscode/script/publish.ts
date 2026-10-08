@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { existsSync } from "node:fs"
 import { Script } from "@opencode-ai/script"
 import { Manifest, Policy } from "../../../script/kilocode/sbom/index"
+import { upload } from "../../../script/kilocode/release"
 import { CHECKSUMS } from "./sbom"
 
 const prerelease = process.env.KILO_PRE_RELEASE === "true"
@@ -50,7 +51,7 @@ const flag = prerelease ? ["--pre-release"] : []
 for (const target of targets) {
   const vsixPath = join(outDir, `kilo-vscode-${target}.vsix`)
   console.log(`\n🚀 Publishing ${target} to VS Code Marketplace${prerelease ? " (pre-release)" : ""}...`)
-  // kilocode_change - ZLF 环境经 bunx 调用 vsce；重试与 --skip-duplicate 跟随上游
+  // ZLF 适配：ZLF 环境经 bunx 调用 vsce；重试与 --skip-duplicate 跟随上游
   await retry(() => $`bunx vsce publish ${flag} --skip-duplicate --packagePath ${vsixPath}`, {
     attempts: 3,
     delay: 30_000,
@@ -72,7 +73,7 @@ for (const target of targets) {
 
 if (Script.release) {
   console.log(`\n📤 Uploading VSIX files to GitHub release v${Script.version}...`)
-  await $`gh release upload v${Script.version} ${[...vsixFiles, ...evidence]} --clobber`
+  await upload({ tag: `v${Script.version}`, files: [...vsixFiles, ...evidence] })
   console.log(`  ✅ Uploaded all VSIX files and SBOM evidence to GitHub release`)
 }
 

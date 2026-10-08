@@ -78,7 +78,7 @@ const HEALTH_FAILURE_LIMIT = 3
 const PERMISSION_RESPONSE_TTL_MS = 60_000
 const PERMISSION_RESPONSE_LIMIT = 256
 
-// kilocode_change start - 自动恢复（recover）节流：后端「启动成功但随后持续崩溃」时，每次 exit 事件都
+// ZLF 适配开始 - 自动恢复（recover）节流：后端「启动成功但随后持续崩溃」时，每次 exit 事件都
 // 会触发新一轮 spawn。若不加节流会形成无限重启循环（每轮仅受 CLI 启动耗时约
 // 束）。因此按 1s/5s/30s 指数退避，连续 5 次仍失败就停在 error 状态等待用户手
 // 动重试；连接稳定保持 60 秒后重置计数。
@@ -91,7 +91,7 @@ export function resolveRecoveryDelayMs(attempt: number, backoff: readonly number
   if (backoff.length === 0) return 0
   return backoff[Math.min(Math.max(attempt, 0), backoff.length - 1)]!
 }
-// kilocode_change end
+// ZLF 适配结束
 
 /** Reject all pending network-offline waits for a given directory. */
 async function drainNetworkWaits(client: KiloClient, dir: string) {
@@ -1164,7 +1164,7 @@ export class KiloConnectionService {
   private handleServerExit(code: number | null, signal: NodeJS.Signals | null): void {
     const reason = signal ? `signal ${signal}` : `code ${code ?? "unknown"}`
     console.warn(`[Kilo New] ConnectionService: CLI background process exited with ${reason}`)
-    // kilocode_change - ZLF：后端退出自动重连；recover 内部带指数退避与连续失败上限，
+    // ZLF 适配：ZLF：后端退出自动重连；recover 内部带指数退避与连续失败上限，
     // 后端反复崩溃时不会形成无节流重启循环（上游为置 error 等用户手动重试）。
     void this.recover(new Error(`CLI background process exited with ${reason}. Reconnecting automatically.`))
   }

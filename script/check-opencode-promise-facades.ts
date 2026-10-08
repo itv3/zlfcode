@@ -33,14 +33,6 @@ const testAllow: Record<string, { count: number; reason: string }> = {
   "kilocode/config-resilience.test.ts": { count: 4, reason: "existing runtime integration test" },
   "kilocode/config-validation.test.ts": { count: 2, reason: "existing runtime integration test" },
   "kilocode/plan-followup.test.ts": { count: 3, reason: "existing runtime integration test" },
-  "kilocode/session-compaction-chunks.test.ts": {
-    count: 2,
-    reason: "disk-backed instance integration test cleanup",
-  },
-  "kilocode/session-fork-remap.test.ts": {
-    count: 2,
-    reason: "disk-backed instance integration test cleanup",
-  },
   "kilocode/snapshot-track-timeout.test.ts": {
     count: 4,
     reason: "production default snapshot hooks require the shared runtime and instance context",
@@ -81,10 +73,9 @@ const testAllow: Record<string, { count: number; reason: string }> = {
       "earlier tests left in the shared project.",
   },
   "kilocode/session/platform-attribution.test.ts": { count: 2, reason: "existing runtime integration test" },
-  "kilocode/session-prompt-queue.test.ts": { count: 6, reason: "prompt queue legacy instance bridge regression" },
-  "kilocode/session-prompt-steering.test.ts": {
-    count: 2,
-    reason: "disk-backed prompt steering integration test cleanup",
+  "kilocode/session-prompt-queue.test.ts": {
+    count: 11,
+    reason: "队列与实例桥接集成回归通过生产全局运行时加载和释放目录、创建会话并连续调用提示，以验证跨请求的实例上下文",
   },
   "server/experimental-session-list.test.ts": { count: 2, reason: "Kilo session list integration test" },
   "kilocode/server/cloud-session-import.test.ts": { count: 5, reason: "full app cloud import transaction integration" },

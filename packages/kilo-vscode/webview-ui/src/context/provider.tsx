@@ -194,6 +194,8 @@ interface ProviderContextValue {
   authMethods: Accessor<Record<string, ProviderAuthMethod[]>>
   authStates: Accessor<Record<string, ProviderAuthState>>
   isModelValid: (selection: ModelSelection | null) => boolean
+  /** The organization's Kilo catalog failed to load; the host retries until it recovers. */
+  kiloUnavailable: Accessor<boolean>
 }
 
 export const ProviderContext = createContext<ProviderContextValue>()
@@ -213,6 +215,7 @@ export const ProviderProvider: ParentComponent = (props) => {
   const [authStates, setAuthStates] = createSignal(state.authStates)
   const catalogProviders = createMemo(() => mergeProviderCatalog(providers(), catalog()))
   let catalogRevision = 0
+  const [kiloUnavailable, setKiloUnavailable] = createSignal(false)
 
   const models = createMemo<EnrichedModel[]>(() => flattenModels(providers()))
   const visibleModels = createMemo<EnrichedModel[]>(() => filterModels(models(), connected()))
@@ -283,10 +286,11 @@ export const ProviderProvider: ParentComponent = (props) => {
       setDefaultSelection(state.defaultSelection)
       setAuthMethods(state.authMethods)
       setAuthStates(state.authStates)
-      // kilocode_change - 上游 ready/organizationId 状态仅随 providersLoaded 快照更新
+      // ZLF 适配：上游 ready/organizationId 状态仅随 providersLoaded 快照更新
       if (message.type === "providersLoaded") {
         setOrganizationId(message.ready === false ? undefined : (message.organizationId ?? null))
         setReady(message.ready ?? true)
+        setKiloUnavailable(message.kiloUnavailable ?? false)
       }
     })
     if (message.type === "providersLoaded") retry.loaded(message.mode)
@@ -321,6 +325,7 @@ export const ProviderProvider: ParentComponent = (props) => {
     authMethods,
     authStates,
     isModelValid,
+    kiloUnavailable,
   }
 
   return <ProviderContext.Provider value={value}>{props.children}</ProviderContext.Provider>

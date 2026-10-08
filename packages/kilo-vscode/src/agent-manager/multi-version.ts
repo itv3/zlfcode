@@ -87,7 +87,7 @@ export function buildInitialMessages(
   prompt?: string,
   agent?: string,
   variant?: string,
-  files?: Array<{ mime: string; url?: string; path?: string }>, // kilocode_change - ZLF：相对路径附件由扩展端解析，url 可空
+  files?: Array<{ mime: string; url?: string; path?: string }>, // ZLF 适配：ZLF：相对路径附件由扩展端解析，url 可空
   command?: { command: string; arguments: string },
 ): InitialMessage[] {
   return created.map((entry) => {

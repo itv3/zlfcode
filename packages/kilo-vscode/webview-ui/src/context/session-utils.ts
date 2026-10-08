@@ -77,7 +77,7 @@ export function optimistic(
       id: Identifier.ascending("part"),
       messageID: id,
       mime: file.mime,
-      url: file.url ?? "", // kilocode_change - ZLF：相对路径附件由扩展端解析，url 可空
+      url: file.url ?? "", // ZLF 适配：ZLF：相对路径附件由扩展端解析，url 可空
       filename: file.filename,
       source: file.source,
     })

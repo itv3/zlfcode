@@ -63,8 +63,7 @@ function makeEnv(providers: Record<string, Provider>, connected: string[]): Reso
 /** 模拟用户既有数据：openai 的会话覆盖、per-agent 选择、最近模型，kilo 免费收藏对应的最近记录。 */
 function makeStore(): ModelStore {
   return {
-    modelSelections: { code: OPENAI_GPT },
-    sessionOverrides: { "session-a": OPENAI_GPT, "session-b": KILO_FREE },
+    sessionOverrides: { "session-a": { code: OPENAI_GPT }, "session-b": { code: KILO_FREE } },
     agentSelections: { "session-a": "code", "session-b": "code" },
     recentModels: [OPENAI_GPT, KILO_FREE],
   }
@@ -89,8 +88,7 @@ describe("用户断开 provider 后模型数据保留（F02 场景 a）", () => 
 
     // 关键断言：读取路径纯过滤，不得修改任何用户数据
     expect(snapshot(store)).toBe(before)
-    expect(store.sessionOverrides["session-a"]).toEqual(OPENAI_GPT)
-    expect(store.modelSelections["code"]).toEqual(OPENAI_GPT)
+    expect(store.sessionOverrides["session-a"]?.code).toEqual(OPENAI_GPT)
     expect(store.recentModels).toEqual([OPENAI_GPT, KILO_FREE])
   })
 
@@ -120,7 +118,7 @@ describe("kilo 缺失的过渡快照不影响数据（F02 场景 b/c）", () => 
 
     // 关键断言：过渡快照绝不触发数据删除，重试拉取成功后一切恢复
     expect(snapshot(store)).toBe(before)
-    expect(store.sessionOverrides["session-b"]).toEqual(KILO_FREE)
+    expect(store.sessionOverrides["session-b"]?.code).toEqual(KILO_FREE)
     expect(store.recentModels).toContainEqual(KILO_FREE)
   })
 
@@ -137,8 +135,8 @@ describe("kilo 缺失的过渡快照不影响数据（F02 场景 b/c）", () => 
     const env = makeEnv({}, [])
     expect(getSessionModel(store, env, "session-a", "code")).toBeNull()
     expect(getSessionModel(store, env, "session-b", "code")).toBeNull()
-    expect(store.sessionOverrides["session-a"]).toEqual(OPENAI_GPT)
-    expect(store.sessionOverrides["session-b"]).toEqual(KILO_FREE)
+    expect(store.sessionOverrides["session-a"]?.code).toEqual(OPENAI_GPT)
+    expect(store.sessionOverrides["session-b"]?.code).toEqual(KILO_FREE)
   })
 })
 

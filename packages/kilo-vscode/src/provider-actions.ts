@@ -190,7 +190,7 @@ async function fetchProviderList(client: KiloClient, dir: string, mode: Provider
     all,
     connected: all.map((item) => item.id),
     default: data.default,
-    failed: [],
+    failed: data.failed ?? [],
   }
 }
 
@@ -217,8 +217,8 @@ function configuredCustomProviders(config: Config | undefined, connected: Set<st
  * 已知局限（F20，接受现状）：本兜底无条件把 sanitize 通过的 config provider 视为
  * connected，无法区分"临时空窗"与"持久性加载失败"（如 npm 包加载失败、运行时
  * 初始化异常）。持久失败的 provider 会被继续展示为已连接并列出 config 中的模型，
- * 用户选中后错误要到发送消息时才暴露；上游 provider.list 的 failed 字段在
- * connected 模式下也被固定为空数组。要消除该局限需要：为兜底注入的 provider
+ * 用户选中后错误要到发送消息时才暴露。目录接口现在会传递 failed 状态，但本兜底
+ * 尚未据此区分自定义 provider 的可用性。要消除该局限需要：为兜底注入的 provider
  * 附加标记（如 filled）→ 扩展 providersLoaded 消息协议 → webview UI 消费标记做
  * 区分展示，并跟踪"后续权威拉取仍缺失"的跨轮次状态——改动横跨消息协议与 UI，
  * 超出当前兜底逻辑的合理边界。若未来出现持久失败误报 connected 的实际反馈，
@@ -257,7 +257,7 @@ function trimCatalogModels<T extends { id: string; models?: Record<string, unkno
 }
 
 /** 拉取 provider 可用性和认证状态,但不把已保存凭据暴露给 webview。 */
-// kilocode_change - 上游 v7.5.14 的 org/defaults 组装叠加 ZLF 双模式与 catalog 裁剪后
+// ZLF 适配：上游 v7.5.14 的 org/defaults 组装叠加 ZLF 双模式与 catalog 裁剪后
 // 复杂度 22 略超上限 20，按 F76 先例就地豁免，不为凑指标拆散取数流程。
 // eslint-disable-next-line complexity
 export async function fetchProviderData(
@@ -281,7 +281,7 @@ export async function fetchProviderData(
           .catch(() => ({}))
       : Promise.resolve({})
   const kiloRequest = client.kilo
-    .authStatus({ directory: dir }, { throwOnError: true, signal }) // kilocode_change - 允许取消
+    .authStatus({ directory: dir }, { throwOnError: true, signal }) // ZLF 适配：允许取消
     .then((r) => r.data)
     .catch(() => undefined)
 
@@ -334,11 +334,11 @@ export async function fetchProviderData(
     if (!model) delete defaults[KILO_PROVIDER_ID]
   }
   if (!kiloAuth) delete defaults[KILO_PROVIDER_ID]
-  // kilocode_change start - ZLF：catalog 模式按认证态裁剪各 provider 的模型列表
+  // ZLF 适配开始 - ZLF：catalog 模式按认证态裁剪各 provider 的模型列表
   const connected = new Set(response.connected)
   const visible = kiloAuth ? all : all.filter((item) => item.id !== KILO_PROVIDER_ID)
   const trimmed = mode === "catalog" ? visible.map((item) => trimCatalogModels(item, connected, authStates)) : visible
-  // kilocode_change end
+  // ZLF 适配结束
   return {
     response: {
       ...response,
@@ -351,7 +351,18 @@ export async function fetchProviderData(
     storedKeys,
     organizationId,
     ready: !!kiloAuth,
+    unavailable: catalogUnavailable(response.failed, all, organizationId),
   }
+}
+
+/** An organization's Kilo catalog failed to load, so Kilo has no models to pick. */
+function catalogUnavailable(
+  failed: string[] | undefined,
+  all: ReadonlyArray<{ id: string; models: Record<string, unknown> }>,
+  organizationId: string | null | undefined,
+) {
+  if (!organizationId || !failed?.includes(KILO_PROVIDER_ID)) return false
+  return Object.keys(all.find((item) => item.id === KILO_PROVIDER_ID)?.models ?? {}).length === 0
 }
 
 /**

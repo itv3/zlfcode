@@ -135,7 +135,7 @@ function indexing(dir = "/repo", root = dir) {
     kilo: { profile: async () => ({ data: null }), authStatus: async () => ({ data: undefined }) },
     config: {
       warnings: async () => ({ data: [] }),
-      // kilocode_change - ZLF 重连全量拉取会经 config.get/overlay 与 connected 快照，补齐空 stub
+      // ZLF 适配：ZLF 重连全量拉取会经 config.get/overlay 与 connected 快照，补齐空 stub
       get: async () => ({ data: {} }),
       overlay: async () => ({ data: {} }),
       providers: async () => ({ data: { providers: [], default: {} } }),
@@ -166,7 +166,6 @@ describe("KiloProvider indexing refresh", () => {
     const settings = () => ({
       maxCost: 0,
       languageCommitMessage: "sync",
-      multiProject: false,
       claudeMigration: false,
       browserAutomation: false,
       "agentManager.autoBranchNaming": true,
@@ -543,7 +542,7 @@ describe("KiloProvider indexing refresh", () => {
       onFavoritesChanged: subscribe,
       onModelSelectorExpandedChanged: subscribe,
       onClearPendingPrompts: subscribe,
-      onProvidersChanged: subscribe, // kilocode_change - ZLF 热刷新的跨 Webview 广播订阅
+      onProvidersChanged: subscribe, // ZLF 适配：ZLF 热刷新的跨 Webview 广播订阅
       registerDirectoryProvider: subscribe,
     })
     await fixture.internal.initializeConnection()

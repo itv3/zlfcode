@@ -4,14 +4,14 @@ import type { ExtensionMessage, ModelSelection } from "../../webview-ui/src/type
 
 const model: ModelSelection = { providerID: "anthropic", modelID: "claude-sonnet-4" }
 
-function setup(session?: string, configured?: string) {
+function setup(session = "composer", configured?: string) {
   const config = { model: "anthropic/claude-sonnet-4", variant: configured }
   const selections: Record<string, string> = {}
   const messages: Array<{ type: string; key?: string; value?: string }> = []
   const remembered: Array<{ agent: string; model: ModelSelection; variant: string }> = []
   const order: string[] = []
   let handler: ((message: ExtensionMessage) => void) | undefined
-  // kilocode_change - found 可注入 defaultVariant，测试 ZLF「默认推理强度」回退
+  // ZLF 适配：found 可注入 defaultVariant，测试 ZLF「默认推理强度」回退
   const found: { variants: Record<string, object>; defaultVariant?: string } = {
     variants: { low: {}, high: {}, max: {} },
   }
@@ -25,6 +25,7 @@ function setup(session?: string, configured?: string) {
     agent: () => "code",
     config: () => config,
     find: () => found,
+    draft: (id) => id === "composer" || /^(?:sidebar-)?pending:/.test(id),
     remember: (agent, model, variant) => remembered.push({ agent, model, variant }),
     post: (message) => {
       order.push("post")
@@ -51,16 +52,16 @@ function setup(session?: string, configured?: string) {
 describe("session variants", () => {
   it("distinguishes an unset effort from an explicit Default selection", () => {
     const state = setup()
-    expect(state.variants.saved(model, "code")).toBeUndefined()
+    expect(state.variants.saved(model, "code", "composer")).toBeUndefined()
     expect(state.variants.choice()).toBeUndefined()
     expect(state.variants.request()).toBe("")
     state.variants.select("")
-    expect(state.variants.saved(model, "code")).toBe("")
+    expect(state.variants.saved(model, "code", "composer")).toBe("")
     expect(state.variants.choice()).toBe("")
     expect(state.variants.request()).toBe("")
   })
 
-  it.each([undefined, "session-a"])("carries explicit Default rather than the target preference for %s", (id) => {
+  it.each(["composer", "session-a"])("carries explicit Default rather than the target preference for %s", (id) => {
     const state = setup(id, "max")
     state.selections["agent/code/anthropic/claude-sonnet-4"] = "high"
     state.variants.carry(model, "", "code", id)
@@ -94,14 +95,32 @@ describe("session variants", () => {
     expect(state.variants.request()).toBe("max")
   })
 
-  it("keeps remembered effort when configuration changes for new tabs", () => {
+  it("uses updated configuration ahead of remembered defaults for new tabs", () => {
     const state = setup("pending-new", "high")
     state.selections["agent/code/anthropic/claude-sonnet-4"] = "low"
-    expect(state.variants.current()).toBe("low")
+    expect(state.variants.current()).toBe("high")
     state.config.variant = "max"
+    expect(state.variants.current()).toBe("max")
+    expect(state.variants.request()).toBe("max")
+    expect(state.variants.agent("code", model)).toBe("max")
+  })
+
+  it("resolves the raw saved choice in the same order as the displayed effort", () => {
+    const state = setup("pending-new", "high")
+    state.selections["agent/code/anthropic/claude-sonnet-4"] = "low"
+    expect(state.variants.current()).toBe("high")
+    expect(state.variants.saved(model, "code")).toBe("high")
+    expect(state.variants.choice()).toBe("high")
+    state.variants.select("low")
+    expect(state.variants.saved(model, "code", "pending-new")).toBe("low")
     expect(state.variants.current()).toBe("low")
-    expect(state.variants.request()).toBe("low")
-    expect(state.variants.agent("code", model)).toBe("low")
+  })
+
+  it("skips a configured variant the model does not offer, as the displayed effort does", () => {
+    const state = setup("pending-new", "ultra")
+    state.selections["agent/code/anthropic/claude-sonnet-4"] = "low"
+    expect(state.variants.current()).toBe("low")
+    expect(state.variants.saved(model, "code")).toBe("low")
   })
 
   it("does not apply a configured variant to another model", () => {
@@ -129,10 +148,11 @@ describe("session variants", () => {
     expect(state.messages).toEqual([])
   })
 
-  it("persists global selections but keeps session selections local", () => {
-    const global = setup()
-    global.variants.select("high")
-    expect(global.remembered).toEqual([{ agent: "code", model, variant: "high" }])
+  it("keeps session selections local while drafts remember their effort", () => {
+    const draft = setup()
+    draft.variants.select("high")
+    expect(draft.selections["session/composer/anthropic/claude-sonnet-4"]).toBe("high")
+    expect(draft.remembered).toEqual([{ agent: "code", model, variant: "high" }])
 
     const scoped = setup("session-a")
     scoped.variants.select("low")
@@ -145,12 +165,12 @@ describe("session variants", () => {
     const state = setup()
     state.selections["agent/code/anthropic/claude-sonnet-4"] = "high"
     state.variants.select(undefined)
-    expect(state.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "" })
+    expect(state.selections["session/composer/anthropic/claude-sonnet-4"]).toBe("")
     expect(state.variants.current()).toBeUndefined()
     expect(state.remembered).toEqual([{ agent: "code", model, variant: "" }])
   })
 
-  // kilocode_change start - ZLF 契约：carry 对 undefined（从未选择）绝不写入默认 sentinel——
+  // ZLF 适配开始 - ZLF 契约：carry 对 undefined（从未选择）绝不写入默认 sentinel——
   // 一旦写入会把新模型的「默认推理强度」（编译层打标的 defaultVariant）永久锁死为裸发。
   // 显式默认（DEFAULT_VARIANT，用户明确选了「不用推理」）自上游 v7.7.5 起有意跨模型
   // 传播（"preserve effort intent"），与置顶档无冲突：置顶档只在从未选择时兜底。
@@ -168,12 +188,12 @@ describe("session variants", () => {
     // 显式默认已写入 → 裸发；置顶档不介入
     expect(state.variants.current()).toBeUndefined()
   })
-  // kilocode_change end
+  // ZLF 适配结束
 
   it("does not shadow a cached variant when carrying the model default", () => {
     const global = setup()
     global.selections["agent/code/anthropic/claude-sonnet-4"] = "high"
-    global.variants.carry(model, undefined, "code")
+    global.variants.carry(model, undefined, "code", "composer")
     expect(global.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "high" })
     expect(global.messages).toEqual([])
 
@@ -184,7 +204,7 @@ describe("session variants", () => {
     expect(session.variants.current()).toBe("high")
   })
 
-  // kilocode_change start - ZLF：置顶档（默认推理强度）回退契约
+  // ZLF 适配开始 - ZLF：置顶档（默认推理强度）回退契约
   it("falls back to the model default variant when nothing was chosen", () => {
     const state = setup()
     state.found.defaultVariant = "high"
@@ -193,5 +213,5 @@ describe("session variants", () => {
     state.variants.select(undefined)
     expect(state.variants.current()).toBeUndefined()
   })
-  // kilocode_change end
+  // ZLF 适配结束
 })

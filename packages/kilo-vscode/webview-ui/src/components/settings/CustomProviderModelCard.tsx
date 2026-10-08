@@ -38,7 +38,7 @@ export type ModelEntry = {
   supportsImages: boolean
   modalities: Modalities
   variants: VariantEntry[]
-  // kilocode_change start - ZLF 定制：模型级 token 上限与成本配置（上游没有这组字段）
+  // ZLF 适配开始 - ZLF 定制：模型级 token 上限与成本配置（上游没有这组字段）
   contextLimit: string
   outputLimit: string
   costEnabled: boolean
@@ -46,16 +46,16 @@ export type ModelEntry = {
   outputCost: string
   cacheReadCost: string
   cacheWriteCost: string
-  // kilocode_change end
+  // ZLF 适配结束
 }
 
-// kilocode_change start - ZLF 定制：成本输入只允许十进制小数
+// ZLF 适配开始 - ZLF 定制：成本输入只允许十进制小数
 const COST_INPUT = /^(?:\d+(?:\.\d*)?|\.\d*)?$/
 
 function cost(value: string, save: (val: string) => void) {
   if (COST_INPUT.test(value)) save(value)
 }
-// kilocode_change end
+// ZLF 适配结束
 
 type ModelCardProps = {
   m: ModelEntry
@@ -63,26 +63,26 @@ type ModelCardProps = {
     id?: string
     name?: string
     variants?: Array<{ name?: string }>
-    // kilocode_change start - ZLF 定制：limit / cost 字段的校验错误
+    // ZLF 适配开始 - ZLF 定制：limit / cost 字段的校验错误
     contextLimit?: string
     outputLimit?: string
     inputCost?: string
     outputCost?: string
     cacheReadCost?: string
     cacheWriteCost?: string
-    // kilocode_change end
+    // ZLF 适配结束
   }
   t: Translator
   canRemove: boolean
-  // kilocode_change start - ZLF 定制：「默认推理强度」选择器（把选中变体置顶为默认档）
+  // ZLF 适配开始 - ZLF 定制：「默认推理强度」选择器（把选中变体置顶为默认档）
   variantNames?: string[]
   onSelectVariant: (val: string) => void
-  // kilocode_change end
+  // ZLF 适配结束
   onChangeId: (val: string) => void
   onChangeName: (val: string) => void
   onChangeReasoning: (val: boolean) => void
   onChangeSupportsImages: (val: boolean) => void
-  // kilocode_change start - ZLF 定制：limit / cost 字段的回调
+  // ZLF 适配开始 - ZLF 定制：limit / cost 字段的回调
   onChangeContextLimit: (val: string) => void
   onChangeOutputLimit: (val: string) => void
   onChangeCostEnabled: (val: boolean) => void
@@ -90,23 +90,23 @@ type ModelCardProps = {
   onChangeOutputCost: (val: string) => void
   onChangeCacheReadCost: (val: string) => void
   onChangeCacheWriteCost: (val: string) => void
-  // kilocode_change end
+  // ZLF 适配结束
   onRemove: () => void
 }
 
-// kilocode_change - 变体名首字母大写用于「默认推理强度」下拉展示
+// ZLF 适配：变体名首字母大写用于「默认推理强度」下拉展示
 function format(item: string) {
   return item.charAt(0).toUpperCase() + item.slice(1)
 }
 
 export function ModelCard(props: ModelCardProps) {
   const issue = () => props.errors.variants?.find((error) => error.name)?.name
-  // kilocode_change start - ZLF 定制：可选默认档位 = 已有变体名，否则由 Dialog 传入预设档位名
+  // ZLF 适配开始 - ZLF 定制：可选默认档位 = 已有变体名，否则由 Dialog 传入预设档位名
   const opts = createMemo(() =>
     (props.variantNames ?? props.m.variants.map((item) => item.name)).map((item) => item.trim()).filter(Boolean),
   )
   const current = createMemo(() => opts()[0])
-  // kilocode_change end
+  // ZLF 适配结束
 
   return (
     <div
@@ -152,7 +152,7 @@ export function ModelCard(props: ModelCardProps) {
         />
       </div>
 
-      {/* kilocode_change start - ZLF 定制：上下文 / 输出 token 上限输入框 */}
+      {/* ZLF 适配开始 - ZLF 定制：上下文 / 输出 token 上限输入框 */}
       <div style={{ display: "flex", gap: "8px", "align-items": "flex-start" }}>
         <div style={{ flex: 1 }}>
           <TextField
@@ -177,7 +177,7 @@ export function ModelCard(props: ModelCardProps) {
           />
         </div>
       </div>
-      {/* kilocode_change end */}
+      {/* ZLF 适配结束 */}
 
       {/* Reasoning and Image toggles */}
       <div style={{ display: "flex", gap: "16px", "align-items": "center", "flex-wrap": "wrap" }}>
@@ -217,7 +217,7 @@ export function ModelCard(props: ModelCardProps) {
           {props.t("provider.custom.models.modalities.image")}
         </label>
 
-        {/* kilocode_change start - ZLF 定制：成本选项开关 */}
+        {/* ZLF 适配开始 - ZLF 定制：成本选项开关 */}
         <label
           style={{
             display: "flex",
@@ -235,9 +235,9 @@ export function ModelCard(props: ModelCardProps) {
           />
           {props.t("provider.custom.models.cost.label")}
         </label>
-        {/* kilocode_change end */}
+        {/* ZLF 适配结束 */}
 
-        {/* kilocode_change start - ZLF 定制：默认推理强度选择器（选中档位置顶为模型默认） */}
+        {/* ZLF 适配开始 - ZLF 定制：默认推理强度选择器（选中档位置顶为模型默认） */}
         <Show when={props.m.reasoning && opts().length > 0}>
           <div style={{ display: "flex", "align-items": "center", gap: "8px", flex: "0 1 auto", "min-width": "0" }}>
             <span
@@ -265,10 +265,10 @@ export function ModelCard(props: ModelCardProps) {
             </div>
           </div>
         </Show>
-        {/* kilocode_change end */}
+        {/* ZLF 适配结束 */}
       </div>
 
-      {/* kilocode_change start - ZLF 定制：模型成本（$/1M token）输入区 */}
+      {/* ZLF 适配开始 - ZLF 定制：模型成本（$/1M token）输入区 */}
       <Show when={props.m.costEnabled}>
         <div style={{ display: "flex", gap: "8px", "align-items": "flex-start" }}>
           <div style={{ flex: 1 }}>
@@ -328,7 +328,7 @@ export function ModelCard(props: ModelCardProps) {
           </div>
         </div>
       </Show>
-      {/* kilocode_change end */}
+      {/* ZLF 适配结束 */}
 
       <Show when={issue()}>
         {(error) => (

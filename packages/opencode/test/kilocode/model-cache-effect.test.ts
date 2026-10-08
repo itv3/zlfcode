@@ -445,3 +445,23 @@ it.live("does not resolve auth or config for unsupported providers", () =>
     expect(yield* Ref.get(hits)).toEqual([])
   }),
 )
+
+for (const expired of [false, true]) {
+  it.effect(`切换账号时不复用${expired ? "过期" : "新鲜"}的旧账号目录`, () =>
+    Effect.gen(function* () {
+      const hits = yield* Ref.make<Hit[]>([])
+      const out = yield* ModelCache.Service.use((cache) =>
+        Effect.gen(function* () {
+          const first = yield* cache.fetch("apertis", { apiKey: "first" })
+          if (expired) yield* TestClock.adjust("6 minutes")
+          const second = yield* cache.fetch("apertis", { apiKey: "second" })
+          return { first, second }
+        }),
+      ).pipe(Effect.provide(layer(hits)))
+
+      expect(Object.keys(out.first)).toEqual(["apertis-1"])
+      expect(Object.keys(out.second)).toEqual(["apertis-2"])
+      expect((yield* Ref.get(hits)).length).toBe(2)
+    }),
+  )
+}

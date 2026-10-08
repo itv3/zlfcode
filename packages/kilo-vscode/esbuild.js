@@ -454,7 +454,7 @@ function getExtensionConfig() {
     },
     external: ["vscode"],
     logLevel: "silent",
-    // kilocode_change - debugNodeAliasPlugin 是路径别名插件，影响产物内容，必须在所有模式下生效
+    // ZLF 适配：debugNodeAliasPlugin 是路径别名插件，影响产物内容，必须在所有模式下生效
     plugins: [debugNodeAliasPlugin, playwright, ...(watch ? [esbuildProblemMatcherPlugin] : [])],
   }
 }
@@ -466,6 +466,7 @@ function getWebviewsConfig() {
       marketplace: "webview-ui/marketplace/index.tsx",
       "diff-viewer": "webview-ui/diff-viewer/index.tsx",
       documents: "webview-ui/documents/index.tsx",
+      "browser-tab": "webview-ui/browser-tab/index.tsx",
       "diff-virtual": "webview-ui/diff-virtual/index.tsx",
       webview: "webview-ui/src/index.tsx",
     },
@@ -554,15 +555,47 @@ function wasm() {
 async function main() {
   notices()
   wasm()
+  // Chunk hashes change between builds. Do not package stale Settings chunks.
+  fs.rmSync(path.join(__dirname, "dist", "settings"), { recursive: true, force: true })
   const extensionConfig = getExtensionConfig()
   const webviewsConfig = getWebviewsConfig()
+  const settingsConfig = {
+    ...webviewsConfig,
+    entryPoints: { settings: "webview-ui/settings/index.tsx" },
+    format: "esm",
+    splitting: true,
+    chunkNames: "settings/[name]-[hash]",
+    metafile: true,
+    plugins: [
+      ...webviewsConfig.plugins,
+      {
+        name: "settings-preload",
+        setup(build) {
+          build.onEnd((result) => {
+            if (result.errors.length || !result.metafile) return
+            const files = new Set(["dist/settings.js"])
+            for (const file of files) {
+              for (const item of result.metafile.outputs[file]?.imports ?? []) {
+                if (item.kind === "import-statement") files.add(item.path)
+              }
+            }
+            fs.writeFileSync(
+              path.join(__dirname, "dist", "settings-preload.json"),
+              JSON.stringify([...files].filter((file) => file !== "dist/settings.js").map((file) => file.slice(5))),
+            )
+          })
+        },
+      },
+    ],
+  }
   const shikiWorkerConfig = getShikiWorkerConfig()
   const markdownShikiWorkerConfig = getMarkdownShikiWorkerConfig()
 
   if (watch) {
-    const [extensionCtx, webviewsCtx, shikiWorkerCtx, markdownShikiWorkerCtx] = await Promise.all([
+    const [extensionCtx, webviewsCtx, settingsCtx, shikiWorkerCtx, markdownShikiWorkerCtx] = await Promise.all([
       esbuild.context(extensionConfig),
       esbuild.context(webviewsConfig),
+      esbuild.context(settingsConfig),
       esbuild.context(shikiWorkerConfig),
       esbuild.context(markdownShikiWorkerConfig),
     ])
@@ -570,6 +603,7 @@ async function main() {
     await Promise.all([
       extensionCtx.watch(),
       webviewsCtx.watch(),
+      settingsCtx.watch(),
       shikiWorkerCtx.watch(),
       markdownShikiWorkerCtx.watch(),
     ])
@@ -577,6 +611,7 @@ async function main() {
     await Promise.all([
       esbuild.build(extensionConfig),
       esbuild.build(webviewsConfig),
+      esbuild.build(settingsConfig),
       esbuild.build(shikiWorkerConfig),
       esbuild.build(markdownShikiWorkerConfig),
     ])

@@ -47,7 +47,7 @@ const agents = Layer.mock(Agent.Service)({
 const previous = Flag.KILO_DB
 const dbfile = path.join(os.tmpdir(), `kilo-compaction-chunks-${process.pid}-${crypto.randomUUID()}.db`)
 const layer = LayerNode.compile(LayerNode.group([SessionNs.node, SessionProjector.node]))
-// 使用私有 memo map，避免前序测试提前初始化 AppRuntime 后继续绑定旧数据库。
+// 使用私有 memo map，避免前序测试提前初始化全局运行时后继续绑定旧数据库。
 const runtime = ManagedRuntime.make(layer)
 
 beforeAll(async () => {

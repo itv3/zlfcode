@@ -33,7 +33,7 @@ export function variantKey(sel: ModelSelection, agent: string, session?: string)
   return `agent/${agent}/${base}`
 }
 
-// kilocode_change start - ZLF：暴露原始存储值（三态：undefined=从未选择、
+// ZLF 适配开始 - ZLF：暴露原始存储值（三态：undefined=从未选择、
 // DEFAULT_VARIANT=显式选择「默认」、其余=显式选择的档名），供「默认推理强度」
 // 回退逻辑区分「未选择」与「显式默认」。
 export function storedVariant(store: Record<string, string>, sel: ModelSelection, agent: string, session?: string) {
@@ -41,7 +41,7 @@ export function storedVariant(store: Record<string, string>, sel: ModelSelection
   const fallback = session ? store[variantKey(sel, agent)] : undefined
   return store[key] ?? fallback ?? store[legacyVariantKey(sel)]
 }
-// kilocode_change end
+// ZLF 适配结束
 
 export function getVariant(
   store: Record<string, string>,
@@ -50,12 +50,11 @@ export function getVariant(
   agent: string,
   session?: string,
   configured?: string,
-  preferred?: string,
 ) {
   if (variants.length === 0) return undefined
   const scoped = session ? store[variantKey(sel, agent, session)] : undefined
   const preset = configured && variants.includes(configured) ? configured : undefined
-  const stored = scoped ?? preferred ?? store[variantKey(sel, agent)] ?? store[legacyVariantKey(sel)] ?? preset
+  const stored = scoped ?? preset ?? store[variantKey(sel, agent)] ?? store[legacyVariantKey(sel)]
   if (stored === undefined || stored === DEFAULT_VARIANT) return undefined
   return preserveVariant(stored, variants)
 }
@@ -66,10 +65,9 @@ export function getAgentVariant(
   model: { variants?: Record<string, unknown> } | undefined,
   agent: string,
   configured?: string,
-  preferred?: string,
 ) {
   if (!model?.variants) return undefined
-  return getVariant(store, sel, Object.keys(model.variants), agent, undefined, configured, preferred)
+  return getVariant(store, sel, Object.keys(model.variants), agent, undefined, configured)
 }
 
 /**

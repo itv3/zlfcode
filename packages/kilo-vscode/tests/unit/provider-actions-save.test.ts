@@ -1168,7 +1168,7 @@ describe("fetchProviderData", () => {
         models: { claude: { id: "claude" } },
         metadata: { priority: 1 },
       }
-      // kilocode_change start - ZLF 的 connected 模式经 config.providers 取已连接快照
+      // ZLF 适配开始 - ZLF 的 connected 模式经 config.providers 取已连接快照
       //（Remote-SSH 性能定制），mock 与 provider.list 返回同源数据；上游原测试断言
       // config.providers 不被调用（calls===0），该断言仅对上游单路径架构成立，移除。
       const payload = {
@@ -1199,7 +1199,7 @@ describe("fetchProviderData", () => {
           providers: async () => ({ data: { providers: payload.all, default: payload.default } }),
         },
       } as unknown as Parameters<typeof fetchProviderData>[0]
-      // kilocode_change end
+      // ZLF 适配结束
 
       const result = await fetchProviderData(client, "/workspace")
       expect(result.response.default.kilo).toBe(item.expected)
@@ -1213,7 +1213,7 @@ describe("fetchProviderData", () => {
   }
 
   it.each([false, true])("removes unverified Kilo data without auth context (failure: %s)", async (fail) => {
-    // kilocode_change - payload 同时喂给 provider.list 与 ZLF connected 模式的 config.providers
+    // ZLF 适配：payload 同时喂给 provider.list 与 ZLF connected 模式的 config.providers
     const payload = {
       all: [
         { id: "kilo", models: { "kilo-auto/free": {} } },
@@ -1247,7 +1247,7 @@ describe("fetchProviderData", () => {
   })
 
   it("retains Personal defaults without fetching organization recommendations", async () => {
-    // kilocode_change - ZLF connected 模式必经 config.providers（同源数据），上游的
+    // ZLF 适配：ZLF connected 模式必经 config.providers（同源数据），上游的
     // calls===0 断言仅对上游单路径架构成立，移除；本测试保留的语义是"Personal（无
     // org）时 default 不被组织推荐改写"。
     const payload = { all: [], connected: [], default: { kilo: "kilo-auto/free" } }

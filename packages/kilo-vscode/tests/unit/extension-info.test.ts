@@ -93,12 +93,14 @@ describe("vscode-host extensionKeybindings()", () => {
     const ctx = { extension: { packageJSON: { contributes: { keybindings } } } }
     const host = new VscodeHost({ fsPath: "/ext" } as never, {} as never, ctx as never, {} as never)
     // 全局 vscode mock 的 getExtension 返回的 packageJSON 没有 keybindings 字段，
-    // 因此拿到该数组即证明走的是 ctx.extension 而非硬编码 ID 查找。
+    // 因此拿到平台解析后的快捷键即证明走的是 ctx.extension 而非硬编码 ID 查找。
     const { result } = await withGetExtension(
       () => undefined,
       () => host.extensionKeybindings(),
     )
-    expect(result).toEqual(keybindings)
+    expect(result).toEqual([
+      { command: "kilo-code.new.focusChatInput", key: process.platform === "darwin" ? "cmd+l" : "ctrl+l", when: undefined },
+    ])
   })
 
   it("源码中不再硬编码上游扩展 ID kilocode.kilo-code", () => {

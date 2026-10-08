@@ -17,13 +17,13 @@ import { samePath } from "./project/paths"
 import type { KiloConnectionService } from "../services/cli-backend"
 import { KiloProvider } from "../KiloProvider"
 import { PLATFORM, SNAPSHOT_INITIALIZATION } from "./constants"
+import { keybindings, watchKeybindings } from "../kilo-provider/shortcut-context"
 import { DiffVirtualProvider } from "../DiffVirtualProvider"
 import { buildWebviewHtml } from "../utils"
 import { openFileInEditor, getWorkspaceRoot } from "../review-utils"
 import { TelemetryProxy, type TelemetryEventName } from "../services/telemetry"
 import type { AutoApproveController } from "../commands/toggle-auto-approve"
 import type { RemoteStatusService } from "../services/RemoteStatusService"
-import { self as extensionSelf } from "../extension-info"
 import type { CaffeinationService } from "../services/caffeination"
 
 const INTRO_KEY = "kilo.agentManager.introDismissed"
@@ -87,6 +87,7 @@ export class VscodeHost implements Host {
       worktreeDirectories?: () => string[]
       workspaceRoot?: () => string | undefined
       projectId?: () => string | undefined
+      sessionProject?: () => string | undefined
     },
   ): PanelContext {
     return this.wirePanel(panel, opts)
@@ -99,6 +100,7 @@ export class VscodeHost implements Host {
       worktreeDirectories?: () => string[]
       workspaceRoot?: () => string | undefined
       projectId?: () => string | undefined
+      sessionProject?: () => string | undefined
     },
   ): PanelContext {
     panel.webview.options = {
@@ -192,7 +194,7 @@ export class VscodeHost implements Host {
       listSessions: (dir) => this.listProjectSessions(dir),
       trackSession: (id) => provider.trackSession(id),
       refreshSessions: () => provider.refreshSessions(),
-      registerSession: (s) => provider.registerSession(s),
+      registerSession: (s) => provider.registerSession(s, false, opts.sessionProject?.()),
       recoverPendingPrompts: () => provider.recoverPendingPrompts(),
       onFollowupAdopted: (cb) => provider.onFollowupAdopted(cb),
       acknowledgeDraft: (draftID, sessionID) => provider.acknowledgeDraft(draftID, sessionID),
@@ -351,13 +353,6 @@ export class VscodeHost implements Host {
     if (invalid) throw new Error(vscode.l10n.t(invalid))
     const git = await this.git()
     const selected = await this.directory(parent, vscode.l10n.t("Select a parent folder for the cloned repository."))
-    if (!this.multiProject() || !vscode.workspace.isTrusted) {
-      throw new Error(
-        vscode.l10n.t(
-          "Cloning was cancelled because multi-project Agent Manager is disabled or the window is not trusted.",
-        ),
-      )
-    }
     // Opening an existing checkout beats failing a clone into an occupied folder.
     const name = repoName(url)
     const existing = await this.existingCheckout(name, selected)
@@ -411,10 +406,6 @@ export class VscodeHost implements Host {
     return root
   }
 
-  multiProject(): boolean {
-    return vscode.workspace.getConfiguration("kilo-code.new.experimental").get("multiProject", false)
-  }
-
   browserAutomation(): boolean {
     return vscode.workspace.getConfiguration("kilo-code.new.experimental").get("browserAutomation", false)
   }
@@ -458,12 +449,6 @@ export class VscodeHost implements Host {
 
   onDidChangeWorkspaceFolders(cb: () => void): Disposable {
     return vscode.workspace.onDidChangeWorkspaceFolders(() => cb())
-  }
-
-  onDidChangeMultiProject(cb: (enabled: boolean) => void): Disposable {
-    return vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("kilo-code.new.experimental.multiProject")) cb(this.multiProject())
-    })
   }
 
   onDidChangeWorktreePool(cb: (enabled: boolean) => void): Disposable {
@@ -537,12 +522,11 @@ export class VscodeHost implements Host {
   }
 
   extensionKeybindings(): Array<{ command: string; key?: string; mac?: string; when?: string }> {
-    // F18：改用 extension-info 的 self() 解析当前扩展，消除硬编码的上游扩展 ID
-    // kilocode.kilo-code——在 itv3.zlfcode 身份下硬编码 ID 恒返回 undefined，
-    // 会导致 Agent Manager 的快捷键提示功能失效。this.context 由构造函数持有，
-    // self() 优先取 ctx.extension，无需依赖任何 ID 查找。
-    const ext = extensionSelf(this.context)
-    return ext?.packageJSON?.contributes?.keybindings ?? []
+    return keybindings(this.context)
+  }
+
+  onDidChangeKeybindings(cb: () => void): Disposable {
+    return watchKeybindings(this.context, cb)
   }
 
   async copyToClipboard(text: string): Promise<void> {

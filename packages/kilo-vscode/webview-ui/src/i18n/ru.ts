@@ -198,6 +198,14 @@ export const dict = {
   "prompt.worktrees.title": "Worktrees",
   "prompt.worktrees.search": "Поиск worktrees",
   "prompt.thinking.tooltip": "Усилие рассуждения",
+  "prompt.shortcutHint.addSelection": "для добавления выделения",
+  "prompt.shortcutHint.waiting": "для ответа в ожидающей сессии",
+  "prompt.shortcutHint.type": "для ввода",
+  "prompt.shortcutHint.sessions": "для смены сессии",
+  "prompt.shortcutHint.stop": "для остановки",
+  "prompt.shortcutHint.changes": "для просмотра изменений",
+  "prompt.shortcutHint.pr": "для открытия PR",
+  "prompt.shortcutHint.mode": "Следующий режим",
   "prompt.action.send": "Отправить",
   "prompt.action.continue": "Продолжить",
   "prompt.action.send.blocked": "Сначала ответьте на ожидающий вопрос или отклоните его",
@@ -207,6 +215,10 @@ export const dict = {
   "prompt.agents.show": "Показать фоновых агентов",
   "prompt.action.enhance": "Улучшить промпт",
   "prompt.paste.expand": "Нажмите, чтобы развернуть вставленный текст",
+  "prompt.issues.title": "Проблемы сессии",
+  "prompt.mcp.provider": "MCP {{name}}",
+  "prompt.mcp.openSettings": "Открыть в настройках",
+  "prompt.mcp.signIn.busy": "Выполняется вход…",
   "prompt.action.autoApprove.enable": "Включить автоодобрение",
   "prompt.action.autoApprove.disable": "Отключить автоодобрение",
   "prompt.action.autoApprove.enabled": "Автоодобрение включено. Запросы разрешений будут одобряться автоматически.",
@@ -512,15 +524,15 @@ export const dict = {
   "provider.custom.models.toggleReasoning": "Переключить рассуждения для всех",
   "provider.custom.models.toggleImages": "Переключить изображения для всех",
 
-  // kilocode_change start - ZLF 自有键：limit/cost/image 配置与预设预览；
+  // ZLF 适配开始 - ZLF 自有键：limit/cost/image 配置与预设预览；
   // variants.reasoningEffort.label 仍被预设悬停预览引用，其余变体编辑键已随上游 v7.4.21 退役
   "provider.custom.models.image.label": "Изображение",
   "provider.custom.models.variants.reasoningEffort.label": "Усилие рассуждения",
   "provider.custom.models.variants.reasoningEffort.placeholder": "reasoningEffort",
-  // kilocode_change end
+  // ZLF 适配结束
   "provider.custom.models.remove": "Удалить модель",
   "provider.custom.models.add": "Добавить модель",
-  // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
+  // ZLF 适配： 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
   // CustomProviderDialog.tsx 仍在用它，合并 v7.4.17 时恢复。
   "provider.custom.models.fetch.error": "Не удалось получить модели: {{error}}",
   "provider.custom.models.fetch.button": "Получить модели",
@@ -553,6 +565,9 @@ export const dict = {
   "provider.custom.error.duplicate": "Дубликат",
   "settings.openLocalConfig": "Локальный конфиг",
   "settings.openGlobalConfig": "Глобальный конфиг",
+  "settings.search.placeholder": "Поиск параметров",
+  "settings.search.noResults": "Параметры не найдены",
+  "settings.search.clear": "Очистить поиск",
   "settings.config.scope.local": "Локальный",
   "settings.config.scope.global": "Глобальный",
   "settings.config.status.loaded": "загружено",
@@ -614,6 +629,7 @@ export const dict = {
   "session.tabs.switcher.pending": "Новая",
   "session.tabs.switcher.busy": "В работе",
   "session.tabs.switcher.scheduled": "Запланировано",
+  "session.tabs.pinHint": "Shift+щелчок, чтобы закрепить или открепить",
   "session.tab.local": "Локальный",
   "session.tab.cloud": "Облако",
   "session.tab.worktree": "Рабочее дерево",
@@ -794,11 +810,13 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "Продумываю следующие шаги...",
 
   "dialog.model.noProviders": "Нет провайдеров",
+  "dialog.model.unavailable": "Модели Kilo недоступны",
 
   "prompt.placeholder.connecting": "Подключение к серверу...",
   "prompt.placeholder.error": "Не удалось подключиться. Проверьте панель вывода или перезапустите расширение.",
   "prompt.placeholder.default":
     "Введите сообщение, @ чтобы упомянуть файлы... (Enter для отправки, Shift+Enter для новой строки)",
+  "prompt.placeholder.hint": "Введите сообщение, @ чтобы упомянуть файлы... ({{key}} {{action}})",
 
   "context.usage.sessionCost": "Стоимость сессии",
   "context.usage.olderSessions": "{{count}} предыдущих сессий",
@@ -948,12 +966,12 @@ export const dict = {
   "settings.sandboxing.writablePaths.title": "Дополнительные пути для записи",
   "settings.sandboxing.writablePaths.description":
     "Дополнительные пути файловой системы, в которые разрешена запись в песочнице (например, /tmp, /var/log). Они объединяются с путями записи по умолчанию при активной песочнице.",
-  "settings.experimental.multiProject.title": "Мультипроектный Agent Manager",
+  "settings.experimental.conversationPromptHistory.title": "История промптов для каждого разговора",
+  "settings.experimental.conversationPromptHistory.description":
+    "Хранить историю промптов (ArrowUp/ArrowDown) отдельно для каждого разговора вместо одной общей истории для всех.",
   "settings.experimental.claudeMigration.title": "Миграция Claude Code",
   "settings.experimental.claudeMigration.description":
     "Однократно импортируйте поддерживаемые глобальные инструкции CLAUDE.md, простые навыки и отключённые определения MCP. Исходные файлы Claude не изменяются; после включения перезапустите backend.",
-  "settings.experimental.multiProject.description":
-    "Включите управление сессиями и рабочими деревьями в нескольких репозиториях в Agent Manager. Текущий репозиторий рабочего пространства всегда является проектом по умолчанию.",
   "settings.experimental.mcpTimeout.title": "Таймаут MCP (мс)",
   "settings.experimental.mcpTimeout.description": "Таймаут запросов MCP-сервера в миллисекундах",
   "settings.experimental.remote.title": "Управление Remote",
@@ -1042,12 +1060,31 @@ export const dict = {
   "settings.agentBehaviour.removeAgent.button": "Удалить",
   "settings.agentBehaviour.removeMcp.title": "Удалить сервер MCP",
   "settings.agentBehaviour.removeMcp.confirm": 'Удалить сервер MCP "{{name}}"? Это удалит его из вашей конфигурации.',
+  "settings.agentBehaviour.removeMcp.bundleConfirm":
+    'Удалить сервер MCP "{{name}}" и сопутствующие навыки? Это удалит как сервер, так и каждый навык, принадлежащий этой установке Marketplace.',
   "settings.agentBehaviour.removeMcp.button": "Удалить",
   "settings.agentBehaviour.editMcp": "Редактировать сервер MCP",
   "settings.agentBehaviour.editMcp.transportLocal": "Локальный сервер (транспорт stdio)",
   "settings.agentBehaviour.editMcp.transportRemote": "Удалённый сервер (транспорт SSE/HTTP)",
   "settings.agentBehaviour.editMcp.env": "Переменные окружения",
   "settings.agentBehaviour.editMcp.env.help": "Переменные, передаваемые процессу сервера MCP.",
+  "settings.agentBehaviour.editMcp.oauth": "OAuth",
+  "settings.agentBehaviour.editMcp.oauth.help":
+    "Оставьте значение Автоматически, если сервер не требует предварительно зарегистрированного клиента. Секрет клиента хранится в вашем файле конфигурации Kilo.",
+  "settings.agentBehaviour.editMcp.oauth.mode": "Режим",
+  "settings.agentBehaviour.editMcp.oauth.mode.automatic": "Автоматически",
+  "settings.agentBehaviour.editMcp.oauth.mode.disabled": "Отключено",
+  "settings.agentBehaviour.editMcp.oauth.mode.custom": "Пользовательский клиент",
+  "settings.agentBehaviour.editMcp.oauth.clientId": "ID клиента",
+  "settings.agentBehaviour.editMcp.oauth.clientSecret": "Секрет клиента",
+  "settings.agentBehaviour.editMcp.oauth.scope": "Область",
+  "settings.agentBehaviour.editMcp.oauth.callbackPort": "Порт обратного вызова",
+  "settings.agentBehaviour.editMcp.oauth.redirectUri": "URI перенаправления",
+  "settings.agentBehaviour.editMcp.oauth.redirectUri.help":
+    "По умолчанию http://127.0.0.1:19876/mcp/oauth/callback, переопределяет порт обратного вызова.",
+  "settings.agentBehaviour.editMcp.oauth.port.invalid": "Введите порт от 1 до 65535.",
+  "settings.agentBehaviour.editMcp.oauth.secret.invalid": "Для секрета клиента требуется ID клиента.",
+  "settings.agentBehaviour.editMcp.oauth.redirectUri.invalid": "Введите корректный URI перенаправления.",
   "settings.agentBehaviour.addMcp.command": "Команда",
   "settings.agentBehaviour.addMcp.command.placeholder": "e.g. npx",
   "settings.agentBehaviour.addMcp.args": "Аргументы",
@@ -1060,6 +1097,8 @@ export const dict = {
   "settings.agentBehaviour.removeSkill.title": "Удалить навык",
   "settings.agentBehaviour.removeSkill.confirm":
     'Удалить навык "{{name}}"? Это приведет к удалению файлов навыка с диска.',
+  "settings.agentBehaviour.removeSkill.bundleConfirm":
+    'Удалить навык "{{name}}"? Это также удалит сервер MCP {{mcp}} и каждый сопутствующий навык из той же установки Marketplace.',
   "settings.agentBehaviour.removeSkill.button": "Удалить",
   "settings.agentBehaviour.rules.description":
     "Правила — это файлы инструкций, которые направляют поведение агента. Они включаются в системный промпт для каждого разговора. Добавьте пути к файлам ниже, чтобы включить дополнительные правила.",
@@ -1075,6 +1114,12 @@ export const dict = {
   "settings.agentBehaviour.mcpDetail.command": "Команда",
   "settings.agentBehaviour.mcpDetail.args": "Аргументы",
   "settings.agentBehaviour.mcpDetail.env": "Окружение",
+  "settings.agentBehaviour.mcpSignIn.cancel": "Отменить вход",
+  "settings.agentBehaviour.mcpRemoving": "Удаление…",
+  "settings.agentBehaviour.mcpResetAuth": "Сбросить вход",
+  "settings.agentBehaviour.mcpResetAuth.title": "Сбросить вход MCP",
+  "settings.agentBehaviour.mcpResetAuth.confirm":
+    'Очистить сохраненные данные входа для "{{name}}"? Вам нужно будет войти снова.',
   "settings.agentBehaviour.mcpBrowseMarketplace": "Обзор Marketplace",
   "settings.agentBehaviour.mcpEmpty":
     "MCP-серверы не настроены. Добавьте MCP-серверы в kilo.jsonc или попросите агента добавить их.",
@@ -1250,6 +1295,9 @@ export const dict = {
   "settings.display.mcpTool.expanded": "Развёрнуты",
   "settings.display.mcpTool.collapsed": "Свёрнуты",
 
+  "settings.display.shortcutHints.title": "Показывать подсказки по сочетаниям клавиш",
+  "settings.display.shortcutHints.description":
+    "Показывать в пустом поле запроса сочетание клавиш, подходящее к текущему действию, например как добавить выделенный код или вернуться к запросу.",
   "settings.display.tokenThroughput.title": "Показывать пропускную способность токенов",
   "settings.display.tokenThroughput.description":
     "Показывать скорость генерации текста (tokens/sec) в последнем сообщении ассистента и в заголовке задачи. Показывается по умолчанию; отключите этот параметр, чтобы при необходимости скрыть её.",
@@ -1326,6 +1374,8 @@ export const dict = {
 
   "task.todos.progress": "{{done}}/{{total}} задач выполнено",
   "task.todos.allDone": "{{count}} задач выполнено",
+  "task.todos.title": "Задачи",
+  "task.todos.done": "Всё готово",
   "task.backgroundAgents.running.one": "1 фоновый агент",
   "task.backgroundAgents.running.many": "Фоновых агентов: {{count}}",
   "task.backgroundAgents.open": "Открыть фонового агента",
@@ -1408,5 +1458,13 @@ export const dict = {
   "settings.experimental.browserAutomation.systemChrome.title": "Использовать системный Chrome",
   "settings.experimental.browserAutomation.systemChrome.description":
     "Использовать установленный Google Chrome для встроенного браузера. Отключайте только если совместимый браузер Playwright Chromium уже установлен.",
+  "settings.experimental.browserLinks.title": "Открывать ссылки в",
+  "settings.experimental.browserLinks.description":
+    "Выберите, где открывать веб-ссылки из чатов Kilo. Требуется встроенный браузер.",
+  "settings.experimental.browserLinks.external": "Системный браузер",
+  "settings.experimental.browserLinks.integrated": "Встроенный браузер",
   "chat.search.searchingHistory": "Поиск в более ранних сообщениях…",
+  "browserTab.noSession":
+    "Откройте браузер из сеанса, чтобы просмотреть локальное приложение или публичную HTTPS-страницу.",
+  "browserTab.disabled": "Встроенный браузер отключён. Включите его в Настройках Kilo > Экспериментальные.",
 }

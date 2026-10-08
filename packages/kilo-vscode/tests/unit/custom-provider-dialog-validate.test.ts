@@ -541,7 +541,7 @@ describe("validateCustomProvider – variant name validation", () => {
 
   it("handles multiple models with reasoning and images toggled", () => {
     const form = base()
-    // kilocode_change start - ZLF 的 ModelEntry 含 limit/cost 字段，上游测试的模型对象需补齐
+    // ZLF 适配开始 - ZLF 的 ModelEntry 含 limit/cost 字段，上游测试的模型对象需补齐
     const zlfFields = {
       contextLimit: "",
       outputLimit: "",
@@ -555,7 +555,7 @@ describe("validateCustomProvider – variant name validation", () => {
       { id: "m1", name: "Model 1", reasoning: true, supportsImages: true, modalities: {}, variants: [], ...zlfFields },
       { id: "m2", name: "Model 2", reasoning: true, supportsImages: false, modalities: {}, variants: [], ...zlfFields },
     ]
-    // kilocode_change end
+    // ZLF 适配结束
     const out = validateCustomProvider(args(form))
     expect(out.result).toBeDefined()
     const m1 = out.result!.config.models["m1"] as Record<string, unknown>

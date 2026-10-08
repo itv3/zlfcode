@@ -16,7 +16,7 @@ import { currentBwrapTarget, ensureBwrapForTarget } from "./bwrap-helper"
 import { currentFfmpegTarget, ensureFfmpegForTarget } from "./ffmpeg-helper"
 
 const forceRebuild = process.argv.includes("--force")
-// kilocode_change - ZLF 发布构建要求严格模式：CLI 二进制准备失败必须中断
+// ZLF 适配：ZLF 发布构建要求严格模式：CLI 二进制准备失败必须中断
 const strict = process.argv.includes("--strict") || process.env.KILO_STRICT_CLI_BINARY === "1"
 const compiledOnly = process.argv.includes("--compiled")
 
@@ -48,7 +48,7 @@ function log(msg: string) {
   console.log(`[local-bin] ${msg}`)
 }
 
-// kilocode_change start - ZLF：识别 dev wrapper 脚本，避免把包装脚本当作编译产物
+// ZLF 适配开始 - ZLF：识别 dev wrapper 脚本，避免把包装脚本当作编译产物
 async function isWrapper(file: string): Promise<boolean> {
   try {
     const text = await Bun.file(file).text()
@@ -57,7 +57,7 @@ async function isWrapper(file: string): Promise<boolean> {
     return false
   }
 }
-// kilocode_change end
+// ZLF 适配结束
 
 type Package = {
   name?: string

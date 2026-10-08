@@ -200,6 +200,14 @@ export const dict = {
   "prompt.worktrees.title": "Worktrees",
   "prompt.worktrees.search": "Worktreeを検索",
   "prompt.thinking.tooltip": "推論の強度",
+  "prompt.shortcutHint.addSelection": "で選択範囲を追加",
+  "prompt.shortcutHint.waiting": "で待機中のセッションに回答",
+  "prompt.shortcutHint.type": "で入力",
+  "prompt.shortcutHint.sessions": "でセッションを切り替え",
+  "prompt.shortcutHint.stop": "で停止",
+  "prompt.shortcutHint.changes": "で変更をレビュー",
+  "prompt.shortcutHint.pr": "でPRを開く",
+  "prompt.shortcutHint.mode": "次のモード",
   "prompt.action.send": "送信",
   "prompt.action.continue": "続行",
   "prompt.action.send.blocked": "最初に保留中の質問に答えるか、閉じてください",
@@ -209,6 +217,10 @@ export const dict = {
   "prompt.agents.show": "バックグラウンドエージェントを表示",
   "prompt.action.enhance": "プロンプトを改善",
   "prompt.paste.expand": "クリックして貼り付けたテキストを展開",
+  "prompt.issues.title": "セッションの問題",
+  "prompt.mcp.provider": "{{name}} MCP",
+  "prompt.mcp.openSettings": "設定で開く",
+  "prompt.mcp.signIn.busy": "サインイン中…",
   "prompt.action.autoApprove.enable": "自動承認を有効化",
   "prompt.action.autoApprove.disable": "自動承認を無効化",
   "prompt.action.autoApprove.enabled": "自動承認が有効です。権限リクエストは自動的に承認されます。",
@@ -512,15 +524,15 @@ export const dict = {
   "provider.custom.models.toggleReasoning": "すべてのモデルの推論を切り替え",
   "provider.custom.models.toggleImages": "すべてのモデルの画像を切り替え",
 
-  // kilocode_change start - ZLF 自有键：limit/cost/image 配置与预设预览；
+  // ZLF 适配开始 - ZLF 自有键：limit/cost/image 配置与预设预览；
   // variants.reasoningEffort.label 仍被预设悬停预览引用，其余变体编辑键已随上游 v7.4.21 退役
   "provider.custom.models.image.label": "画像",
   "provider.custom.models.variants.reasoningEffort.label": "推論エフォート",
   "provider.custom.models.variants.reasoningEffort.placeholder": "reasoningEffort",
-  // kilocode_change end
+  // ZLF 适配结束
   "provider.custom.models.remove": "モデルを削除",
   "provider.custom.models.add": "モデルを追加",
-  // kilocode_change: 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
+  // ZLF 适配： 上游 #12602 按“未使用”清理掉了该键，但 ZLF 定制的
   // CustomProviderDialog.tsx 仍在用它，合并 v7.4.17 时恢复。
   "provider.custom.models.fetch.error": "モデルの取得に失敗しました: {{error}}",
   "provider.custom.models.fetch.button": "モデルを取得",
@@ -553,6 +565,9 @@ export const dict = {
   "provider.custom.error.duplicate": "重複",
   "settings.openLocalConfig": "ローカル設定",
   "settings.openGlobalConfig": "グローバル設定",
+  "settings.search.placeholder": "設定の検索",
+  "settings.search.noResults": "設定が見つかりません",
+  "settings.search.clear": "検索をクリア",
   "settings.config.scope.local": "ローカル",
   "settings.config.scope.global": "グローバル",
   "settings.config.status.loaded": "読み込み済み",
@@ -612,6 +627,7 @@ export const dict = {
   "session.tabs.switcher.pending": "新規",
   "session.tabs.switcher.busy": "作業中",
   "session.tabs.switcher.scheduled": "予約済み",
+  "session.tabs.pinHint": "Shift+クリックで固定または固定解除",
   "session.tab.local": "ローカル",
   "session.tab.cloud": "クラウド",
   "session.tab.worktree": "ワークツリー",
@@ -791,10 +807,12 @@ export const dict = {
   "ui.sessionTurn.status.consideringNextSteps": "次のステップを検討中...",
 
   "dialog.model.noProviders": "プロバイダーなし",
+  "dialog.model.unavailable": "Kilo モデルを利用できません",
 
   "prompt.placeholder.connecting": "サーバーに接続中...",
   "prompt.placeholder.error": "接続に失敗しました。出力パネルを確認するか、拡張機能を再起動してください。",
   "prompt.placeholder.default": "メッセージを入力、@ でファイルを参照... (Enterで送信、Shift+Enterで改行)",
+  "prompt.placeholder.hint": "メッセージを入力、@ でファイルを参照... ({{key}} {{action}})",
 
   "context.usage.sessionCost": "セッションコスト",
   "context.usage.olderSessions": "{{count}} 件の古いセッション",
@@ -946,12 +964,12 @@ export const dict = {
   "settings.sandboxing.writablePaths.title": "追加の書き込み可能パス",
   "settings.sandboxing.writablePaths.description":
     "サンドボックスでの書き込みを許可する追加のファイルシステムパス（例: /tmp、/var/log）。サンドボックス有効時、デフォルトの書き込み可能パスと統合されます。",
-  "settings.experimental.multiProject.title": "マルチプロジェクト Agent Manager",
+  "settings.experimental.conversationPromptHistory.title": "会話ごとのプロンプト履歴",
+  "settings.experimental.conversationPromptHistory.description":
+    "プロンプト履歴 (ArrowUp/ArrowDown) をすべての会話で共有せず、会話ごとに分けて保持します。",
   "settings.experimental.claudeMigration.title": "Claude Code 移行",
   "settings.experimental.claudeMigration.description":
     "サポートされるグローバル CLAUDE.md 命令、簡単なスキル、無効化された MCP 定義を一度だけインポートします。元の Claude ファイルは変更されません。有効化後にバックエンドを再起動してください。",
-  "settings.experimental.multiProject.description":
-    "Agent Managerで複数のリポジトリにまたがるセッションとワークツリーの管理を有効にします。現在のワークスペースリポジトリは常にデフォルトプロジェクトです。",
   "settings.experimental.mcpTimeout.title": "MCPタイムアウト（ミリ秒）",
   "settings.experimental.mcpTimeout.description": "MCPサーバーリクエストのタイムアウト（ミリ秒）",
   "settings.experimental.remote.title": "Remote コントロール",
@@ -1040,12 +1058,31 @@ export const dict = {
   "settings.agentBehaviour.removeAgent.button": "削除",
   "settings.agentBehaviour.removeMcp.title": "MCPサーバーを削除",
   "settings.agentBehaviour.removeMcp.confirm": 'MCPサーバー "{{name}}" を削除しますか？設定から削除されます。',
+  "settings.agentBehaviour.removeMcp.bundleConfirm":
+    'MCPサーバー "{{name}}" と関連スキルを削除しますか？これにより、サーバーとこのMarketplaceインストールが所有するすべてのスキルが削除されます。',
   "settings.agentBehaviour.removeMcp.button": "削除",
   "settings.agentBehaviour.editMcp": "MCPサーバーを編集",
   "settings.agentBehaviour.editMcp.transportLocal": "ローカルサーバー（stdio トランスポート）",
   "settings.agentBehaviour.editMcp.transportRemote": "リモートサーバー（SSE/HTTP トランスポート）",
   "settings.agentBehaviour.editMcp.env": "環境変数",
   "settings.agentBehaviour.editMcp.env.help": "MCPサーバープロセスに渡される変数。",
+  "settings.agentBehaviour.editMcp.oauth": "OAuth",
+  "settings.agentBehaviour.editMcp.oauth.help":
+    "サーバーが事前登録済みのクライアントを必要としない限り、自動のままにしてください。クライアントシークレットはKilo設定ファイルに保存されます。",
+  "settings.agentBehaviour.editMcp.oauth.mode": "モード",
+  "settings.agentBehaviour.editMcp.oauth.mode.automatic": "自動",
+  "settings.agentBehaviour.editMcp.oauth.mode.disabled": "無効",
+  "settings.agentBehaviour.editMcp.oauth.mode.custom": "カスタムクライアント",
+  "settings.agentBehaviour.editMcp.oauth.clientId": "クライアントID",
+  "settings.agentBehaviour.editMcp.oauth.clientSecret": "クライアントシークレット",
+  "settings.agentBehaviour.editMcp.oauth.scope": "スコープ",
+  "settings.agentBehaviour.editMcp.oauth.callbackPort": "コールバックポート",
+  "settings.agentBehaviour.editMcp.oauth.redirectUri": "リダイレクトURI",
+  "settings.agentBehaviour.editMcp.oauth.redirectUri.help":
+    "デフォルトはhttp://127.0.0.1:19876/mcp/oauth/callbackで、コールバックポートを上書きします。",
+  "settings.agentBehaviour.editMcp.oauth.port.invalid": "1から65535の間のポートを入力してください。",
+  "settings.agentBehaviour.editMcp.oauth.secret.invalid": "クライアントシークレットにはクライアントIDが必要です。",
+  "settings.agentBehaviour.editMcp.oauth.redirectUri.invalid": "有効なリダイレクトURIを入力してください。",
   "settings.agentBehaviour.addMcp.command": "コマンド",
   "settings.agentBehaviour.addMcp.command.placeholder": "e.g. npx",
   "settings.agentBehaviour.addMcp.args": "引数",
@@ -1058,6 +1095,8 @@ export const dict = {
   "settings.agentBehaviour.removeSkill.title": "スキルを削除",
   "settings.agentBehaviour.removeSkill.confirm":
     'スキル "{{name}}" を削除しますか？これにより、ディスクからスキルファイルが削除されます。',
+  "settings.agentBehaviour.removeSkill.bundleConfirm":
+    'スキル "{{name}}" を削除しますか？これにより、{{mcp}} MCPサーバーと同じMarketplaceインストールの関連スキルもすべてアンインストールされます。',
   "settings.agentBehaviour.removeSkill.button": "削除",
   "settings.agentBehaviour.rules.description":
     "ルールはエージェントの動作を導く指示ファイルです。すべての会話のシステムプロンプトに含まれます。追加のルールを含めるには、以下にファイルパスを追加してください。",
@@ -1073,6 +1112,12 @@ export const dict = {
   "settings.agentBehaviour.mcpDetail.command": "コマンド",
   "settings.agentBehaviour.mcpDetail.args": "引数",
   "settings.agentBehaviour.mcpDetail.env": "環境",
+  "settings.agentBehaviour.mcpSignIn.cancel": "サインインをキャンセル",
+  "settings.agentBehaviour.mcpRemoving": "削除中…",
+  "settings.agentBehaviour.mcpResetAuth": "サインインをリセット",
+  "settings.agentBehaviour.mcpResetAuth.title": "MCPサインインをリセット",
+  "settings.agentBehaviour.mcpResetAuth.confirm":
+    '"{{name}}" の保存されたサインイン情報を消去しますか？再度サインインが必要になります。',
   "settings.agentBehaviour.mcpBrowseMarketplace": "マーケットプレイスを閲覧",
   "settings.agentBehaviour.mcpEmpty":
     "MCPサーバーが設定されていません。kilo.jsoncでMCPサーバーを追加するか、エージェントに追加を依頼してください。",
@@ -1244,6 +1289,9 @@ export const dict = {
   "settings.display.mcpTool.expanded": "展開",
   "settings.display.mcpTool.collapsed": "折りたたみ",
 
+  "settings.display.shortcutHints.title": "ショートカットのヒントを表示",
+  "settings.display.shortcutHints.description":
+    "空のプロンプトに、現在の操作に合ったキーボードショートカットを表示します。例: 選択したコードの追加方法やプロンプトへの戻り方。",
   "settings.display.tokenThroughput.title": "トークンスループットを表示",
   "settings.display.tokenThroughput.description":
     "最新のアシスタントメッセージとタスクヘッダーにテキスト生成速度（tokens/sec）を表示します。デフォルトで表示され、必要に応じてこの設定を無効にすると非表示にできます。",
@@ -1320,6 +1368,8 @@ export const dict = {
 
   "task.todos.progress": "{{done}}/{{total}} タスク完了",
   "task.todos.allDone": "{{count}} タスク完了",
+  "task.todos.title": "タスク",
+  "task.todos.done": "すべて完了",
   "task.backgroundAgents.running.one": "バックグラウンドエージェント 1 件",
   "task.backgroundAgents.running.many": "バックグラウンドエージェント {{count}} 件",
   "task.backgroundAgents.open": "バックグラウンドエージェントを開く",
@@ -1402,5 +1452,12 @@ export const dict = {
   "settings.experimental.browserAutomation.systemChrome.title": "システムChromeを使用",
   "settings.experimental.browserAutomation.systemChrome.description":
     "統合ブラウザーにインストール済みの Google Chrome を使用します。互換性のある Playwright Chromium ブラウザーが既にインストールされている場合にのみ無効にしてください。",
+  "settings.experimental.browserLinks.title": "リンクを開く場所",
+  "settings.experimental.browserLinks.description":
+    "Kilo のチャットから web リンクを開く場所を選択します。統合ブラウザーが必要です。",
+  "settings.experimental.browserLinks.external": "システムブラウザー",
+  "settings.experimental.browserLinks.integrated": "統合ブラウザー",
   "chat.search.searchingHistory": "以前のメッセージを検索しています…",
+  "browserTab.noSession": "セッションからブラウザを開いて、ローカルアプリまたは公開 HTTPS ページをプレビューします。",
+  "browserTab.disabled": "統合ブラウザは無効になっています。Kilo 設定 > 実験的機能で有効にしてください。",
 }

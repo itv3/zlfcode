@@ -318,7 +318,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
   let fetchVersion = 0
 
   // Whether a model-listing fetch is possible for the current package + URL.
-  // kilocode_change - 上游在此还排除 @ai-sdk/anthropic；ZLF 的 fetchModels 支持
+  // ZLF 适配：上游在此还排除 @ai-sdk/anthropic；ZLF 的 fetchModels 支持
   // openai/anthropic/gemini 三种协议，故只校验 URL（effect 守卫与手动按钮共用，
   // 包名参数因此不再需要）
   const canFetch = (url: string) => /^https?:\/\//.test(url.trim())
@@ -595,7 +595,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
     return defaultsForModel(provider.catalogProviders(), form.npm, id)
   }
 
-  // kilocode_change start - ZLF 定制：「默认推理强度」选择器的数据源与选择处理。
+  // ZLF 适配开始 - ZLF 定制：「默认推理强度」选择器的数据源与选择处理。
   // 可选档位 = 已有变体名，编辑态无变体时回退到预设目录的变体名；
   // 选择后经 prioritizeVariants 置顶为默认档并物化进表单，保存时顺序即默认语义。
   function variantNames(model: ModelEntry) {
@@ -629,7 +629,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
       variants.map(() => ({})),
     )
   }
-  // kilocode_change end
+  // ZLF 适配结束
 
   function value(item: number | undefined) {
     return item === undefined ? language.t("provider.custom.models.defaults.empty") : String(item)
@@ -956,7 +956,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
           flex: 1,
           width: "100%",
           "box-sizing": "border-box",
-          // kilocode_change - Dialog 的 fit 模式把 dialog-container 高度置为 auto（无上限），
+          // ZLF 适配：Dialog 的 fit 模式把 dialog-container 高度置为 auto（无上限），
           // 模型多时内容区撑破视口且无法滚动；恢复 ZLF 的视口限高，保证 overflow-y 生效。
           "max-height": "min(calc(90vh - 72px), calc(100vh - 120px))",
         }}
@@ -978,6 +978,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
                 href="https://kilo.ai/docs/ai-providers#custom-provider"
                 onClick={(e) => {
                   e.preventDefault()
+                  e.stopPropagation()
                   vscode.postMessage({
                     type: "openExternal",
                     url: "https://kilo.ai/docs/ai-providers#custom-provider",
