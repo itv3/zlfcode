@@ -60,6 +60,7 @@ export const dict = {
   ...anacondaDesktopDict,
   ...cloudProviderDict,
   "task.swarm.title": "برد",
+  "task.swarm.open": "باز کردن برد",
   "task.swarm.refresh": "تازه‌سازی",
   "task.swarm.reset": "بازنشانی برد",
   "task.swarm.resetTitle": "این برد بازنشانی شود؟",
@@ -217,6 +218,7 @@ export const dict = {
   "prompt.action.stop.background": "توقف عامل اصلی. عامل‌های پس‌زمینه به اجرا ادامه می‌دهند.",
   "prompt.agents.show": "نمایش عامل‌های پس‌زمینه",
   "prompt.action.enhance": "بهبود پرامپت",
+  "prompt.action.more": "اقدامات بیشتر",
   "prompt.paste.expand": "برای بازکردن متن جایگذاری‌شده کلیک کنید",
   "prompt.issues.title": "مشکلات نشست",
   "prompt.mcp.provider": "MCP {{name}}",
@@ -939,6 +941,9 @@ export const dict = {
   "settings.experimental.nativeNotebookTools.title": "ابزارهای بومی Notebook",
   "settings.experimental.nativeNotebookTools.description":
     "ابزارهای آزمایشی برای خواندن، ویرایش و اجرای VS Code notebooks را فعال کنید",
+  "settings.experimental.globIncludeIgnored.title": "جستجوی مسیرهای نادیده‌گرفته‌شده",
+  "settings.experimental.globIncludeIgnored.description":
+    "پوشه‌ها یا فایل‌هایی که ابزار glob باید حتی وقتی .gitignore یا سایر فایل‌های نادیده‌گیری آن‌ها را مستثنا می‌کنند، جستجو کند. از الگوهای سبک gitignore نسبت به فضای کاری استفاده کنید؛ پوشه‌های نادیده‌گرفته‌شده درون آن‌ها همچنان رد می‌شوند.",
   "settings.experimental.continueOnDeny.title": "ادامه در صورت رد",
   "settings.experimental.continueOnDeny.description": "حلقه عامل را هنگام رد شدن یک مجوز ادامه دهید",
   "settings.experimental.codeMode.title": "فراخوانی برنامه‌نویسی ابزارها",
@@ -1388,6 +1393,8 @@ export const dict = {
   "task.backgroundAgents.stopAll": "توقف همه ({{count}})",
   "task.backgroundAgents.finished": "عامل‌های پس‌زمینه به پایان رسیدند",
   "task.stop": "توقف زیرعامل",
+  "task.open.panel": "باز کردن زیرعامل در پنل",
+  "task.open.tab": "باز کردن زیرعامل در تب",
 
   "settings.saveBar.unsavedChanges": "تغییرات ذخیره‌نشده",
   "settings.saveBar.discard": "رد کردن",

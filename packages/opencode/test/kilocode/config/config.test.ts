@@ -133,8 +133,10 @@ describe("global config updates", () => {
 
           expect(config.model).toBe("test/model")
           expect(
-            warnings.some((warning) => warning.path.endsWith("kilo.json") && warning.message.includes("unknownField")),
-          ).toBe(true)
+            warnings.filter(
+              (warning) => warning.path.endsWith("kilo.json") && warning.message.includes("unknownField"),
+            ),
+          ).toHaveLength(1)
         },
       })
     } finally {

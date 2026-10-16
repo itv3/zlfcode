@@ -22,7 +22,13 @@ import type { SidebarTarget } from "./project/route"
 import type { TerminalDestination } from "./terminal-destination"
 import type { ScriptTerminalView } from "./ScriptTerminalManager"
 import type { BrowserFeedbackData } from "../shared/browser-feedback"
-import type { BrowserFrame, BrowserInteraction, BrowserViewport, BrowserViewIdentity } from "../shared/browser-stream"
+import type {
+  BrowserCursor,
+  BrowserFrame,
+  BrowserInteraction,
+  BrowserViewport,
+  BrowserViewIdentity,
+} from "../shared/browser-stream"
 
 export type { TerminalFont }
 export type { ProjectSnapshot }
@@ -511,6 +517,12 @@ interface BrowserFrameMessage extends BrowserFrame {
   sessionId: string
 }
 
+interface BrowserCursorMessage extends BrowserCursor {
+  type: "agentManager.browserCursor"
+  projectId?: string
+  sessionId: string
+}
+
 interface BrowserDevtoolsMessage {
   type: "agentManager.browserDevtools"
   browserId: string
@@ -566,6 +578,7 @@ export type AgentManagerOutMessage =
   | BrowserInspectionMessage
   | BrowserDevtoolsMessage
   | BrowserFrameMessage
+  | BrowserCursorMessage
   | RunStatusMessage
   | TerminalCreatedMessage
   | TerminalRestartedMessage
@@ -653,6 +666,12 @@ interface SetProjectExpandedIn {
   type: "agentManager.setProjectExpanded"
   projectId: string
   expanded: boolean
+}
+
+/** Persist the sidebar order of the additional (not pinned) projects. */
+interface SetProjectOrderIn {
+  type: "agentManager.setProjectOrder"
+  order: string[]
 }
 
 interface DeleteWorktreeIn {
@@ -1292,6 +1311,7 @@ export type AgentManagerInMessage =
   | ActivateSelectionIn
   | RememberTargetIn
   | SetProjectExpandedIn
+  | SetProjectOrderIn
   | DeleteWorktreeIn
   | RemoveStaleWorktreeIn
   | RestoreWorktreeIn

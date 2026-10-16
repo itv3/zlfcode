@@ -31,6 +31,7 @@ import { ModeSwitcherBase } from "../src/components/shared/ModeSwitcher"
 import { SpeechToTextButton } from "../src/components/speech-to-text/SpeechToTextButton"
 import { canUseSpeechToText, selectedSpeechToTextModel } from "../src/components/speech-to-text/availability"
 import { ThinkingSelectorBase } from "../src/components/shared/ThinkingSelector"
+import { PromptSelectors } from "../src/components/chat/PromptSelectors"
 import { SandboxButtonBase, SandboxTooltipContent } from "../src/components/shared/SandboxButton"
 import {
   MultiModelSelector,
@@ -1030,44 +1031,53 @@ export const NewWorktreeDialog: Component<{
                 </div>
               </div>
               <div class="prompt-input-hint">
-                <div class="prompt-input-hint-selectors">
-                  <Show when={session.agents().length > 1}>
-                    <ModeSwitcherBase
-                      agents={session.agents()}
-                      value={agent()}
-                      onSelect={selectAgent}
-                      trigger={WORKTREE_PROMPT_SCOPE}
-                      portal={false}
-                      deferDismiss
-                    />
-                  </Show>
-                  <Show when={!compareMode()}>
-                    <ModelSelectorBase
-                      value={model()}
-                      // 与聊天选择器一致展示"实际将被使用的模型"（resolved 语义，F65）。
-                      labelSemantics="resolved"
-                      onSelect={selectModel}
-                      onPick={restorePrompt}
-                      onCancel={restorePrompt}
-                      trigger={WORKTREE_PROMPT_SCOPE}
-                      placement="top-start"
-                      portal={false}
-                      deferDismiss
-                    />
-                    <ThinkingSelectorBase
-                      variants={variants()}
-                      value={effectiveVariant()}
-                      onSelect={selectVariant}
-                      onClear={() => selectVariant(DEFAULT_VARIANT)}
-                      allowClear
-                      clearLabel={t("common.default")}
-                      trigger={WORKTREE_PROMPT_SCOPE}
-                      portal={false}
-                      deferDismiss
-                      cycleHint={settings()["chat.shiftTabCyclesVariant"] !== false}
-                    />
-                  </Show>
-                </div>
+                <PromptSelectors
+                  agent={
+                    <Show when={session.agents().length > 1}>
+                      <ModeSwitcherBase
+                        agents={session.agents()}
+                        value={agent()}
+                        onSelect={selectAgent}
+                        trigger={WORKTREE_PROMPT_SCOPE}
+                        portal={false}
+                        deferDismiss
+                      />
+                    </Show>
+                  }
+                  model={
+                    <Show when={!compareMode()}>
+                      <ModelSelectorBase
+                        value={model()}
+                        // 与聊天选择器一致，展示实际将使用的模型。
+                        labelSemantics="resolved"
+                        onSelect={selectModel}
+                        onPick={restorePrompt}
+                        onCancel={restorePrompt}
+                        trigger={WORKTREE_PROMPT_SCOPE}
+                        placement="top-start"
+                        portal={false}
+                        deferDismiss
+                      />
+                    </Show>
+                  }
+                  variant={
+                    <Show when={!compareMode()}>
+                      <ThinkingSelectorBase
+                        variants={variants()}
+                        value={effectiveVariant()}
+                        onSelect={selectVariant}
+                        onClear={() => selectVariant(DEFAULT_VARIANT)}
+                        allowClear
+                        clearLabel={t("common.default")}
+                        heading={t("prompt.thinking.tooltip")}
+                        trigger={WORKTREE_PROMPT_SCOPE}
+                        portal={false}
+                        deferDismiss
+                        cycleHint={settings()["chat.shiftTabCyclesVariant"] !== false}
+                      />
+                    </Show>
+                  }
+                />
                 <div class="prompt-input-hint-actions">
                   <Tooltip value={t("prompt.action.enhance")} placement="top">
                     <IconButton

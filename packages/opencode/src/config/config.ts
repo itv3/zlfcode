@@ -54,6 +54,7 @@ import { SandboxConfig } from "@/kilocode/sandbox/config"
 import { ExternalMarkdown } from "@/kilocode/config/external-markdown"
 import { ClaudeMigration } from "@/kilocode/config/claude-migration" // kilocode_change
 import { ProviderModels } from "@/kilocode/config/provider-models"
+import * as ReservedCommand from "@/kilocode/command/reserved" // kilocode_change
 import type { KilocodeMarkdown } from "@/kilocode/config/markdown"
 import {
   IndexingConfig as KiloIndexingConfig,
@@ -426,7 +427,7 @@ const layer = Layer.effect(
     // 由下方带稳定性重试的 loadGlobal 包装（加载前后 stamp 一致才算稳定快照）
     const loadSnapshot = Effect.fnUntraced(function* (
       env?: Record<string, string>,
-      configWarnings?: Warning[], // kilocode_change - retain excess-key diagnostics for cached trusted config
+      configWarnings: Warning[] = [], // kilocode_change - 为每轮快照独立收集诊断，避免重试时丢失或重复提示
     ) {
       // kilocode_change start
       yield* Effect.promise(() => KilocodeConfig.migrateBashPermission())
@@ -499,7 +500,7 @@ const layer = Layer.effect(
       }
 
       const after = yield* KilocodeGlobalConfigStamp.read(fs, Global.Path.config) // kilocode_change
-      return { result, before, after } // kilocode_change
+      return { result, before, after, warnings: configWarnings } // kilocode_change
     })
 
     // kilocode_change start - 仅缓存加载期间保持稳定的全局配置快照
@@ -521,6 +522,8 @@ const layer = Layer.effect(
       if (snapshot.before !== snapshot.after) {
         yield* Effect.logWarning("global config kept changing during load; using the last snapshot", { attempts })
       }
+      // 仅发布最终采用的快照诊断，前面未稳定的尝试不会污染调用方的提示。
+      configWarnings?.push(...snapshot.warnings)
       globalStamp = snapshot.after
       return snapshot.result
     })
@@ -1193,7 +1196,7 @@ const layer = Layer.effect(
 
     const warnings = Effect.fn("Config.warnings")(function* () {
       yield* reload() // kilocode_change
-      return yield* InstanceState.use(state, (s) => s.warnings)
+      return yield* InstanceState.use(state, (s) => [...s.warnings, ...ReservedCommand.warnings(s.config.command)])
     })
     // kilocode_change end
 

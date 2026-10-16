@@ -31,6 +31,10 @@ export namespace KiloShutdown {
           process.off(signal, onSignal)
         }
         stopWatchdog()
+        // 编辑器退出后可能无法再发送强制终止信号；沿用上游 5 秒停机上限，
+        // 防止会话落盘或实例清理卡住时留下后台进程。
+        const timeout = setTimeout(() => process.exit(1), 5000)
+        timeout.unref()
         try {
           // 上游 v7.4.17：停机前先排空 sessions ingest 队列，避免丢失未落盘的会话数据。
           // 与运行时一样延迟加载，避免后台进程 schema 初始化时形成工具注册循环依赖。
@@ -40,6 +44,7 @@ export namespace KiloShutdown {
           await runtime.InstanceRuntime.disposeAllInstances()
           await server.stop(true)
         } finally {
+          clearTimeout(timeout)
           resolve()
         }
       }
