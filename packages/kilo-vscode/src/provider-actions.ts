@@ -191,6 +191,7 @@ async function fetchProviderList(client: KiloClient, dir: string, mode: Provider
     connected: all.map((item) => item.id),
     default: data.default,
     failed: data.failed ?? [],
+    failures: data.failures ?? [],
   }
 }
 

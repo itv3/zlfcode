@@ -21,6 +21,11 @@ it.live(
       Promise.resolve(Server.Default().app.request("/config/providers", { headers: { "x-kilo-directory": tmp.path } })),
     )
     expect(response.status).toBe(200)
-    expect(yield* Effect.promise(() => response.json())).toMatchObject({ providers: [], default: {}, failed: [] })
+    expect(yield* Effect.promise(() => response.json())).toMatchObject({
+      providers: [],
+      default: {},
+      failed: [],
+      failures: [],
+    })
   }),
 )

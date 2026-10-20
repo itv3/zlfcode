@@ -705,6 +705,91 @@ Options:
   --json     output profile as JSON  [boolean] [default: false]
 ```
 
+## kilo auto
+
+```
+custom auto routers: register client models and run client evals
+
+Commands:
+  kilo auto router         manage custom auto router client entries
+  kilo auto eval <router>  run the missing client evals for a custom auto router locally in Docker
+
+Options:
+  --help     Show help  [boolean]
+  --version  Show version number  [boolean]
+```
+
+### kilo auto router
+
+```
+manage custom auto router client entries
+
+Commands:
+  kilo auto router list                     list custom auto routers, their entries, and per-entry eval status
+  kilo auto router add <router> <model>     register a client model as a custom auto router entry
+  kilo auto router remove <router> <model>  remove a client model entry from a custom auto router
+
+Options:
+  --help     Show help  [boolean]
+  --version  Show version number  [boolean]
+```
+
+### kilo auto router list
+
+```
+list custom auto routers, their entries, and per-entry eval status
+
+Options:
+  --help     Show help  [boolean]
+  --version  Show version number  [boolean]
+  --json     print the raw router list as JSON  [boolean] [default: false]
+```
+
+### kilo auto router add
+
+```
+register a client model as a custom auto router entry
+
+Positionals:
+  router  router id or slug  [string]
+  model   <provider>/<model> resolved by this CLI  [string]
+
+Options:
+  --help     Show help  [boolean]
+  --version  Show version number  [boolean]
+```
+
+### kilo auto router remove
+
+```
+remove a client model entry from a custom auto router
+
+Positionals:
+  router  router id or slug  [string]
+  model   <provider>/<model>  [string]
+
+Options:
+  --help     Show help  [boolean]
+  --version  Show version number  [boolean]
+```
+
+### kilo auto eval
+
+```
+run the missing client evals for a custom auto router locally in Docker
+
+Positionals:
+  router  router id or slug  [string]
+
+Options:
+  --help          Show help  [boolean]
+  --version       Show version number  [boolean]
+  --yes           skip the plan confirmation  [boolean] [default: false]
+  --concurrency   number of cases to run in parallel  [number] [default: 1]
+  --cli-version   published @kilocode/cli version to install in the eval image (default: this CLI's version)  [string]
+  --debug-config  print the Docker command and the generated container config, then exit  [boolean] [default: false]
+```
+
 ## kilo stats
 
 ```

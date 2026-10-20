@@ -46,6 +46,7 @@ function check(code: string) {
       freeDataLabel, autoSummary, buildTriggerLabel, sanitizeName, mostUsedModels, rankModelSearch } = await import("./webview-ui/src/components/shared/model-selector-utils.ts")
     const { isEnterKeyCommitNotIme } = await import("./webview-ui/src/utils/ime-enter.ts")
     const { isVisibleModel, visibleModels: filterModels } = await import("./webview-ui/src/context/provider-utils.ts")
+    const { providerFailure, providerFailureMessageKey } = await import("./src/shared/provider-model.ts")
     const window = new EventTarget()
     const requestAnimationFrame = () => 1
     const cancelAnimationFrame = () => {}
@@ -76,7 +77,7 @@ function check(code: string) {
       const [favorites, setFavorites] = createSignal([{ providerID: "kilo", modelID: "alpha" }])
       const [usage, setUsage] = createSignal({ "kilo/bravo": { count: 7, lastUsed: 10 } })
       const [recent, setRecent] = createSignal([])
-      provider = { models, connected, visibleModels: () => filterModels(models(), connected()), findModel: (selection) => models().find((item) => item.providerID === selection?.providerID && item.id === selection?.modelID), kiloUnavailable: () => false }
+      provider = { models, connected, visibleModels: () => filterModels(models(), connected()), findModel: (selection) => models().find((item) => item.providerID === selection?.providerID && item.id === selection?.modelID), kiloUnavailable: () => false, failures: () => [] }
       session = {
         favoriteModels: () => { stats.favorites++; return favorites() },
         modelUsageHistory: () => { stats.usage++; return usage() },

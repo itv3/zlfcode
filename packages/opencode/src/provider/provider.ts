@@ -1158,11 +1158,21 @@ export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
 
 const DefaultModelIDs = Schema.Record(Schema.String, Schema.String)
 
+// kilocode_change start - typed reason a provider failed to load, so clients can explain why instead of hiding it
+export const Failure = Schema.Struct({
+  providerID: Schema.String,
+  kind: Schema.Literals(["unauthorized", "unauthenticated", "network", "schema", "http"]),
+  status: optionalOmitUndefined(Schema.Int),
+}).annotate({ identifier: "ProviderFailure" })
+export type Failure = Types.DeepMutable<Schema.Schema.Type<typeof Failure>>
+// kilocode_change end
+
 export const ListResult = Schema.Struct({
   all: Schema.Array(Info),
   default: DefaultModelIDs,
   connected: Schema.Array(Schema.String),
   failed: Schema.Array(Schema.String), // kilocode_change
+  failures: Schema.Array(Failure), // kilocode_change
 })
 export type ListResult = Types.DeepMutable<Schema.Schema.Type<typeof ListResult>>
 
@@ -1170,6 +1180,7 @@ export const ConfigProvidersResult = Schema.Struct({
   providers: Schema.Array(Info),
   default: DefaultModelIDs,
   failed: Schema.optional(Schema.Array(Schema.String)), // kilocode_change - 让快速供应商接口保留目录失败状态
+  failures: Schema.optional(Schema.Array(Failure)), // kilocode_change - 与供应商目录共用错误协议
 })
 export type ConfigProvidersResult = Types.DeepMutable<Schema.Schema.Type<typeof ConfigProvidersResult>>
 

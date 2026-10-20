@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@kilocode/plugin",
-  "version": "7.8.1201",
+  "version": "7.8.1501",
   "type": "module",
   "license": "MIT",
   "scripts": {

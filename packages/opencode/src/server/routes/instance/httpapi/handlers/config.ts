@@ -9,6 +9,7 @@ import { filterPromptTrainingModels, nonEmptyProviders } from "@/kilocode/provid
 // kilocode_change end
 import { Provider } from "@/provider/provider"
 import { ModelCache } from "@/provider/model-cache" // kilocode_change - 读取与供应商目录同源的失败状态
+import { failures } from "@/kilocode/provider/failures" // kilocode_change - 快速接口沿用目录接口的错误原因
 import * as InstanceState from "@/effect/instance-state"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -63,10 +64,12 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       }
       // kilocode_change end
 
+      const failed = yield* cache.failedProviders() // kilocode_change
       return {
         providers: Object.values(providers).map(Provider.toPublicInfo),
         default: defaults,
-        failed: yield* cache.failedProviders(), // kilocode_change - 避免组织目录失败后界面失去重试提示
+        failed, // kilocode_change - 避免组织目录失败后界面失去重试提示
+        failures: yield* failures(cache, failed), // kilocode_change
       }
     })
 

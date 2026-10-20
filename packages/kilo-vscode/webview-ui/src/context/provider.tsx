@@ -11,7 +11,7 @@ import type {
   ProviderAuthChange,
   ProviderAuthState,
 } from "../types/messages"
-import type { ProviderAuthMethod } from "@kilocode/sdk/v2/client"
+import type { ProviderAuthMethod, ProviderFailure } from "@kilocode/sdk/v2/client"
 import {
   flattenModels,
   findModel as _findModel,
@@ -196,6 +196,8 @@ interface ProviderContextValue {
   isModelValid: (selection: ModelSelection | null) => boolean
   /** The organization's Kilo catalog failed to load; the host retries until it recovers. */
   kiloUnavailable: Accessor<boolean>
+  /** Typed reasons providers failed to load, so the UI can explain why instead of hiding them. */
+  failures: Accessor<ProviderFailure[]>
 }
 
 export const ProviderContext = createContext<ProviderContextValue>()
@@ -216,6 +218,7 @@ export const ProviderProvider: ParentComponent = (props) => {
   const catalogProviders = createMemo(() => mergeProviderCatalog(providers(), catalog()))
   let catalogRevision = 0
   const [kiloUnavailable, setKiloUnavailable] = createSignal(false)
+  const [failures, setFailures] = createSignal<ProviderFailure[]>([])
 
   const models = createMemo<EnrichedModel[]>(() => flattenModels(providers()))
   const visibleModels = createMemo<EnrichedModel[]>(() => filterModels(models(), connected()))
@@ -249,6 +252,7 @@ export const ProviderProvider: ParentComponent = (props) => {
           return next
         })
         setConnected((prev) => prev.filter((id) => id !== "kilo"))
+        setFailures((prev) => prev.filter((item) => item.providerID !== "kilo"))
       })
       return
     }
@@ -291,6 +295,7 @@ export const ProviderProvider: ParentComponent = (props) => {
         setOrganizationId(message.ready === false ? undefined : (message.organizationId ?? null))
         setReady(message.ready ?? true)
         setKiloUnavailable(message.kiloUnavailable ?? false)
+        setFailures(message.failures ?? [])
       }
     })
     if (message.type === "providersLoaded") retry.loaded(message.mode)
@@ -326,6 +331,7 @@ export const ProviderProvider: ParentComponent = (props) => {
     authStates,
     isModelValid,
     kiloUnavailable,
+    failures,
   }
 
   return <ProviderContext.Provider value={value}>{props.children}</ProviderContext.Provider>
