@@ -191,7 +191,10 @@ const script = `
 describe("Provider 消息合并", () => {
   it("接受权威变化并拒绝迟到快照，同时正确处理认证三态", () => {
     expect(field).toBe("providers")
-    const result = Bun.spawnSync(["bun", "--conditions=browser", "-e", script], {
+    // bun 1.4.4 起把 tsconfig 的 `jsx: preserve` 当作自动运行时，会去 solid-js 里找
+    // jsx/jsxDEV（solid 没有该导出）导致 import provider.tsx 直接失败；本脚本只调用
+    // 其中的纯函数、不渲染 JSX，用经典运行时即可同时兼容 1.4.0 与 1.4.4。
+    const result = Bun.spawnSync(["bun", "--conditions=browser", "--jsx-runtime=classic", "-e", script], {
       cwd: webview,
       stdout: "pipe",
       stderr: "pipe",

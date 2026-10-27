@@ -6,6 +6,7 @@ import { corsVaryFix } from "@/server/routes/instance/httpapi/middleware/cors-va
 import { errorLayer } from "@/server/routes/instance/httpapi/middleware/error"
 import { fenceLayer } from "@/server/routes/instance/httpapi/middleware/fence"
 import * as AnacondaDesktop from "@/kilocode/anaconda-desktop/service"
+import { SessionHost } from "@/kilocode/session-hosting"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1" // kilocode_change - defaultLayer aliases are gone
 
@@ -28,6 +29,7 @@ import { networkHandlers } from "./handlers/network"
 import { providerReadyHandlers } from "./handlers/provider-ready"
 import { remoteHandlers } from "./handlers/remote"
 import { sandboxHandlers } from "./handlers/sandbox"
+import { sessionHostHandlers } from "./handlers/session-host"
 import { sessionImportHandlers } from "./handlers/session-import"
 import { suggestionHandlers } from "./handlers/suggestion"
 import { telemetryHandlers } from "./handlers/telemetry"
@@ -51,6 +53,7 @@ export const provide = Layer.provide([
   providerReadyHandlers,
   remoteHandlers,
   sandboxHandlers,
+  sessionHostHandlers.pipe(Layer.provide(SessionHost.layer())),
   sessionImportHandlers,
   suggestionHandlers,
   telemetryHandlers,
