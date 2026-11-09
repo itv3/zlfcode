@@ -239,7 +239,7 @@ describe("sanitizeCustomProviderConfig", () => {
       models: { "model-1": { name: "Model One" } },
     })
 
-    expect("error" in result ? result.error : "").toContain("Invalid enum value")
+    expect("error" in result ? result.error : "").toContain("Invalid option")
   })
 
   it("accepts supported thinking variant options", () => {

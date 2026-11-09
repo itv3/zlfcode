@@ -1,13 +1,21 @@
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { AppRuntime } from "@/effect/app-runtime"
 import * as Attachments from "@/kilocode/server/hosted-attachments"
 import { SessionHost } from "@/kilocode/session-hosting"
+import { Continuation } from "@/kilocode/session-hosting/continuation"
 import {
   HostedFailure,
   StartInput,
+  deletionDispatched,
+  type ContinueWorkspaceInput,
+  type CreateWorkspaceInput,
+  type HostedWorkspaceID,
   type OrganizationID,
   type Provider,
   type ProviderID,
   type RemoteSessionID,
+  type WorkspaceID,
+  type WorkspaceSessionStartBody,
 } from "@/kilocode/session-hosting/types"
 import { SessionHostEvent } from "@opencode-ai/schema/kilocode/session-host-event"
 import {
@@ -22,7 +30,12 @@ import { InstanceHttpApi } from "@/server/routes/instance/httpapi/api"
 import { Effect } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
-import { SessionHostGoneError, SessionHostPaymentRequiredError } from "../groups/session-host"
+import {
+  SessionHostContinuationError,
+  SessionHostGoneError,
+  SessionHostInsufficientBalanceError,
+  SessionHostPaymentRequiredError,
+} from "../groups/session-host"
 
 const SERVICE = "kilo-cloud"
 const log = Log.create({ service: "session-host" })
@@ -67,7 +80,9 @@ export const sessionHostHandlers = HttpApiBuilder.group(InstanceHttpApi, "sessio
           state,
           ...(reason ? { reason } : {}),
         })
-        .pipe(Effect.catchCause((cause) => Effect.sync(() => log.error("availability event publish failed", { cause }))))
+        .pipe(
+          Effect.catchCause((cause) => Effect.sync(() => log.error("availability event publish failed", { cause }))),
+        )
 
     const require = (id: ProviderID) => host.registry.require(id).pipe(Effect.mapError(mapFailure))
 
@@ -97,6 +112,19 @@ export const sessionHostHandlers = HttpApiBuilder.group(InstanceHttpApi, "sessio
       providerID: params.providerID,
       sessionID: params.sessionID,
     })
+
+    const workspaceID = (params: { providerID: ProviderID; workspaceID: WorkspaceID }): HostedWorkspaceID => ({
+      providerID: params.providerID,
+      workspaceID: params.workspaceID,
+    })
+
+    const invalidate = <A>(id: HostedWorkspaceID, effect: Effect.Effect<A, HostedFailure>) =>
+      effect.pipe(
+        Effect.catch((error) => {
+          if (error.code === "not_found") Attachments.store.disposeWorkspace(id)
+          return Effect.fail(error)
+        }),
+      )
 
     const providers = Effect.fn("SessionHostHttpApi.providers")(function* () {
       const items = yield* Effect.forEach(host.registry.providers, (provider) =>
@@ -164,15 +192,18 @@ export const sessionHostHandlers = HttpApiBuilder.group(InstanceHttpApi, "sessio
     }) {
       const provider = yield* require(ctx.params.providerID)
       const organizationID = ctx.query.organizationID
-      const descriptor = yield* provider
-        .attach({
-          id: identity(ctx.params),
-          ...(organizationID ? { organizationID } : {}),
-        })
-        .pipe(Effect.mapError(mapFailure))
+      const input = {
+        id: identity(ctx.params),
+        ...(organizationID ? { organizationID } : {}),
+      }
+      const descriptor = yield* provider.attach(input).pipe(Effect.mapError(mapFailure))
+      const workspace = provider.membership
+        ? yield* provider.membership(input).pipe(Effect.mapError(mapFailure))
+        : undefined
       const entry = Attachments.store.mint({
         provider,
         session: descriptor.session,
+        ...(workspace ? { workspace } : {}),
         ...(organizationID ? { organizationID } : {}),
         expiresAt: descriptor.expiresAt,
       })
@@ -200,6 +231,186 @@ export const sessionHostHandlers = HttpApiBuilder.group(InstanceHttpApi, "sessio
       return { detached: true }
     })
 
+    const listWorkspaces = Effect.fn("SessionHostHttpApi.listWorkspaces")(function* (ctx: {
+      query: {
+        limit?: number
+        sessionLimit?: number
+        cursor?: string
+        repositoryUrl?: string
+        organizationID?: OrganizationID
+      }
+    }) {
+      const provider = yield* resolveDefault.pipe(Effect.mapError(mapFailure))
+      return yield* provider
+        .listWorkspaces({
+          ...(ctx.query.limit === undefined ? {} : { limit: ctx.query.limit }),
+          ...(ctx.query.sessionLimit === undefined ? {} : { sessionLimit: ctx.query.sessionLimit }),
+          ...(ctx.query.cursor === undefined ? {} : { cursor: ctx.query.cursor }),
+          ...(ctx.query.repositoryUrl === undefined ? {} : { repositoryUrl: ctx.query.repositoryUrl }),
+          ...(ctx.query.organizationID === undefined ? {} : { organizationID: ctx.query.organizationID }),
+        })
+        .pipe(Effect.mapError(mapFailure))
+    })
+
+    const listWorkspaceProfiles = Effect.fn("SessionHostHttpApi.listWorkspaceProfiles")(function* (ctx: {
+      query: { organizationID?: OrganizationID }
+    }) {
+      const provider = yield* resolveDefault.pipe(Effect.mapError(mapFailure))
+      return yield* provider
+        .listWorkspaceProfiles(
+          ctx.query.organizationID === undefined ? {} : { organizationID: ctx.query.organizationID },
+        )
+        .pipe(Effect.mapError(mapFailure))
+    })
+
+    const createWorkspace = Effect.fn("SessionHostHttpApi.createWorkspace")(function* (ctx: {
+      payload: CreateWorkspaceInput
+    }) {
+      const provider = yield* resolveDefault.pipe(Effect.mapError(mapFailure))
+      return yield* provider.createWorkspace(ctx.payload).pipe(Effect.mapError(mapFailure))
+    })
+
+    /**
+     * Continuation failures keep their `code`/`message`/`retryable` shape so the
+     * client can decide whether to retry the same operation key. Only the
+     * signed-out and unavailable classes reuse the existing HTTP meanings.
+     */
+    const continuationFailure = (error: HostedFailure) => {
+      if (error.code === "insufficient_balance") {
+        return new SessionHostInsufficientBalanceError({
+          code: error.code,
+          message: error.message,
+          retryable: error.retryable,
+        })
+      }
+      if (error.code === "signed_out" || error.code === "unauthorized") {
+        return new UnauthorizedError({ message: error.message })
+      }
+      if (error.code === "auth_unavailable" || error.code === "unavailable") {
+        return new ServiceUnavailableError({ message: error.message, service: SERVICE })
+      }
+      if (error.code === "invalid_response") {
+        return new UpstreamError({ message: error.message, service: SERVICE })
+      }
+      return new SessionHostContinuationError({
+        code: error.code,
+        message: error.message,
+        retryable: error.retryable,
+      })
+    }
+
+    const continueWorkspace = Effect.fn("SessionHostHttpApi.continueWorkspace")(function* (ctx: {
+      payload: ContinueWorkspaceInput
+    }) {
+      const provider = yield* resolveDefault.pipe(Effect.mapError(mapFailure))
+      // Continuation reads and writes Session, Database, Git, Question, and
+      // Permission. Run it on AppRuntime (which re-provides the request's
+      // InstanceRef) so this route does not widen the group's own requirements.
+      return yield* Effect.tryPromise({
+        try: () =>
+          AppRuntime.runPromise(
+            Continuation.run({
+              provider,
+              operationKey: ctx.payload.operationKey,
+              directory: ctx.payload.directory,
+              sessionIDs: ctx.payload.sessionIDs,
+              activeSessionID: ctx.payload.activeSessionID,
+            }),
+          ),
+        catch: (error) =>
+          error instanceof HostedFailure
+            ? continuationFailure(error)
+            : new ServiceUnavailableError({ message: "Continue in Cloud failed", service: SERVICE }),
+      })
+    })
+
+    const getWorkspace = Effect.fn("SessionHostHttpApi.getWorkspace")(function* (ctx: {
+      params: { providerID: ProviderID; workspaceID: WorkspaceID }
+      query: { sessionLimit?: number; sessionCursor?: string; organizationID?: OrganizationID }
+    }) {
+      const provider = yield* require(ctx.params.providerID)
+      return yield* invalidate(
+        workspaceID(ctx.params),
+        provider.getWorkspace({
+          id: { providerID: ctx.params.providerID, workspaceID: ctx.params.workspaceID },
+          ...(ctx.query.sessionLimit === undefined ? {} : { sessionLimit: ctx.query.sessionLimit }),
+          ...(ctx.query.sessionCursor === undefined ? {} : { sessionCursor: ctx.query.sessionCursor }),
+          ...(ctx.query.organizationID === undefined ? {} : { organizationID: ctx.query.organizationID }),
+        }),
+      ).pipe(Effect.mapError(mapFailure))
+    })
+
+    const getWorkspaceStatus = Effect.fn("SessionHostHttpApi.getWorkspaceStatus")(function* (ctx: {
+      params: { providerID: ProviderID; workspaceID: WorkspaceID }
+      query: { organizationID?: OrganizationID }
+    }) {
+      const provider = yield* require(ctx.params.providerID)
+      return yield* invalidate(
+        workspaceID(ctx.params),
+        provider.getWorkspaceStatus({
+          id: { providerID: ctx.params.providerID, workspaceID: ctx.params.workspaceID },
+          ...(ctx.query.organizationID === undefined ? {} : { organizationID: ctx.query.organizationID }),
+        }),
+      ).pipe(Effect.mapError(mapFailure))
+    })
+
+    const listWorkspaceSessions = Effect.fn("SessionHostHttpApi.listWorkspaceSessions")(function* (ctx: {
+      params: { providerID: ProviderID; workspaceID: WorkspaceID }
+      query: { limit?: number; cursor?: string; organizationID?: OrganizationID }
+    }) {
+      const provider = yield* require(ctx.params.providerID)
+      const workspace = yield* invalidate(
+        workspaceID(ctx.params),
+        provider.getWorkspace({
+          id: { providerID: ctx.params.providerID, workspaceID: ctx.params.workspaceID },
+          ...(ctx.query.limit === undefined ? {} : { sessionLimit: ctx.query.limit }),
+          ...(ctx.query.cursor === undefined ? {} : { sessionCursor: ctx.query.cursor }),
+          ...(ctx.query.organizationID === undefined ? {} : { organizationID: ctx.query.organizationID }),
+        }),
+      ).pipe(Effect.mapError(mapFailure))
+      return {
+        items: workspace.sessions,
+        ...(workspace.cursor === undefined ? {} : { cursor: workspace.cursor }),
+      }
+    })
+
+    const deleteWorkspace = Effect.fn("SessionHostHttpApi.deleteWorkspace")(function* (ctx: {
+      params: { providerID: ProviderID; workspaceID: WorkspaceID }
+      query: { organizationID?: OrganizationID }
+    }) {
+      const provider = yield* require(ctx.params.providerID)
+      const id = workspaceID(ctx.params)
+      const result = yield* provider
+        .deleteWorkspace({
+          id,
+          ...(ctx.query.organizationID === undefined ? {} : { organizationID: ctx.query.organizationID }),
+        })
+        .pipe(
+          Effect.catch((error) => {
+            if (error.code === "not_found" || deletionDispatched(error)) {
+              Attachments.store.disposeWorkspace(id)
+            }
+            return Effect.fail(error)
+          }),
+          Effect.mapError(mapFailure),
+        )
+      Attachments.store.disposeWorkspace(id)
+      return result
+    })
+
+    const startWorkspaceSession = Effect.fn("SessionHostHttpApi.startWorkspaceSession")(function* (ctx: {
+      params: { providerID: ProviderID; workspaceID: WorkspaceID }
+      payload: WorkspaceSessionStartBody
+    }) {
+      const provider = yield* require(ctx.params.providerID)
+      return yield* provider
+        .startWorkspaceSession({
+          id: { providerID: ctx.params.providerID, workspaceID: ctx.params.workspaceID },
+          ...ctx.payload,
+        })
+        .pipe(Effect.mapError(mapFailure))
+    })
+
     return handlers
       .handle("providers", providers)
       .handle("list", list)
@@ -208,5 +419,14 @@ export const sessionHostHandlers = HttpApiBuilder.group(InstanceHttpApi, "sessio
       .handle("transcript", transcript)
       .handle("attach", attach)
       .handle("detach", detach)
+      .handle("listWorkspaces", listWorkspaces)
+      .handle("listWorkspaceProfiles", listWorkspaceProfiles)
+      .handle("createWorkspace", createWorkspace)
+      .handle("continueWorkspace", continueWorkspace)
+      .handle("getWorkspace", getWorkspace)
+      .handle("getWorkspaceStatus", getWorkspaceStatus)
+      .handle("listWorkspaceSessions", listWorkspaceSessions)
+      .handle("deleteWorkspace", deleteWorkspace)
+      .handle("startWorkspaceSession", startWorkspaceSession)
   }),
 )
