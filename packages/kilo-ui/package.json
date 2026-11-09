@@ -112,7 +112,7 @@
     "storybook": "10.6.2",
     "storybook-solidjs-vite": "10.0.9",
     "typescript": "catalog:",
-    "vite": "7.3.7",
+    "vite": "8.3.5",
     "vite-plugin-solid": "2.11.10"
   },
   "scripts": {
